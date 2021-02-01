@@ -1,2 +1,2 @@
 # qtile-windown-manager
-My own tiling window manager modificated
+My own modified tiling window manage
