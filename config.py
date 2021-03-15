@@ -8,11 +8,12 @@ from subprocess import Popen, PIPE
 from libqtile.config import Key, Screen, Group, Drag, Click
 from libqtile.command import lazy
 from libqtile import layout, bar, widget, hook
+from libqtile.lazy import lazy
 from typing import List  # noqa: F401
 
 mod = "mod4"                                     # Sets mod key to SUPER/WINDOWS
-myTerm = "alacritty"                             # My terminal of choice
-myConfig = "~/.config/qtile/config.py"    # The Qtile config file location
+myTerm = "/usr/bin/qterminal"                             # My terminal of choice
+myConfig = "/home/kevin/.config/qtile/config.py"    # The Qtile config file location
 webdevice=" "
 webtext=" "
 
@@ -25,7 +26,7 @@ webtext=" "
 keys = [
          ### The essentials
          Key([mod], "Return",
-             lazy.spawn(myTerm),
+             lazy.spawn("qterminal"),
              desc='Launches My Terminal'
              ),
          Key([mod, "shift"], "Return",
@@ -49,12 +50,11 @@ keys = [
              desc='Shutdown Qtile'
              ),
          Key(["control", "shift"], "e",
-             lazy.spawn("emacsclient -c -a emacs"),
+             lazy.spawn(myTerm+" sudo -S pm-suspend"),
              desc='Doom Emacs'
              ),
          Key([mod, "shift"], "s",
-             lazy.spawn("sudo pm-suspend"),
-             desc='suspend'
+             lazy.spawn(myTerm+"sudo -S ls -l")
              ),
          ### Switch focus to specific monitor (out of three)
          Key([mod], "w",
@@ -169,24 +169,21 @@ keys = [
              lazy.spawn("./.dmenu/dmenu-trading.sh"),
              desc='Dmenu trading programs script'
              ),
-         Key(["mod1", "control"], "i",
-             lazy.spawn("./.dmenu/dmenu-scrot.sh"),
-             desc='Dmenu scrot script'
-             ),
          ### My applications launched with SUPER + ALT + KEY
          Key([mod, "mod1"], "b",
              #lazy.spawn("tabbed -r 2 surf -pe x '.surf/html/homepage.html'"),
              #desc='lynx browser'
 	     lazy.spawn("firefox --new-window  www.google.com"),
              ),
-         Key([], "XF86Explorer", lazy.spawn("firefox --new-window  www.google.com")),
+         #Key([], "XF86Explorer", lazy.spawn("firefox --new-window  www.google.com")),
 
-         Key([], "XF86HomePage", lazy.spawn("nautilus")),
+         #Key([], "XF86HomePage", lazy.spawn("thunar")),
+	 Key([mod, "mod1"], "d", lazy.spawn("thunar")),
 
-	 Key([], "XF86Mail", lazy.spawn("gnome-control-center")),
+	 #Key([], "XF86Mail", lazy.spawn("gnome-control-center")),
 
          Key([mod, "mod1"], "l",
-             lazy.spawn(myTerm+" -e lynx gopher://distro.tube"),
+             lazy.spawn("firefox --private-window"),
              desc='lynx browser'
              ),
          Key([mod, "mod1"], "n",
@@ -205,8 +202,8 @@ keys = [
              desc='toot mastodon cli'
              ),
          Key([mod, "mod1"], "t",
-             lazy.spawn(myTerm+" -e sh ./scripts/tig-script.sh"),
-             desc='tig'
+             lazy.spawn("teams"),
+             desc='Microsoft Teams'
              ),
          Key([mod, "mod1"], "f",
              lazy.spawn(myTerm+" -e sh ./.config/vifm/scripts/vifmrun"),
@@ -217,51 +214,55 @@ keys = [
              desc='joplin'
              ),
          Key([mod, "mod1"], "c",
-             lazy.spawn(myTerm+" -e cmus"),
-             desc='cmus'
+             lazy.spawn("/home/kevin/Downloads/pycharm-community-2020.3.3/bin/pycharm.sh"),
+             desc='Pycharm'
              ),
-         Key([mod, "mod1"], "i",
-             lazy.spawn(myTerm+" -e irssi"),
-             desc='irssi'
+         Key([mod, "mod1"], "p",
+             lazy.spawn("pavucontrol"),
+             desc='Volume Control Utility'
              ),
-         Key([mod, "mod1"], "y",
-             lazy.spawn(myTerm+" -e youtube-viewer"),
-             desc='youtube-viewer'
+         Key([mod, "mod1"], "s",
+             lazy.spawn("xfce4-settings-manager"),
+             desc='Settings Manager'
              ),
+         #Key([mod, "mod1"], "a",
+            # lazy.spawn(myTerm+" -e ncpamixer"),
+            # desc='ncpamixer'
+            # ),
          Key([mod, "mod1"], "a",
-             #lazy.spawn(myTerm+" -e ncpamixer"),
-             #desc='ncpamixer'
-	     lazy.spawn("atom"),
+             lazy.spawn("atom"),
+             desc='Atom Editor'
              ),
          Key([mod, "mod1"], "g",
              lazy.spawn("gazebo"),
              desc='gazebo'
              ),
-         Key([mod, "mod1"], "w",
-             lazy.spawn("wps"),
-             desc='wps'
+         Key([mod, "mod1"], "v",
+             lazy.spawn("vmware"),
+             desc='vmware'
              ),
-	# Audio
-	 Key([], "XF86AudioMute", lazy.spawn("amixer -q set Master toggle")),
-	 Key([], "XF86AudioLowerVolume", lazy.spawn("amixer -c 2 sset Master 1- unmute")),
-	 Key([], "XF86AudioRaiseVolume", lazy.spawn("amixer -c 2 sset Master 1+ unmute")),
-	 Key([], "XF86AudioPlay", lazy.spawn("playerctl play-pause")),
-    	 Key([], "XF86AudioNext", lazy.spawn("playerctl next")),
-    	 Key([], "XF86AudioPrev", lazy.spawn("playerctl previous")),
-    	 Key([], "XF86AudioStop", lazy.spawn("playerctl stop")),
-    	# Extras
-    	 Key([], "XF86Calculator", lazy.spawn("gnome-calculator")),
 
+	# Audio
+	# Key([], "XF86AudioMute", lazy.spawn("amixer -q set Master toggle")),
+	# Key([], "XF86AudioLowerVolume", lazy.spawn("amixer -c 2 sset Master 1- unmute")),
+	# Key([], "XF86AudioRaiseVolume", lazy.spawn("amixer -c 2 sset Master 1+ unmute")),
+	# Key([], "XF86AudioPlay", lazy.spawn("playerctl play-pause")),
+    #	 Key([], "XF86AudioNext", lazy.spawn("playerctl next")),
+    #	 Key([], "XF86AudioPrev", lazy.spawn("playerctl previous")),
+    #	 Key([], "XF86AudioStop", lazy.spawn("playerctl stop")),
+    #	# Extras
+    #	 Key([], "XF86Calculator", lazy.spawn("gnome-calculator")),
 ]
 
-group_names = [(" ", {'layout': 'monadtall'}),
-               (" ", {'layout': 'monadtall'}),
+
+group_names = [(" ", {'layout': 'monadtall'}),               
                (" ", {'layout': 'monadtall'}),
                (" ", {'layout': 'monadtall'}),
+               (" ", {'layout': 'monadtall'}),
                (" ", {'layout': 'monadtall'}),
                (" ", {'layout': 'monadtall'}),
                (" ", {'layout': 'monadtall'}),
-               (" ", {'layout': 'monadtall'}),
+               (" ", {'layout': 'treetab'}),
                (" ", {'layout': 'monadtall'})]
 
 groups = [Group(name, **kwargs) for name, kwargs in group_names]
@@ -272,7 +273,7 @@ for i, (name, kwargs) in enumerate(group_names, 1):
 
 layout_theme = {"border_width": 2,
                 "margin": 6,
-                "border_focus": "e1acff",
+                "border_focus": "117af0",
                 "border_normal": "1D2330"
                 }
 
@@ -306,42 +307,51 @@ layouts = [
     layout.Floating(**layout_theme)
 ]
 
-colors = [["#292d3e", "#292d3e"], # panel background
+colors = [["#000000", "#000000"], # panel background#292d3e
           ["#434758", "#434758"], # background for current screen tab
           ["#ffffff", "#ffffff"], # font color for group names
-          ["#ff5555", "#ff5555"], # border line color for current tab
-          ["#8d62a9", "#8d62a9"], # border line color for other tab and odd widgets
+          ["#80b2ea", "#80b2ea"], # border line color for current tab ff5555
+          ["#6441a5", "#6441a5"], # border line color for other tab and odd widgets
           ["#668bd7", "#668bd7"], # color for the even widgets
-          ["#e1acff", "#e1acff"]] # window name
+          ["#117af0", "#117af0"]] # window name e1acff c411f0
+          
+colors2 = [["#114ef0", "#114ef0"], # panel background#292d3e
+          ["#d8f011", "#d8f011"], # background for current screen tab
+          ["#11f018", "#11f018"], # font color for group names
+          ["#11f08e", "#11f08e"], # border line color for current tab 11f08e
+          ["#11dff0", "#11dff0"], # border line color for other tab and odd widgets 11dff0
+          ["#11c1f0", "#11c1f0"], # color for the even widgets
+          ["#117af0", "#117af0"]] # window name e1acff c411f0
+
 
 prompt = "{0}@{1}: ".format(os.environ["USER"], socket.gethostname())
 
 def get_my_net():
   import subprocess
-  datanet=subprocess.Popen(["nmcli","-g","general.state","device","show","enp34s0"],stdout=subprocess.PIPE).communicate()
+  datanet=subprocess.Popen(["nmcli","-g","general.state","device","show","eth0"],stdout=subprocess.PIPE).communicate()
   datanetp=datanet[0].decode("utf-8");
   res = datanetp.split()
   datanet1=res[0]
   datanet2=res[1]
   
   import subprocess
-  datawifi=subprocess.Popen(["nmcli","-g","general.state","device","show","wlo1"],stdout=subprocess.PIPE).communicate()
+  datawifi=subprocess.Popen(["nmcli","-g","general.state","device","show","wlan0"],stdout=subprocess.PIPE).communicate()
   datawifip=datawifi[0].decode("utf-8");
   res2 = datawifip.split()
   datawifi1=res2[0]
   datawifi2=res2[1]
   if datanet2=="(connected)":
-    setdevice=("enp34s0","")
+    setdevice=("eth0","")
   elif datawifi2=="(connected)":
-    setdevice=("wlo1","")
+    setdevice=("wlan0","")
   else:
     setdevice=("","睊   ")
   return setdevice
 
-def get_my_gpu_temp():
-  import subprocess
-  data = subprocess.Popen(["nvidia-smi","--query-gpu=temperature.gpu","--format=csv"],stdout=subprocess.PIPE).communicate()
-  return "{} °C".format(sub("\D", "", str(data)))
+#def get_my_gpu_temp():
+ # import subprocess
+  #data = subprocess.Popen(["nvidia-smi","--query-gpu=temperature.gpu","--format=csv"],stdout=subprocess.PIPE).communicate()
+  #return "{} °C".format(sub("\D", "", str(data)))
 
 
 import subprocess
@@ -384,8 +394,8 @@ def init_widgets_list():
                        rounded = False,
                        highlight_color = colors[1],
                        highlight_method = "block",
-                       this_current_screen_border = colors[3],
-                       this_screen_border = colors [4],
+                       this_current_screen_border = colors[6],
+                       this_screen_border = colors2 [3],
                        other_current_screen_border = colors[0],
                        other_screen_border = colors[0],
                        foreground = colors[2],
@@ -412,8 +422,8 @@ def init_widgets_list():
               widget.TextBox(
                        text = '',
                        background = colors[0],
-                       foreground = colors[4],
-                       padding = -3,
+                       foreground = colors2[3],
+                       padding = -2,
                        fontsize = 37
                        ),
               widget.TextBox(
@@ -421,81 +431,88 @@ def init_widgets_list():
                        font = 'UbuntuMono Nerd Font',
                        fontsize = 19,
                        padding = 0,
-                       foreground = colors[2],
-                       background = colors[4]
+                       foreground = colors[0],
+                       background = colors2[3]
                        ),
               widget.BitcoinTicker(
               	       currency="EUR",
-                       foreground = colors[2],
-                       background = colors[4],
+                       foreground = colors[0],
+                       background = colors2[3],
                        padding = 5
                        ),
               widget.TextBox(
                        text = '',
-                       background = colors[4],
-                       foreground = colors[5],
-                       padding = -3,
+                       background = colors2[3],
+                       foreground = colors2[4],
+                       padding = -2,
                        fontsize = 37
                        ),
               widget.TextBox(
                        text = "CPU:",
                        padding = 0,
-                       foreground = colors[2],
-                       background = colors[5],
+                       foreground = colors[0],
+                       background = colors2[4],
                        fontsize = 12
                        ),
               widget.ThermalSensor(
-                       foreground = colors[2],
-                       background = colors[5],
+                       foreground = colors[0],
+                       background = colors2[4],
                        threshold = 90,
-                       tag_sensor = "Tdie",
+                       tag_sensor = "Core 0", #Tdie
                        padding = 2
                        ),
 
 	      widget.TextBox(
 	               text="GPU:",
 	               padding = 2,                       
-                       foreground = colors[2],
-                       background = colors[5]
+                       foreground = colors[0],
+                       background = colors2[4]
                        ),
-              widget.GenPollText(
-                       func=get_my_gpu_temp,
-                       update_interval=1,
-	               padding = 5,
-	               background = colors[5],
-                       foreground = colors[2]
+             # widget.GenPollText(
+              #         func=get_my_gpu_temp,
+               #        update_interval=1,
+	        #       padding = 5,
+	         #      background = colors[5],
+                  #     foreground = colors[2]
+                   #    ),
+              widget.ThermalSensor(
+                       foreground = colors[0],
+                       background = colors2[4],
+                       threshold = 90,
+                       tag_sensor = "temp1", #Tdie
+                       padding = 2
                        ),
               widget.TextBox(
                        text = '',
-                       background = colors[5],
-                       foreground = colors[4],
-                       padding = -3,
+                       background = colors2[4],
+                       foreground = colors2[3],
+                       padding = -2,
                        fontsize = 37
                        ),
               widget.TextBox(
                        text = "",
-                       foreground = colors[2],
-                       background = colors[4],
+                       foreground = colors[0],
+                       background = colors2[3],
                        padding = 0,
                        fontsize = 20
                        ),
               widget.Memory(
-                       foreground = colors[2],
-                       background = colors[4],
+                       foreground = colors[0],
+                       background = colors2[3],
                        mouse_callbacks = {'Button1': lambda qtile: qtile.cmd_spawn(myTerm + ' -e htop')},
                        padding = 5
                        ),
               widget.TextBox(
                        text='',
-                       background = colors[4],
-                       foreground = colors[5],
-                       padding = -3,
+                       background = colors2[3],
+                       foreground = colors2[4],
+                       padding = -2,
                        fontsize = 37
                        ),
               widget.TextBox(
-              		text=webtext,
-                       foreground = colors[2],
-                       background = colors[5],
+					   text=webtext,
+                       foreground = colors[0],
+                       background = colors2[4],
                        padding = 5,
                        fontsize = 15
                        ),
@@ -504,68 +521,68 @@ def init_widgets_list():
                        #interface = "wlo1",	#wifi
                        interface = webdevice,
                        format = '{down} ↓↑ {up}',
-                       foreground = colors[2],
-                       background = colors[5],
+                       foreground = colors[0],
+                       background = colors2[4],
                        padding = 5
                        ),
               widget.TextBox(
                        text = '',
-                       background = colors[5],
-                       foreground = colors[4],
-                       padding = -3,
+                       background = colors2[4],
+                       foreground = colors2[3],
+                       padding = -2,
                        fontsize = 37
                        ),
               widget.TextBox(
                        text ="",
-                       foreground = colors[2],
-                       background = colors[4],
+                       foreground = colors[0],
+                       background = colors2[3],
                        fontsize = 20,
                        padding = 9
                        ),
               widget.Volume(                       
-                       cardid = 2,
-                       device = 'hw:2',
-                       foreground = colors[2],
-                       background = colors[4],
+                       #cardid = 2,
+                       #device = 'hw:2',
+                       foreground = colors[0],
+                       background = colors2[3],
                        padding = 5
                        ),
               widget.TextBox(
                        text = '',
-                       background = colors[4],
-                       foreground = colors[5],
-                       padding = -3,
+                       background = colors2[3],
+                       foreground = colors2[4],
+                       padding = -2,
                        fontsize = 37
                        ),
               widget.CurrentLayoutIcon(
                        custom_icon_paths = [os.path.expanduser("~/.config/qtile/icons")],
                        foreground = colors[0],
-                       background = colors[5],
+                       background = colors2[4],
                        padding = 0,
                        scale = 0.7
                        ),
               widget.CurrentLayout(
-                       foreground = colors[2],
-                       background = colors[5],
+                       foreground = colors[0],
+                       background = colors2[4],
                        padding = 5
                        ),
               widget.TextBox(
                        text = '',
-                       background = colors[5],
-                       foreground = colors[4],
-                       padding = -3,
+                       background = colors2[4],
+                       foreground = colors2[3],
+                       padding = -2,
                        fontsize = 37
                        ),
               widget.Clock(
                        padding = 3,
-                       foreground = colors[2],
-                       background = colors[4],
+                       foreground = colors[0],
+                       background = colors2[3],
                        format = '%d/%m/%Y - %H:%M '
                        ),
               widget.Sep(
                        linewidth = 0,
                        padding = 10,
                        foreground = colors[0],
-                       background = colors[4]
+                       background = colors2[3]
                        ),
               widget.Systray(
                        background = colors[0],

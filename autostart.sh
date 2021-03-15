@@ -1,4 +1,4 @@
 #! /bin/bash 
-picom &
-nitrogen --restore &
-urxvtd -q -o -f &
+#picom &
+#nitrogen --restore &
+#urxvtd -q -o -f &
