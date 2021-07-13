@@ -50,11 +50,11 @@ keys = [
              desc='Shutdown Qtile'
              ),
          Key(["control", "shift"], "e",
-             lazy.spawn(myTerm+" sudo -S pm-suspend"),
+             lazy.spawn(myTerm+" sudo -S ls -l"),
              desc='Doom Emacs'
              ),
          Key([mod, "shift"], "s",
-             lazy.spawn(myTerm+"sudo -S ls -l")
+             lazy.spawn("i3lock -ufc 000000")
              ),
          ### Switch focus to specific monitor (out of three)
          Key([mod], "w",
@@ -85,6 +85,14 @@ keys = [
              ),
          Key([mod, "control"], "j",
              lazy.layout.section_down(),
+             desc='Move down a section in treetab'
+             ),
+         Key([mod, "control"], "i",
+             lazy.layout.move_up(),
+             desc='Move down a section in treetab'
+             ),
+         Key([mod, "control"], "l",
+             lazy.layout.move_down(),
              desc='Move down a section in treetab'
              ),
          ### Window controls
@@ -165,9 +173,13 @@ keys = [
              lazy.spawn("./.dmenu/dmenu-surfraw.sh"),
              desc='Dmenu surfraw script'
              ),
-         Key(["mod1", "control"], "t",
-             lazy.spawn("./.dmenu/dmenu-trading.sh"),
-             desc='Dmenu trading programs script'
+        # Key(["mod1", "control"], "t",
+        #     lazy.spawn("./.dmenu/dmenu-trading.sh"),
+        #     desc='Dmenu trading programs script'
+        #     ),
+	 Key(["mod1", "control"], "t",
+             lazy.spawn("thunar trash:///"),
+             desc='Open Trash'
              ),
          ### My applications launched with SUPER + ALT + KEY
          Key([mod, "mod1"], "b",
@@ -187,15 +199,16 @@ keys = [
              desc='lynx browser'
              ),
          Key([mod, "mod1"], "n",
-             lazy.spawn("GTK_THEME=Adwaita:dark nautilus"),
+             lazy.spawn("gnome-todo"),
+             desc='Take Notes'
              ),
          Key([mod, "mod1"], "r",
-             lazy.spawn(myTerm+" -e rtv"),
-             desc='reddit terminal viewer'
+             lazy.spawn("teamviewer"),
+             desc='teamviewer'
              ),
          Key([mod, "mod1"], "e",
-             lazy.spawn(myTerm+" -e neomutt"),
-             desc='neomutt'
+             lazy.spawn("/usr/share/sangfor/EasyConnect/EasyConnect"),
+             desc='EasyConnect'
              ),
          Key([mod, "mod1"], "m",
              lazy.spawn(myTerm+" -e sh ./scripts/toot.sh"),
@@ -206,15 +219,15 @@ keys = [
              desc='Microsoft Teams'
              ),
          Key([mod, "mod1"], "f",
-             lazy.spawn(myTerm+" -e sh ./.config/vifm/scripts/vifmrun"),
-             desc='vifm'
+             lazy.spawn("flameshot"),
+             desc='flameshot'
              ),
          Key([mod, "mod1"], "j",
              lazy.spawn(myTerm+" -e joplin"),
              desc='joplin'
              ),
          Key([mod, "mod1"], "c",
-             lazy.spawn("/home/kevin/Downloads/pycharm-community-2020.3.3/bin/pycharm.sh"),
+             lazy.spawn("sudo /home/kevin/Desktop/kevin/pycharm-community-2020.3.3/bin/pycharm.sh"),
              desc='Pycharm'
              ),
          Key([mod, "mod1"], "p",
@@ -230,16 +243,20 @@ keys = [
             # desc='ncpamixer'
             # ),
          Key([mod, "mod1"], "a",
-             lazy.spawn("atom"),
+             lazy.spawn("sudo atom --no-sandbox"),
              desc='Atom Editor'
              ),
          Key([mod, "mod1"], "g",
              lazy.spawn("gazebo"),
              desc='gazebo'
              ),
-         Key([mod, "mod1"], "v",
+	 Key([mod, "mod1"], "v",
              lazy.spawn("vmware"),
              desc='vmware'
+             ),
+         Key([mod, "mod1"], "w",
+             lazy.spawn("wps"),
+             desc='wps'
              ),
 
 	# Audio
@@ -256,10 +273,10 @@ keys = [
 
 
 group_names = [(" ", {'layout': 'monadtall'}),               
-               (" ", {'layout': 'monadtall'}),
+               (" ", {'layout': 'ratiotile'}),
                (" ", {'layout': 'monadtall'}),
                (" ", {'layout': 'monadtall'}),
-               (" ", {'layout': 'monadtall'}),
+               (" ", {'layout': 'zoomy'}),
                (" ", {'layout': 'monadtall'}),
                (" ", {'layout': 'monadtall'}),
                (" ", {'layout': 'treetab'}),
@@ -291,7 +308,7 @@ layouts = [
     layout.Tile(shift_windows=True, **layout_theme),
     layout.Stack(num_stacks=2),
     layout.TreeTab(
-         font = "Ubuntu",
+         font = "UbuntuMono Nerd Font",
          fontsize = 10,
          sections = ["FIRST", "SECOND"],
          section_fontsize = 11,
@@ -334,16 +351,16 @@ def get_my_net():
   datanet1=res[0]
   datanet2=res[1]
   
-  import subprocess
-  datawifi=subprocess.Popen(["nmcli","-g","general.state","device","show","wlan0"],stdout=subprocess.PIPE).communicate()
-  datawifip=datawifi[0].decode("utf-8");
-  res2 = datawifip.split()
-  datawifi1=res2[0]
-  datawifi2=res2[1]
+  #import subprocess
+  #datawifi=subprocess.Popen(["nmcli","-g","general.state","device","show","wlan0"],stdout=subprocess.PIPE).communicate()
+  #datawifip=datawifi[0].decode("utf-8");
+  #res2 = datawifip.split()
+  #datawifi1=res2[0]
+  #datawifi2=res2[1]
   if datanet2=="(connected)":
     setdevice=("eth0","")
-  elif datawifi2=="(connected)":
-    setdevice=("wlan0","")
+  #elif datawifi2=="(connected)":
+  #  setdevice=("wlan0","")
   else:
     setdevice=("","睊   ")
   return setdevice
@@ -427,7 +444,7 @@ def init_widgets_list():
                        fontsize = 37
                        ),
               widget.TextBox(
-                       text = " ﴑ",
+                       text = "ﴑ",
                        font = 'UbuntuMono Nerd Font',
                        fontsize = 19,
                        padding = 0,
@@ -576,7 +593,7 @@ def init_widgets_list():
                        padding = 3,
                        foreground = colors[0],
                        background = colors2[3],
-                       format = '%d/%m/%Y - %H:%M '
+                       format = '%d/%m/%Y - %H:%M:%S '
                        ),
               widget.Sep(
                        linewidth = 0,
