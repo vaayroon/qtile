@@ -31,16 +31,16 @@ Clone repository:
 
   Change default terminal:
   Edit config file
-    ```
-    nano ~/.config/qtile/config.py
-    ```
+  ```
+  nano ~/.config/qtile/config.py
+  ```
   and replace "myTerm = "/usr/bin/qterminal" by your terminal, fo example: "/usr/bin/gnome-terminal"
 
 Install qtile (http://docs.qtile.org/en/latest/manual/install/):
   I use to install qtile as following:
-    ```
-    pip install qtile
-    ```
+  ```
+  pip install qtile
+  ```
     
 Test it with Xephyr ($ apt-get install xserver-xephyr):
   ```
