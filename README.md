@@ -11,7 +11,11 @@ Install dependencies:
 Install ubuntu nerd font:
 ```
 wget https://github.com/ryanoasis/nerd-fonts/releases/download/v2.1.0/UbuntuMono.zip
+```
+```
 unzip UbuntuMono.zip -d UbuntuMono
+```
+```
 mv UbuntuMono /usr/share/fonts
 ```
 
@@ -20,6 +24,8 @@ mv UbuntuMono /usr/share/fonts
 Clone repository:
   ```
   cd ~/.config
+  ```
+  ```
   git clone git://github.com/vaayroon/qtile.git
   ```
 
