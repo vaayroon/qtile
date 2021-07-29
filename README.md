@@ -7,12 +7,14 @@ Install dependencies:
   ```
   sudo apt install xorg python3-xcffib python3-pip python3-cairocffi libcairo2 lightdm python3-psutil
   ```
-  Install ubuntu nerd font:
-    ```
+  
+Install ubuntu nerd font:
+```
 wget https://github.com/ryanoasis/nerd-fonts/releases/download/v2.1.0/UbuntuMono.zip
 unzip UbuntuMono.zip -d UbuntuMono
 mv UbuntuMono /usr/share/fonts
-    ```  
+```
+
   Install the terminal you are gonna use.
 
 Clone repository:
