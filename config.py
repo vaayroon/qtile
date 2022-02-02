@@ -5,9 +5,9 @@ import socket
 import subprocess
 from re import sub
 from subprocess import Popen, PIPE
-from libqtile.config import Key, Screen, Group, Drag, Click
+from libqtile.config import Key, Screen, Group, Drag, Click, Match
 from libqtile.command import lazy
-from libqtile import layout, bar, widget, hook
+from libqtile import layout, bar, widget, hook, qtile
 from libqtile.lazy import lazy
 from typing import List  # noqa: F401
 
@@ -26,7 +26,7 @@ webtext=" "
 keys = [
          ### The essentials
          Key([mod], "Return",
-             lazy.spawn("qterminal"),
+             lazy.spawn('qterminal'),
              desc='Launches My Terminal'
              ),
          Key([mod, "shift"], "Return",
@@ -79,20 +79,12 @@ keys = [
              desc='Move focus to prev monitor'
              ),
          ### Treetab controls
-         Key([mod, "control"], "k",
+         Key([mod, "control"], "j",
              lazy.layout.section_up(),
              desc='Move up a section in treetab'
              ),
-         Key([mod, "control"], "j",
+         Key([mod, "control"], "k",
              lazy.layout.section_down(),
-             desc='Move down a section in treetab'
-             ),
-         Key([mod, "control"], "i",
-             lazy.layout.move_up(),
-             desc='Move down a section in treetab'
-             ),
-         Key([mod, "control"], "l",
-             lazy.layout.move_down(),
              desc='Move down a section in treetab'
              ),
          ### Window controls
@@ -185,14 +177,14 @@ keys = [
          Key([mod, "mod1"], "b",
              #lazy.spawn("tabbed -r 2 surf -pe x '.surf/html/homepage.html'"),
              #desc='lynx browser'
-	     lazy.spawn("firefox --new-window  www.google.com"),
+	     lazy.spawn("firefox --new-window www.duckduckgo.com"),
              ),
-         #Key([], "XF86Explorer", lazy.spawn("firefox --new-window  www.google.com")),
+         #Key([], "XF86Explorer", lazy.spawn("firefox --new-window  www.duckduckgo.com")),
 
          #Key([], "XF86HomePage", lazy.spawn("thunar")),
 	 Key([mod, "mod1"], "d", lazy.spawn("thunar")),
 
-	 #Key([], "XF86Mail", lazy.spawn("gnome-control-center")),
+	 #Key([], "XF86Mail", lazy.spawn("gnome-control-wcenter")),
 
          Key([mod, "mod1"], "l",
              lazy.spawn("firefox --private-window"),
@@ -206,13 +198,17 @@ keys = [
              lazy.spawn("teamviewer"),
              desc='teamviewer'
              ),
+         #Key([mod, "mod1"], "e",
+         #    lazy.spawn("/usr/share/sangfor/EasyConnect/EasyConnect"),
+         #    desc='EasyConnect'
+         #    ),
          Key([mod, "mod1"], "e",
-             lazy.spawn("/usr/share/sangfor/EasyConnect/EasyConnect"),
-             desc='EasyConnect'
+             lazy.spawn("spotify"),
+             desc='Spotify'
              ),
          Key([mod, "mod1"], "m",
-             lazy.spawn(myTerm+" -e sh ./scripts/toot.sh"),
-             desc='toot mastodon cli'
+             lazy.spawn("xfce4-settings-manager"),
+             desc='Settings Manager'
              ),
          Key([mod, "mod1"], "t",
              lazy.spawn("teams"),
@@ -223,8 +219,8 @@ keys = [
              desc='flameshot'
              ),
          Key([mod, "mod1"], "j",
-             lazy.spawn(myTerm+" -e joplin"),
-             desc='joplin'
+             lazy.spawn("azuredatastudio"),
+             desc='Azure'
              ),
          Key([mod, "mod1"], "c",
              lazy.spawn("sudo /home/kevin/Desktop/kevin/pycharm-community-2020.3.3/bin/pycharm.sh"),
@@ -235,8 +231,8 @@ keys = [
              desc='Volume Control Utility'
              ),
          Key([mod, "mod1"], "s",
-             lazy.spawn("xfce4-settings-manager"),
-             desc='Settings Manager'
+             lazy.spawn("code"),
+             desc='Visual Studio Code'
              ),
          #Key([mod, "mod1"], "a",
             # lazy.spawn(myTerm+" -e ncpamixer"),
@@ -247,8 +243,12 @@ keys = [
              desc='Atom Editor'
              ),
          Key([mod, "mod1"], "g",
-             lazy.spawn("gazebo"),
-             desc='gazebo'
+             lazy.spawn("google-chrome --new-window www.duckduckgo.com --incognito"),
+             desc='Chrome'
+             ),
+         Key([mod, "mod1"], "o",
+             lazy.spawn("microsoft-edge --new-window www.duckduckgo.com --inprivate"),
+             desc='Opera'
              ),
 	 Key([mod, "mod1"], "v",
              lazy.spawn("vmware"),
@@ -285,7 +285,8 @@ group_names = [(" ", {'layout': 'monadtall'}),
 groups = [Group(name, **kwargs) for name, kwargs in group_names]
 
 for i, (name, kwargs) in enumerate(group_names, 1):
-    keys.append(Key([mod], str(i), lazy.group[name].toscreen()))        # Switch to another group
+    keys.append(Key([mod], str(i), lazy.group[name].toscreen(toggle=True))) #fix toggle in qtile from to 0.18
+    #keys.append(Key([mod], str(i), lazy.group[name].toscreen()))        # Switch to another group
     keys.append(Key([mod, "shift"], str(i), lazy.window.togroup(name))) # Send current window to another group
 
 layout_theme = {"border_width": 2,
@@ -439,6 +440,34 @@ def init_widgets_list():
               widget.TextBox(
                        text = '',
                        background = colors[0],
+                       foreground = colors2[4],
+                       padding = -2,
+                       fontsize = 37
+                       ),
+              widget.TextBox(
+                       text = ": ",
+                       padding = 0,
+                       foreground = colors[0],
+                       background = colors2[4],
+                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(myTerm + ' -e sudo apt update -name virtual-shell -title apt')},
+                       fontsize = 17
+                       ),
+	      widget.CheckUpdates(
+                       foreground = colors[0],
+		       background = colors2[4],
+		       colour_have_updates = colors[0],
+		       colour_no_updates = colors[0],
+		       no_update_string = 'UpToDate',
+		       display_format = 'Updates: {updates}',
+		       update_interval = 1800,
+                       padding = 5,
+                       mouse_callbacks = {'Button2': lambda : qtile.cmd_spawn(myTerm + ' -e sudo apt upgrade -name virtual-shell -title apt')},
+		       distro = 'Debian',
+		       #custom_command = 'sudo apt update > /dev/null ; apt-show-versions -u -b'
+		       ),
+              widget.TextBox(
+                       text = '',
+                       background = colors2[4],
                        foreground = colors2[3],
                        padding = -2,
                        fontsize = 37
@@ -451,10 +480,12 @@ def init_widgets_list():
                        foreground = colors[0],
                        background = colors2[3]
                        ),
-              widget.BitcoinTicker(
+              widget.CryptoTicker(
               	       currency="EUR",
+		       symbol="€",
                        foreground = colors[0],
                        background = colors2[3],
+                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(myTerm + ' -e /home/kevin/go/bin/cointop -name virtual-shell -title cointop')},
                        padding = 5
                        ),
               widget.TextBox(
@@ -476,6 +507,7 @@ def init_widgets_list():
                        background = colors2[4],
                        threshold = 90,
                        tag_sensor = "Core 0", #Tdie
+                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn('xfce4-sensors')},
                        padding = 2
                        ),
 
@@ -496,7 +528,8 @@ def init_widgets_list():
                        foreground = colors[0],
                        background = colors2[4],
                        threshold = 90,
-                       tag_sensor = "temp1", #Tdie
+                       tag_sensor = 'nouveau-1', #Tdie
+                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn('xfce4-sensors')},
                        padding = 2
                        ),
               widget.TextBox(
@@ -516,7 +549,7 @@ def init_widgets_list():
               widget.Memory(
                        foreground = colors[0],
                        background = colors2[3],
-                       mouse_callbacks = {'Button1': lambda qtile: qtile.cmd_spawn(myTerm + ' -e htop')},
+                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(myTerm + ' -e htop -name virtual-shell -title htop')},
                        padding = 5
                        ),
               widget.TextBox(
@@ -527,10 +560,11 @@ def init_widgets_list():
                        fontsize = 37
                        ),
               widget.TextBox(
-					   text=webtext,
+		       text=webtext,
                        foreground = colors[0],
                        background = colors2[4],
                        padding = 5,
+                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(myTerm + ' -e ip a -name virtual-shell -title ip')},
                        fontsize = 15
                        ),
               widget.Net(
@@ -554,9 +588,10 @@ def init_widgets_list():
                        foreground = colors[0],
                        background = colors2[3],
                        fontsize = 20,
+                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn('pavucontrol')},
                        padding = 9
                        ),
-              widget.Volume(                       
+              widget.Volume(
                        #cardid = 2,
                        #device = 'hw:2',
                        foreground = colors[0],
@@ -593,6 +628,7 @@ def init_widgets_list():
                        padding = 3,
                        foreground = colors[0],
                        background = colors2[3],
+                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn('gnome-calendar')},
                        format = '%d/%m/%Y - %H:%M:%S '
                        ),
               widget.Sep(
@@ -605,21 +641,35 @@ def init_widgets_list():
                        background = colors[0],
                        padding = 5
                        ),
+	      #widget.KhalCalendar(
+              #         foreground = colors[0],
+              #         background = colors2[3]
+	      #	       ),
               ]
     return widgets_list
 
 def init_widgets_screen1():
     widgets_screen1 = init_widgets_list()
+    del widgets_screen1[31]
     return widgets_screen1                       # Slicing removes unwanted widgets on Monitors 1,3
 
 def init_widgets_screen2():
     widgets_screen2 = init_widgets_list()
+    #del widgets_screen2[31]
     return widgets_screen2                       # Monitor 2 will display all widgets in widgets_list
+
+def init_widgets_screen3():
+    widgets_screen3 = init_widgets_list()
+    #del widgets_screen3[31]
+    return widgets_screen3                       # Monitor 2 will display all widgets in widgets_list
+
+#Single monitor support only
+#def init_screens():
+#    return [Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20))]
 
 def init_screens():
     return [Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20)),
-            Screen(top=bar.Bar(widgets=init_widgets_screen2(), opacity=1.0, size=20)),
-            Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20))]
+            Screen(top=bar.Bar(widgets=init_widgets_screen2(), opacity=1.0, size=20))]
 
 if __name__ in ["config", "__main__"]:
     screens = init_screens()
@@ -643,20 +693,23 @@ bring_front_click = False
 cursor_warp = False
 
 floating_layout = layout.Floating(float_rules=[
-    {'wmclass': 'confirm'},
-    {'wmclass': 'dialog'},
-    {'wmclass': 'download'},
-    {'wmclass': 'error'},
-    {'wmclass': 'file_progress'},
-    {'wmclass': 'notification'},
-    {'wmclass': 'splash'},
-    {'wmclass': 'toolbar'},
-    {'wmclass': 'confirmreset'},  # gitk
-    {'wmclass': 'makebranch'},  # gitk
-    {'wmclass': 'maketag'},  # gitk
-    {'wname': 'branchdialog'},  # gitk
-    {'wname': 'pinentry'},  # GPG key password entry
-    {'wmclass': 'ssh-askpass'},  # ssh-askpass
+    *layout.Floating.default_float_rules,
+    Match(wm_class='confirm'),
+    Match(wm_class='dialog'),
+    Match(wm_class='download'),
+    Match(wm_class='error'),
+    Match(wm_class='file_progress'),
+    Match(wm_class='notification'),
+    Match(wm_class='splash'),
+    Match(wm_class='toolbar'),
+    Match(title='virtual-shell'),
+    Match(title='Volume Control'),
+    Match(wm_class='confirmreset'),  # gitk
+    Match(wm_class='makebranch'),  # gitk
+    Match(wm_class='maketag'),  # gitk
+    Match(title='branchdialog'),  # gitk
+    Match(title='pinentry'),  # GPG key password entry /  wname
+    Match(wm_class='ssh-askpass'),  # ssh-askpass
 ])
 auto_fullscreen = True
 focus_on_window_activation = "smart"
