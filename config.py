@@ -22,6 +22,7 @@ webtext=" "
 #xsetroot -cursor_name left_ptr -solid '#000000'  : solid black background
 # run "xbindkeys --multikey" in home folder to check keybinds 
 # suspend session --> sudo pm-suspend
+# /home/kevin/.local/bin/qtile cmd-obj -o cmd -f restart
 
 keys = [
          ### The essentials
@@ -242,6 +243,10 @@ keys = [
              lazy.spawn("sudo atom --no-sandbox"),
              desc='Atom Editor'
              ),
+         Key([mod, "mod1"], "i",
+             lazy.spawn("/usr/pgadmin4/bin/pgadmin4"),
+             desc='PgAdmin4'
+             ),
          Key([mod, "mod1"], "g",
              lazy.spawn("google-chrome --new-window www.duckduckgo.com --incognito"),
              desc='Chrome'
@@ -325,7 +330,7 @@ layouts = [
     layout.Floating(**layout_theme)
 ]
 
-colors = [["#000000", "#000000"], # panel background#292d3e
+colors =  [["#000000", "#000000"], # panel background#292d3e
           ["#434758", "#434758"], # background for current screen tab
           ["#ffffff", "#ffffff"], # font color for group names
           ["#80b2ea", "#80b2ea"], # border line color for current tab ff5555
@@ -347,11 +352,11 @@ prompt = "{0}@{1}: ".format(os.environ["USER"], socket.gethostname())
 def get_my_net():
   import subprocess
   datanet=subprocess.Popen(["nmcli","-g","general.state","device","show","eth0"],stdout=subprocess.PIPE).communicate()
-  datanetp=datanet[0].decode("utf-8");
+  datanetp=datanet[0].decode("utf-8")
   res = datanetp.split()
   datanet1=res[0]
   datanet2=res[1]
-  
+
   #import subprocess
   #datawifi=subprocess.Popen(["nmcli","-g","general.state","device","show","wlan0"],stdout=subprocess.PIPE).communicate()
   #datawifip=datawifi[0].decode("utf-8");
@@ -365,6 +370,18 @@ def get_my_net():
   else:
     setdevice=("","睊   ")
   return setdevice
+
+def get_my_net_ip():
+	import subprocess
+	datanet=subprocess.Popen(["ip","route","show","dev","eth0"],stdout=subprocess.PIPE)
+	grepdatanet=subprocess.Popen(["grep","linkdown"], stdin=datanet.stdout, stdout=subprocess.PIPE).communicate()
+	grepdatanetp=grepdatanet[0].decode("utf-8")
+
+	if grepdatanetp=="":
+		setdevice=("eth0","")
+	else:
+		setdevice=("","睊   ")
+	return setdevice
 
 #def get_my_gpu_temp():
  # import subprocess
@@ -386,7 +403,8 @@ widget_defaults = dict(
 )
 extension_defaults = widget_defaults.copy()
 
-a=get_my_net()
+#a=get_my_net()
+a=get_my_net_ip()
 webdevice=a[0]
 webtext=a[1]
 
@@ -449,7 +467,7 @@ def init_widgets_list():
                        padding = 0,
                        foreground = colors[0],
                        background = colors2[4],
-                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(myTerm + ' -e sudo apt update -name virtual-shell -title apt')},
+                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(myTerm + ' -e sudo apt upgrade -name apt -title virtual-shell')},
                        fontsize = 17
                        ),
 	      widget.CheckUpdates(
@@ -461,8 +479,8 @@ def init_widgets_list():
 		       display_format = 'Updates: {updates}',
 		       update_interval = 1800,
                        padding = 5,
-                       mouse_callbacks = {'Button2': lambda : qtile.cmd_spawn(myTerm + ' -e sudo apt upgrade -name virtual-shell -title apt')},
-		       distro = 'Debian',
+                       mouse_callbacks = {'Button2': lambda : qtile.cmd_spawn(myTerm + ' -e sudo apt update ; apt-show-versions -u -b')},
+		       #distro = 'Debian',
 		       #custom_command = 'sudo apt update > /dev/null ; apt-show-versions -u -b'
 		       ),
               widget.TextBox(
@@ -485,7 +503,8 @@ def init_widgets_list():
 		       symbol="€",
                        foreground = colors[0],
                        background = colors2[3],
-                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(myTerm + ' -e /home/kevin/go/bin/cointop -name virtual-shell -title cointop')},
+                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(myTerm + ' -e /home/kevin/go/bin/cointop -name cointop -title virtual-shell')},
+                       #mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(' sleep 0.5; xdotool search --name "virtual-shell" set_window --class "virtual-shell"')},
                        padding = 5
                        ),
               widget.TextBox(
@@ -549,7 +568,7 @@ def init_widgets_list():
               widget.Memory(
                        foreground = colors[0],
                        background = colors2[3],
-                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(myTerm + ' -e htop -name virtual-shell -title htop')},
+                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(myTerm + ' -e htop -name htop -title virtual-shell')},
                        padding = 5
                        ),
               widget.TextBox(
@@ -564,7 +583,7 @@ def init_widgets_list():
                        foreground = colors[0],
                        background = colors2[4],
                        padding = 5,
-                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(myTerm + ' -e ip a -name virtual-shell -title ip')},
+                       mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(myTerm + ' -e ip a -name ip-net -title virtual-shell')},
                        fontsize = 15
                        ),
               widget.Net(
@@ -641,16 +660,31 @@ def init_widgets_list():
                        background = colors[0],
                        padding = 5
                        ),
+	      #All that comes after widget.Systray will be deleted in "delete_list_from_to()"
+	      #You have to call the function in the init_widgets_screenx() you want to disable
 	      #widget.KhalCalendar(
               #         foreground = colors[0],
               #         background = colors2[3]
 	      #	       ),
+	      #widget.CapsNumLockIndicator(
+              #         mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn('numlockx on')},
+              #         foreground = colors[2],
+              #         background = colors[0]
+	     # 	       ),
               ]
     return widgets_list
 
+def delete_list_from_to(target_list, object_name_from):
+        for index, widdgets in enumerate(target_list):
+                if widdgets.name==object_name_from:
+                        del target_list[index:]
+                        return target_list
+        return target_list
+
 def init_widgets_screen1():
     widgets_screen1 = init_widgets_list()
-    del widgets_screen1[31]
+    widgets_screen1 = delete_list_from_to(widgets_screen1, "systray")
+    #del widgets_screen1[31:]
     return widgets_screen1                       # Slicing removes unwanted widgets on Monitors 1,3
 
 def init_widgets_screen2():
@@ -703,6 +737,8 @@ floating_layout = layout.Floating(float_rules=[
     Match(wm_class='splash'),
     Match(wm_class='toolbar'),
     Match(title='virtual-shell'),
+    Match(func=lambda c: bool(c.is_transient_for())),
+    Match(title='Calendar'),
     Match(title='Volume Control'),
     Match(wm_class='confirmreset'),  # gitk
     Match(wm_class='makebranch'),  # gitk
