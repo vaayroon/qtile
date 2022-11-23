@@ -75,6 +75,46 @@ Select windows manager and login:
 
 ![Qtile](https://github.com/vaayroon/qtile/blob/main/.screenshots/select_manager.png)
 
+## Optional widget tools
+
+In some widgets there is defined some tools to be launched when clicked. The tools are optional but in order for them to work you need to install the following packages:
+``` 
+sudo apt install i3lock htop glances gnome-calendar xfce4-sensors-plugin xfce4-settings apt-show-versions
+```
+
+Another Optial tool is **[cointop](https://docs.cointop.sh/)**. A good application for tracking and monitoring cryptocurrency coin stats in real-time
+Before installing it we will need **[go](https://go.dev/)** in order to be able to install cointop.
+
+To install go there are 2 ways:
+
+- The simple way is to install throught apt.
+```
+sudo apt install golang
+```
+- The other way is to install from **[source](https://go.dev/dl/)**.
+  - Remove any previuos Go installation:
+    ```
+    sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.19.3.linux-amd64.tar.gz
+    ```
+  - Add $HOME/go/bin to the PATH environment variable:
+    ```
+    export PATH=$PATH:$HOME/go/bin
+    ``` 
+  - Verify that you've installed Go:
+    ```
+    go version
+    ```    
+Now we can install cointop(as non root user):
+```
+go install github.com/cointop-sh/cointop@latest
+```
+By default he cointop executable will be under your $HOME/go/bin/ path, so you will need to add that path to the $PATH enviroment variable if not already.
+```
+export PATH=$PATH:$HOME/go/bin
+$HOME/go/bin/cointop
+```
+
+
 ## Audio
 ## Screens
 ## Notifications
