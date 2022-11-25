@@ -114,10 +114,149 @@ export PATH=$PATH:$HOME/go/bin
 $HOME/go/bin/cointop
 ```
 
-
 ## Audio
+
+For Audio we need
+**[pulseaudio](https://wiki.archlinux.org/index.php/PulseAudio)**,
+and a graphical program to control audio like
+**[pavucontrol](https://www.archlinux.org/packages/extra/x86_64/pavucontrol/)**,
+because we don't have keybindings for that yet:
+
+```bash
+sudo apt install -y pulseaudio pavucontrol
+```
+
+For a better CLI experience and easy to control our volume throught keybinds we will need
+**[pamixer](https://github.com/cdemoulins/pamixer)**
+
+```bash
+sudo apt install -y pamixer
+```
+
+Now you can set up keybindings for pulseaudio, open Qtile's config.py and add these keys if not already or uncomment:
+```python
+# Audio
+Key([], "XF86AudioMute", lazy.spawn("amixer -q set Master toggle")),
+Key([], "XF86AudioLowerVolume", lazy.spawn("amixer -c 2 sset Master 1- unmute")),
+Key([], "XF86AudioRaiseVolume", lazy.spawn("amixer -c 2 sset Master 1+ unmute")),
+```
+
+Now you can control your volume and toggle between mute/unmute,
+but you would probably also like to control the media player like play/pause, next/previous song, etc. So we need
+**[playerctl](https://github.com/altdesktop/playerctl)**.
+
+```bash
+sudo apt install -y playerctl
+```
+
+
 ## Screens
+
+If we have multiple monitors, you surely wants to use them, so need
+**[xrandr](https://xorg.freedesktop.org/wiki/)**. To install run:
+```bash
+sudo apt install -y x11-xserver-utils
+```
+
+By default the configuration of multiple monitor if  0x0, so we need to specify the position for each output.
+If we wanna do graphically we need
+**[arandr](https://christian.amsuess.com/tools/arandr/)**
+```bash
+sudo apt install -y arandr
+```
+
+If you're on a laptop, you might also want to control the brightness of your screen, so you need to install
+**[brightnessctl](https://github.com/Hummer12007/brightnessctl)**
+```bash
+sudo apt install -y brightnessctl
+```
+Now you can set up keybindings to control the brightness of your laptop screen.
+Open the Qtile config file and add or uncomment if already set:
+```python
+#Laptop Screen Brightness
+Key([], "XF86MonBrightnessUp", lazy.spawn("brightnessctl set +10%")),
+Key([], "XF86MonBrightnessDown", lazy.spawn("brightnessctl set 10%-")),
+```
+
+## Systray
+
+By default Qtile have a system tray, but at this point there should be nothing running on it.
+You can run the following to check systray:
+```bash
+udiskie -t &
+nm-applet &
+volumeicon &
+cbatticon &
+```
+**[udiskie](https://github.com/coldfix/udiskie)** is a front-end that allows to manage removable media such as CDs or flash drives from userspace.
+**[nm-applet](https://gitlab.gnome.org/GNOME/network-manager-applet)** is a front-end Tray applet and an advanced network connection editor.
+**[volumeicon](https://github.com/Maato/volumeicon)** is a lightweight volume control applet with support for global keybindings.
+**[cbatticon](https://github.com/valr/cbatticon)** is a lightweight and fast battery icon that sits in your system tray.
+
+To install them:
+```bash
+sudo apt install cbatticon volumeicon-alsa udiskie network-manager-gnome -y
+```
+To run when start Qtile, add the commands to the Qtile autostart.sh ```vim ~/.config/qtile/autostart.sh```
+
 ## Notifications
+If you wanna have Desktop notifications, you need to install
+**[libnotify](https://salsa.debian.org/gnome-team/libnotify)**
+**[notification-daemon](https://salsa.debian.org/gnome-team/notification-daemon)**:
+```bash
+sudo apt install libnotify-bin notification-daemon -y
+```
+
+We need to create a new
+**[D-Bus](https://wiki.archlinux.org/title/D-Bus)** service:
+```bash
+sudo nano /usr/share/dbus-1/services/org.freedesktop.Notifications.service
+```
+And add this lines to the file:
+```bash
+[D-BUS Service]
+Name=org.freedesktop.Notifications
+Exec=/usr/lib/notification-daemon-1.0/notification-daemon
+```
+
+You can test it:
+```bash
+notify-send "Notification Test"
+```
+
+
 ## Themes
+
+Currently I am using
+**[Material-Black-Blueberry](https://www.gnome-look.org/p/1316887/)** ad default theme and
+**[Material-Black-Blueberry-Suru](https://www.pling.com/p/1333360/)** as default icons.
+
+You can find other GTK themes on this
+**[page](https://www.gnome-look.org/browse/cat/135/)**.
+
+After Downloads the .zip files this is what you have to do:
+```bash
+cd ~/Downloads
+mkdir -p Material-Black-Blueberry
+unzip Material-Black-Blueberry-4.0_2.0.zip
+mv Material-Black-Blueberry-4.0/* Material-Black-Blueberry
+unzip Material-Black-Blueberry-Suru_1.9.3.zip
+```
+Then move the unzipped files to make the theme and icons available
+```bash
+cd ~/Downloads
+sudo mv Material-Black-Blueberry /usr/share/themes
+sudo mv Material-Black-Blueberry-Suru /usr/share/icons
+```
+
+Now edit ~/.config/gtk-3.0/settings.ini and ~/.config/gtk-3.0/settings.ini
+```touch ~/.config/gtk-3.0/settings.ini && ~/.config/gtk-4.0/settings.ini```
+by adding these lines:
+```bash
+gtk-theme-name = "Material-Black-Blueberry"
+gtk-icon-theme-name = "Material-Black-Blueberry-Suru"
+```
+
+You need to log in again for the changes to take effect.
 
 In development
