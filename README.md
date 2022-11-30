@@ -186,7 +186,7 @@ You can run the following to check systray:
 udiskie -t &
 nm-applet &
 volumeicon &
-cbatticon &
+cbatticon -d -u 5 -r 3 -c "poweroff" -l 15 -o "xbacklight = 5" &
 ```
 **[udiskie](https://github.com/coldfix/udiskie)** is a front-end that allows to manage removable media such as CDs or flash drives from userspace.
 **[nm-applet](https://gitlab.gnome.org/GNOME/network-manager-applet)** is a front-end Tray applet and an advanced network connection editor.
@@ -198,6 +198,21 @@ To install them:
 sudo apt install cbatticon volumeicon-alsa udiskie network-manager-gnome -y
 ```
 To run when start Qtile, add the commands to the Qtile autostart.sh ```vim ~/.config/qtile/autostart.sh```
+
+By the time I am writing this guide I have had some problems with ***cbatticon*** because by default it use the
+first one that is reported by sysfs. You can check your setup with ***--list-power-supplies or -d***
+```bash
+cbatticon -p
+```
+
+For me the second one reported (***BATT***) by the command was the correct, so instead of writing
+```bash
+cbatticon -d -u 5 -r 3 -c "poweroff" -l 15 -o "xbacklight = 5" &
+```
+to ***autostart.sh**** file, write the following
+```bash
+cbatticon -d -u 5 -r 3 -c "poweroff" -l 15 -o "xbacklight = 5" BATT &
+```
 
 ## Notifications
 If you wanna have Desktop notifications, you need to install
@@ -216,7 +231,7 @@ And add this lines to the file:
 ```bash
 [D-BUS Service]
 Name=org.freedesktop.Notifications
-Exec=/usr/lib/notification-daemon-1.0/notification-daemon
+Exec=/usr/lib/notification-daemon/notification-daemon
 ```
 
 You can test it:
@@ -253,10 +268,82 @@ Now edit ~/.config/gtk-3.0/settings.ini and ~/.config/gtk-3.0/settings.ini
 ```touch ~/.config/gtk-3.0/settings.ini && ~/.config/gtk-4.0/settings.ini```
 by adding these lines:
 ```bash
-gtk-theme-name = "Material-Black-Blueberry"
-gtk-icon-theme-name = "Material-Black-Blueberry-Suru"
+gtk-theme-name = Material-Black-Blueberry
+gtk-icon-theme-name = Material-Black-Blueberry-Suru
 ```
 
 You need to log in again for the changes to take effect.
+
+
+## Qt, tuned to KDE and LXQt
+By default GTK themes does not applied to Qt, tuned to KDE and LXQt programs,
+so in order have dark themes by default we need to install
+**[Kvantum](https://github.com/tsujan/Kvantum/tree/master/Kvantum)**
+```bash
+sudo apt install qt5-style-kvantum qt5-style-kvantum-themes
+```
+and configure it
+```bash
+echo "export QT_STYLE_OVERRIDE=kvantum" >> ~/.profile
+```
+
+
+## Lightdm theme
+While we are at it, we can also modified the theme of our session manager. so we need another greeter
+**[lightdm-webkit2-greeter](https://github.com/antergos/web-greeter)** and some themes
+**[lightdm-webkit-theme-aether](https://github.com/NoiSek/Aether)**.
+
+For both of them we have to install the ***STABLE VERSION***.
+For greeter we need some dependencies:
+```bash
+sudo apt install meson
+```
+then build
+```bash
+git clone https://github.com/Antergos/lightdm-webkit2-greeter.git /tmp/greeter
+cd /tmp/greeter/build
+git checkout ${LATEST_RELEASE_TAG} # eg. git checkout 2.2.5
+meson --prefix=/usr --libdir=lib ..
+ninja
+```
+and finally install
+```bash
+sudo ninja install
+```
+
+For Ather theme:
+``` bash
+cd /tmp
+git clone https://github.com/NoiSek/Aether.git
+cd /tmp/Aether
+git checkout ${LATEST_RELEASE_TAG} # eg. git checkout v2.2.2
+```
+and install it
+```bash
+sudo mkdir -p /usr/share/lightdm-webkit/themes/Aether
+cd /tmp
+sudo cp --recursive Aether/* /usr/share/lightdm-webkit/themes/Aether
+```
+
+Once we have both installed we need to configure them.
+
+Edit ```/etc/lightdm/lightdm.conf```:
+```bash
+[Seat:*]
+# ...
+# Uncomment this line and set this value
+greeter-session = lightdm-webkit2-greeter
+# ...
+```
+
+Edit ```/etc/lightdm/lightdm-webkit2-greeter.conf```:
+```bash
+[greeter]
+# ...
+webkit_theme = lightdm-webkit-theme-aether
+# ...
+``` 
+
+Reboot or logout and we are done.
 
 In development
