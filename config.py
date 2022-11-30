@@ -12,7 +12,7 @@ from libqtile.lazy import lazy
 from typing import List  # noqa: F401
 
 mod = "mod4"                                     # Sets mod key to SUPER/WINDOWS
-myTerm = "/usr/bin/kitty"                             # My terminal of choice
+myTerm = "/usr/bin/qterminal"                             # My terminal of choice
 # The Qtile config file location
 myConfig = "/home/kevin/.config/qtile/config.py"
 webdevice = " "
@@ -25,6 +25,7 @@ webtext = " "
 # run "xbindkeys --multikey" in home folder to check keybinds
 # suspend session --> sudo pm-suspend
 # /home/kevin/.local/bin/qtile cmd-obj -o cmd -f restart
+# arecord -l (To List audio devices) 
 
 keys = [
     # The essentials
@@ -273,16 +274,21 @@ keys = [
         desc='wps'
         ),
 
+    # Volume
+    Key([], "XF86AudioMute", lazy.spawn("pamixer --toggle-mute")),
+    Key([], "XF86AudioLowerVolume", lazy.spawn("pamixer --decrease 2")),
+    Key([], "XF86AudioRaiseVolume", lazy.spawn("pamixer --increase 2")),
     # Audio
-    # Key([], "XF86AudioMute", lazy.spawn("amixer -q set Master toggle")),
-    # Key([], "XF86AudioLowerVolume", lazy.spawn("amixer -c 2 sset Master 1- unmute")),
-    # Key([], "XF86AudioRaiseVolume", lazy.spawn("amixer -c 2 sset Master 1+ unmute")),
-    # Key([], "XF86AudioPlay", lazy.spawn("playerctl play-pause")),
-    #	 Key([], "XF86AudioNext", lazy.spawn("playerctl next")),
-    #	 Key([], "XF86AudioPrev", lazy.spawn("playerctl previous")),
-    #	 Key([], "XF86AudioStop", lazy.spawn("playerctl stop")),
-    #	# Extras
-    #	 Key([], "XF86Calculator", lazy.spawn("gnome-calculator")),
+    Key([], "XF86AudioPlay", lazy.spawn("playerctl play-pause")),
+    Key([], "XF86AudioNext", lazy.spawn("playerctl next")),
+    Key([], "XF86AudioPrev", lazy.spawn("playerctl previous")),
+    Key([], "XF86AudioStop", lazy.spawn("playerctl stop")),
+
+    #Laptop Screen Brightness
+    Key([], "XF86MonBrightnessUp", lazy.spawn("brightnessctl set +10%")),
+    Key([], "XF86MonBrightnessDown", lazy.spawn("brightnessctl set 10%-")),
+    # Extras
+    Key([], "XF86Calculator", lazy.spawn("gnome-calculator")),
 ]
 
 
@@ -389,14 +395,37 @@ def get_my_net():
 
 def get_my_net_ip():
     import subprocess
-    datanet = subprocess.Popen(
-        ["ip", "route", "show", "dev", "eth0"], stdout=subprocess.PIPE)
-    grepdatanet = subprocess.Popen(
-        ["grep", "linkdown"], stdin=datanet.stdout, stdout=subprocess.PIPE).communicate()
-    grepdatanetp = grepdatanet[0].decode("utf-8")
+    grepdatanetp = "none"
+    grepdatawifip = "none"
+
+    datanete = subprocess.Popen(
+        ["ip", "route", "show", "dev", "eth0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+
+    if datanete[1].decode("utf-8") == "":
+        datanet = subprocess.Popen(
+                ["ip", "route", "show", "dev", "eth0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        grepdatanet = subprocess.Popen(
+                ["grep", "linkdown"], stdin=datanet.stdout, stdout=subprocess.PIPE).communicate()
+        grepdatanetp = grepdatanet[0].decode("utf-8")
+
+    if grepdatanetp != "":
+        datawifie = subprocess.Popen(
+                ["ip", "route", "show", "dev", "wlan0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+
+        if datawifie[1].decode("utf-8") == "":
+            datawifi = subprocess.Popen(
+                    ["ip", "route", "show", "dev", "wlan0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            grepdatawifi = subprocess.Popen(
+                    ["grep", "linkdown"], stdin=datawifi.stdout, stdout=subprocess.PIPE).communicate()
+            grepdatawifip = grepdatawifi[0].decode("utf-8")
+
 
     if grepdatanetp == "":
         setdevice = ("eth0", "")
+    elif grepdatawifip == "":
+        setdevice = ("wlan0","")
     else:
         setdevice = ("", "睊   ")
     return setdevice
@@ -524,7 +553,7 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors2[3],
             mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
-                myTerm + ' -e /home/kevin/go/bin/cointop -name cointop -title virtual-shell')},
+                myTerm + ' -e /home/k3v1n/go/bin/cointop -name cointop -title virtual-shell')},
             #mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(' sleep 0.5; xdotool search --name "virtual-shell" set_window --class "virtual-shell"')},
             padding=5
         ),
@@ -546,7 +575,7 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors2[4],
             threshold=90,
-            tag_sensor="Core 0",  # Tdie
+            tag_sensor="Tctl",  # Tdie
             mouse_callbacks={
                 'Button1': lambda: qtile.cmd_spawn('xfce4-sensors')},
             padding=2
@@ -569,7 +598,7 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors2[4],
             threshold=90,
-            tag_sensor='nouveau-1',  # Tdie
+            tag_sensor='edge',  # Tdie
             mouse_callbacks={
                 'Button1': lambda: qtile.cmd_spawn('xfce4-sensors')},
             padding=2
@@ -608,7 +637,7 @@ def init_widgets_list():
             background=colors2[4],
             padding=5,
             mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
-                myTerm + ' -e ip a -name ip-net -title virtual-shell')},
+                myTerm + ' -e glances -name sys-monit -title virtual-shell')},
             fontsize=15
         ),
         widget.Net(
@@ -618,7 +647,9 @@ def init_widgets_list():
             format='{down} ↓↑ {up}',
             foreground=colors[0],
             background=colors2[4],
-            padding=5
+            padding=5,
+            mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
+                myTerm + ' -e glances -name sys-monit -title virtual-shell')}
         ),
         widget.TextBox(
             text='',
@@ -637,7 +668,7 @@ def init_widgets_list():
             padding=9
         ),
         widget.Volume(
-            #cardid = 2,
+            cardid = 1,
             #device = 'hw:2',
             foreground=colors[0],
             background=colors2[3],
@@ -765,9 +796,11 @@ cursor_warp = False
 floating_layout = layout.Floating(float_rules=[
     *layout.Floating.default_float_rules,
     Match(wm_class='confirm'),
+    Match(wm_class='wps'),
     Match(wm_class='dialog'),
     Match(wm_class='download'),
     Match(wm_class='error'),
+    Match(wm_class='gnome-calculator'),
     Match(wm_class='file_progress'),
     Match(wm_class='notification'),
     Match(wm_class='splash'),
