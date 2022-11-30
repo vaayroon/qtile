@@ -1,5 +1,16 @@
-# qtile-windown-manager
+# Set up Qtile and Settings
 My own modified tiling window manage
+
+# Table of Contents
+- [Kali Installation](#kali-installation)
+- [Optional widget tools](#optional-widget-tools)
+- [Audio](#audio)
+- [Screens](#screens)
+- [Systray](#systray)
+- [Notifications](#notifications)
+- [Themes](#themes)
+- [Qt, tuned to KDE and LXQt](#qt-tuned-to-kde-and-lxqt)
+- [Lightdm Theme](#lightdm-theme)
 
 ## Kali Installation
 Installation guide:
@@ -288,7 +299,7 @@ echo "export QT_STYLE_OVERRIDE=kvantum" >> ~/.profile
 ```
 
 
-## Lightdm theme
+## Lightdm Theme
 While we are at it, we can also modified the theme of our session manager. so we need another greeter
 **[lightdm-webkit2-greeter](https://github.com/antergos/web-greeter)** and some themes
 **[lightdm-webkit-theme-aether](https://github.com/NoiSek/Aether)**.
