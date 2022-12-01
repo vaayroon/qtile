@@ -307,7 +307,7 @@ While we are at it, we can also modified the theme of our session manager. so we
 For both of them we have to install the ***STABLE VERSION***.
 For greeter we need some dependencies:
 ```bash
-sudo apt install meson
+sudo apt install meson cmake libdbus-glib-1-dev liblightdm-gobject-dev libgtk-3-0 libwebkit2gtk-4.0-dev gettext
 ```
 then build
 ```bash
