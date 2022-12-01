@@ -575,7 +575,7 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors2[4],
             threshold=90,
-            tag_sensor="Tctl",  # Tdie
+            tag_sensor="Core 0",  # Tdie
             mouse_callbacks={
                 'Button1': lambda: qtile.cmd_spawn('xfce4-sensors')},
             padding=2
@@ -598,7 +598,7 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors2[4],
             threshold=90,
-            tag_sensor='edge',  # Tdie
+            tag_sensor='nouveau-1',  # Tdie
             mouse_callbacks={
                 'Button1': lambda: qtile.cmd_spawn('xfce4-sensors')},
             padding=2
@@ -806,6 +806,8 @@ floating_layout = layout.Floating(float_rules=[
     Match(wm_class='splash'),
     Match(wm_class='TeamViewer'),
     Match(wm_class='toolbar'),
+    Match(wm_class='Thunar'),
+    Match(wm_class='Vmware-modconfig'),
     Match(title='virtual-shell'),
     Match(func=lambda c: bool(c.is_transient_for())),
     Match(title='Calendar'),
