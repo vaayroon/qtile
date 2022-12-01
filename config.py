@@ -8,7 +8,6 @@ from subprocess import Popen, PIPE
 from libqtile.config import Key, Screen, Group, Drag, Click, Match
 from libqtile.command import lazy
 from libqtile import layout, bar, widget, hook, qtile
-from libqtile.lazy import lazy
 from typing import List  # noqa: F401
 
 mod = "mod4"                                     # Sets mod key to SUPER/WINDOWS
@@ -515,7 +514,7 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors2[4],
             mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
-                'qterminal -e --title virtual-shell sudo apt full-upgrade')},
+                myTerm + ' -e --title virtual-shell sudo apt full-upgrade')},
             fontsize=17
         ),
         widget.CheckUpdates(
@@ -524,13 +523,13 @@ def init_widgets_list():
             colour_have_updates=colors[0],
             colour_no_updates=colors[0],
             no_update_string='UpToDate',
-            display_format='Updates: {updates}',
+            display_format='{updates}',
             update_interval=1800,
             padding=5,
             #mouse_callbacks={'Button2': lambda: qtile.cmd_spawn(
             #myTerm + ' -e sudo apt update ; apt-show-versions -u -b')}
-            #distro = 'Debian',
-            custom_command = 'sudo apt update > /dev/null ; apt-show-versions -u -b'
+            distro = 'Debian'
+            #custom_command = 'sudo apt update > /dev/null ; apt-show-versions -u -b'
         ),
         widget.TextBox(
             text='',
@@ -743,7 +742,6 @@ def delete_list_from_to(target_list, object_name_from):
 
 def init_widgets_screen1():
     widgets_screen1 = init_widgets_list()
-    widgets_screen1 = delete_list_from_to(widgets_screen1, "systray")
     #del widgets_screen1[31:]
     # Slicing removes unwanted widgets on Monitors 1,3
     return widgets_screen1
@@ -751,6 +749,7 @@ def init_widgets_screen1():
 
 def init_widgets_screen2():
     widgets_screen2 = init_widgets_list()
+    widgets_screen2 = delete_list_from_to(widgets_screen2, "systray")
     #del widgets_screen2[31]
     # Monitor 2 will display all widgets in widgets_list
     return widgets_screen2
@@ -758,6 +757,7 @@ def init_widgets_screen2():
 
 def init_widgets_screen3():
     widgets_screen3 = init_widgets_list()
+    widgets_screen3 = delete_list_from_to(widgets_screen3, "systray")
     #del widgets_screen3[31]
     # Monitor 2 will display all widgets in widgets_list
     return widgets_screen3
