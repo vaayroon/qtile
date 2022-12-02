@@ -357,4 +357,69 @@ webkit_theme = lightdm-webkit-theme-aether
 
 Reboot or logout and we are done.
 
+# Configure shell
+
+## Install ZSH and Set up ZSH as default shell
+
+We are going to use
+**[ZSH](https://www.zsh.org/)**
+as default shell.
+
+First we need to install it:
+```bash
+sudo apt install zsh
+```
+
+and then set up as default shell for our user:
+```bash
+usermod --shell /usr/bin/zsh ${YOUR_USERNAME}
+```
+close terminal and open again.
+
+You will probably get some errors, but don't worry, we will configure them later.
+
+### Download my zshrc file
+
+The default zshrc config file it's ok, but nevermind...:
+```bash
+cd
+wget -q https://raw.githubusercontent.com/vaayroon/zshrc/main/.zshrc -O ~/.zshrc
+```
+You will probably get some errors, but don't worry, we will configure them now.
+
+### Syntax highlighting and autosuggestions
+To start with, we will fix
+**[zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting)** and
+**[zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions)**.
+
+In order to have syntax highlighting for the shell zsh. zsh-syntax-highlighting enables highlighting of commands whilst they are typed at a zsh prompt into an interactive terminal. And zsh-autosuggestions suggests commands as you type based on history and completions.
+
+To install them type:
+```bash
+sudo apt install zsh-syntax-highlighting zsh-autosuggestions
+```
+Reload terminal
+
+### Sudo Plugin
+This 
+**[sudo-plugin](https://github.com/ohmyzsh/ohmyzsh/tree/master/plugins/sudo)**
+(from **[ohmyzsh](https://github.com/ohmyzsh/ohmyzsh)**)
+will allow us to insert ***sudo*** before the command we have typed by pressing twice the ***ESC*** button.
+```bash
+sudo mkdir -p /usr/share/zsh-sudo
+```
+```bash
+sudo wget https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/plugins/sudo/sudo.plugin.zsh -O /usr/share/zsh-sudo/sudo.plugin.zsh
+```
+Reload the terminal.
+
+### Hacker LS and CAT
+
+if we type ```ls``` or ```cat``` a command not found will be showed. This is because in the zshrc file an alias has been specified for both, indicating their hacker versions.
+The
+**[lsd]()**
+command is a ls with lots of added features like colors, icons, tree-view, more formatting options etc.
+**[]()**
+command is a cat that supports syntax highlighting for a large number of programming and markup languages.
+
 In development
