@@ -413,13 +413,87 @@ sudo wget https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/plugins/sudo/
 ```
 Reload the terminal.
 
-### Hacker LS and CAT
 
+### Hacker LS and CAT
 if we type ```ls``` or ```cat``` a command not found will be showed. This is because in the zshrc file an alias has been specified for both, indicating their hacker versions.
 The
-**[lsd]()**
-command is a ls with lots of added features like colors, icons, tree-view, more formatting options etc.
-**[]()**
-command is a cat that supports syntax highlighting for a large number of programming and markup languages.
+**[lsd](https://github.com/Peltoche/lsd)**
+command is a ```ls``` with lots of added features like colors, icons, tree-view, more formatting options etc.
+**[batcat or cat](https://github.com/sharkdp/bat)**
+command is a ```cat``` that supports syntax highlighting for a large number of programming and markup languages.
+
+To install ***lsd*** we need to download the .deb file from **[latest release](https://github.com/Peltoche/lsd/releases)**
+```bash
+cd /tmp
+wget https://github.com/Peltoche/lsd/releases/download/0.23.1/lsd_0.23.1_amd64.deb
+```
+and install it
+```bash
+sudo dpkg -i ./lsd_0.23.1_amd64.deb
+```
+
+To install ***batcat*** on ubuntu
+```bash
+sudo apt install bat
+```
+Reload the terminal.
+
+
+### Hacker RM
+There is another function defined in the ***.zshrc*** file called ```rmk``` that uses scrub.
+**[Scrub](https://code.google.com/archive/p/diskscrub/)** overwrites hard disks, files, and other devices with repeating patterns intended to make recovering data from these devices more difficult.
+Install it with
+```bash
+sudo apt install scrub
+```
+try it
+```bash
+touch log.txt
+rmk log.txt
+```
+### Configure Kitty
+There are many **[kitty](https://sw.kovidgoyal.net/kitty/)**
+configurations on the internet but for simplicity you can download my configuration.
+```bash
+cd ~/.config
+mkdir kitty
+cd kitty
+wget https://raw.githubusercontent.com/vaayroon/config/main/kitty/kitty.conf -O kitty.conf
+wget https://raw.githubusercontent.com/vaayroon/config/main/kitty/color.ini -O color.ini
+```
+Reload kitty terminal.
+
+### Powerlevel10k
+**[Powerlevel10k](https://github.com/romkatv/powerlevel10k)**
+is a theme for Zsh. It emphasizes speed, flexibility and out-of-the-box experience.
+
+**[Manual Installation](https://github.com/romkatv/powerlevel10k#installation)**:
+```bash
+git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/.powerlevel10k
+echo 'source ~/.powerlevel10k/powerlevel10k.zsh-theme' >>~/.zshrc
+```
+Configure
+```bash
+zsh
+```
+and follow the instructions. My choices have been.
+
+- Does this look like a Diamond --> :heavy_check_mark: yes
+- Does this look like a lock --> :heavy_check_mark: yes
+- Does this look like a Debian Logo --> :heavy_check_mark: yes
+- Do all these icons fit between the crosses --> :heavy_check_mark: yes
+- Prompt Style --> :heavy_check_mark: Classic
+- Character Set --> :heavy_check_mark: Unicode
+- Prompt Color --> :heavy_check_mark: Dark
+- Show current time --> :heavy_check_mark: No
+- Prompt Separators --> :heavy_check_mark: Angled
+- Prompt Heads --> :heavy_check_mark: Sharp
+- Prompt Tails --> :heavy_check_mark: Slanted
+- Prompt Height --> :heavy_check_mark: One Line
+- Prompt Spacing --> :heavy_check_mark: Sparse
+- Icons --> :heavy_check_mark: Many Icons
+- Prompt Flow --> :heavy_check_mark: Fluent
+- Enable Transient Prompt --> :heavy_check_mark: Yes
+- Instant Prompt Mode --> :heavy_check_mark: Verbose
 
 In development
