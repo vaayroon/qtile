@@ -496,4 +496,98 @@ and follow the instructions. My choices have been.
 - Enable Transient Prompt --> :heavy_check_mark: Yes
 - Instant Prompt Mode --> :heavy_check_mark: Verbose
 
+Reload the terminal.
+
+You can set Powerlevel10k up in its configuration file ```~/.p10k.zsh```
+
+In the config file I have added 2 elements on the list of segments show on the left.
+```
+vim ~/.p10k.zsh
+```
+
+```
+  typeset -g POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(
+    ...
+    command_execution_time
+    context
+    ...
+  )
+```
+
+And comment out all the elements on the list of the segments show on the right. This is
+This is because I don't want anything to appear on the right side.
+
+### ROOT shell
+If you make ```sudo su``` or try to open a terminal as ROOT. You will realize that we dont have nothing configured.
+To configure everything but Powerlevel10k we have 2 options.
+- Repeat all the steps we have made (#configure-shell).
+- Create a symbolic link of yours ```~/.zshrc``` so root user use the same file.
+
+ ```bash
+ sudo su
+ cd 
+ ln -s /home/k3v1n/.zshrc .zshrc
+ ```
+Remember that we have to set up **zsh** as default shell for root user:
+```bash
+usermod --shell /usr/bin/zsh root
+```
+
+
+#### ROOT Powerlevel10k
+
+Install and configure it in the same way as we did for your user.
+
+But in the ```~/.p10k.zsh```  we need to make some changes so we can know when we are being root user.
+```
+vim ~/.p10k.zsh
+```
+and comment out the following line:
+```
+typeset -g POWERLEVEL9K_CONTEXT_PREFIX='%246Fwith '
+```
+then find the line ```typeset -g POWERLEVEL9K_CONTEXT_ROOT_TEMPLATE``` and replace what is between single quotation marks with the icon
+**nf-dev-codeigniter** from
+**[Hack Nerd Fonts - Cheat Sheet](https://www.nerdfonts.com/cheat-sheet)**
+
+```bash
+typeset -g POWERLEVEL9K_CONTEXT_ROOT_TEMPLATE=''
+```
+
+### Install FZF
+**[Fzf](https://github.com/junegunn/fzf)**
+is a general-purpose command-line fuzzy finder. It's an interactive Unix filter for command-line that can be used with any list; files, command history, processes, hostnames, bookmarks, git commits, etc.
+
+To install it:
+```bash
+sudo apt-get install fzf
+```
+
+# Install Neovim Nvchad
+**[NvChad](https://github.com/NvChad/NvChad)**
+is a neovim config written in lua aiming to provide a base configuration with very beautiful UI and blazing fast startuptime (around 0.02 secs ~ 0.07 secs). We tweak UI plugins such as telescope, nvim-tree, bufferline etc well to provide an aesthetic UI experience.
+
+Pre-requisites:
+- Neovim 0.8.0, **[latest stable](https://github.com/neovim/neovim/releases/tag/stable)** or the one specified in its installation guide,
+  if your distro/OS doesn't have it then try **[neovim version manager](https://github.com/MordechaiHadad/bob)**.
+  You can install with ```sudo apt install nvim``` in base Debian, but is not always up to date. So I prefer install from source.
+  For Debian based download the latest stable release ***.deb** file.
+  ```bash
+  cd /tmp
+  wget https://github.com/neovim/neovim/releases/download/stable/nvim-linux64.deb
+  sudo apt install ./nvim-linux64.deb
+  ```
+- Use a **[Nerd Font](https://www.nerdfonts.com/)** in your terminal emulator.
+  We have kitty configured with it.
+- Make sure to delete this folder ~/.local/share/nvim on Linux.
+- **[ripgrep](https://github.com/BurntSushi/ripgrep)** is required for grep searching with Telescope.
+  ```
+  sudo apt-get install ripgrep
+  ```
+Now we can install nvchad:
+```bash
+git clone https://github.com/NvChad/NvChad ~/.config/nvim --depth 1 && nvim
+```
+
+
 In development
