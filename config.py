@@ -27,6 +27,9 @@ webtext = " "
 # /home/kevin/.local/bin/qtile cmd-obj -o cmd -f restart
 # arecord -l (To List audio devices) 
 
+## Set up environmnet variables
+os.environ["QT_STYLE_OVERRIDE"] = "kvantum"
+
 keys = [
     # The essentials
     Key([mod], "Return",
@@ -34,7 +37,7 @@ keys = [
         desc='Launches My Terminal'
         ),
     Key([mod, "mod1"], "Return",
-        lazy.spawn("gnome-terminal"),
+        lazy.spawn("qterminal"),
         desc='Launches Gnome Terminal'
         ),
     Key([mod, "shift"], "Return",
@@ -65,11 +68,11 @@ keys = [
         lazy.spawn("i3lock -ufc 000000")
         ),
     # Switch focus to specific monitor (out of three)
-    Key([mod], "w",
+    Key([mod], "e",
         lazy.to_screen(0),
         desc='Keyboard focus to monitor 1'
         ),
-    Key([mod], "e",
+    Key([mod], "w",
         lazy.to_screen(1),
         desc='Keyboard focus to monitor 2'
         ),
@@ -185,7 +188,8 @@ keys = [
     Key([mod, "mod1"], "b",
         #lazy.spawn("tabbed -r 2 surf -pe x '.surf/html/homepage.html'"),
         #desc='lynx browser'
-        lazy.spawn("firefox --new-window www.duckduckgo.com"),
+        lazy.spawn("brave-browser-nightly --incognito"),
+        desc='Brave Incognito'
         ),
     #Key([], "XF86Explorer", lazy.spawn("firefox --new-window  www.duckduckgo.com")),
 
@@ -195,16 +199,16 @@ keys = [
     #Key([], "XF86Mail", lazy.spawn("gnome-control-wcenter")),
 
     Key([mod, "mod1"], "l",
-        lazy.spawn("firefox --private-window"),
-        desc='lynx browser'
+        lazy.spawn("/opt/firefox/firefox --private-window"),
+        desc='Private Firefox Dev'
         ),
     Key([mod, "mod1"], "n",
         lazy.spawn("gnome-todo"),
         desc='Take Notes'
         ),
     Key([mod, "mod1"], "r",
-        lazy.spawn("teamviewer"),
-        desc='teamviewer'
+        lazy.spawn("remmina"),
+        desc='Remmina RDP'
         ),
     # Key([mod, "mod1"], "e",
     #    lazy.spawn("/usr/share/sangfor/EasyConnect/EasyConnect"),
@@ -219,12 +223,12 @@ keys = [
         desc='Spotify'
         ),
     Key([mod, "mod1"], "m",
-        lazy.spawn("xfce4-settings-manager"),
-        desc='Settings Manager'
+        lazy.spawn("microsoft-edge-dev --inprivate"),
+        desc='Microsfot Edge Developer InPrivate'
         ),
     Key([mod, "mod1"], "t",
-        lazy.spawn("teams"),
-        desc='Microsoft Teams'
+        lazy.spawn("teamviewer"),
+        desc='Teamviewer'
         ),
     Key([mod, "mod1"], "f",
         lazy.spawn("flameshot"),
@@ -257,12 +261,12 @@ keys = [
         ),
     Key([mod, "mod1"], "g",
         lazy.spawn(
-        "google-chrome --new-window www.duckduckgo.com --incognito --explicitly-allowed-ports=10080"),
+        "google-chrome-beta --new-window www.duckduckgo.com --incognito --explicitly-allowed-ports=10080"),
         desc='Chrome'
         ),
     Key([mod, "mod1"], "o",
         lazy.spawn(
-        "microsoft-edge --new-window www.duckduckgo.com --inprivate"),
+        "opera"),
         desc='Opera'
         ),
     Key([mod, "mod1"], "v",
@@ -296,7 +300,7 @@ group_names = [(" ", {'layout': 'monadtall'}),
                (" ", {'layout': 'ratiotile'}),
                (" ", {'layout': 'max'}),
                (" ", {'layout': 'max'}),
-               (" ", {'layout': 'max'}),     
+               (" ", {'layout': 'max'}),
                (" ", {'layout': 'zoomy'}),
                (" ", {'layout': 'floating'}),
                (" ", {'layout': 'treetab'}),
@@ -668,7 +672,7 @@ def init_widgets_list():
             padding=9
         ),
         widget.Volume(
-            cardid = 1,
+            cardid = 0,
             #device = 'hw:2',
             foreground=colors[0],
             background=colors2[3],
@@ -804,10 +808,12 @@ floating_layout = layout.Floating(float_rules=[
     Match(wm_class='file_progress'),
     Match(wm_class='notification'),
     Match(wm_class='splash'),
-    Match(wm_class='TeamViewer'),
+    Match(title='TeamViewer'),
     Match(wm_class='toolbar'),
     Match(wm_class='Thunar'),
     Match(wm_class='Vmware-modconfig'),
+    Match(wm_class='Blueman-manager'),
+    Match(wm_class='fortitray'),
     Match(title='virtual-shell'),
     Match(func=lambda c: bool(c.is_transient_for())),
     Match(title='Calendar'),
