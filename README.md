@@ -307,7 +307,7 @@ While we are at it, we can also modified the theme of our session manager. so we
 For both of them we have to install the ***STABLE VERSION***.
 For greeter we need some dependencies:
 ```bash
-sudo apt install meson
+sudo apt install meson cmake libdbus-glib-1-dev liblightdm-gobject-dev libgtk-3-0 libwebkit2gtk-4.0-dev gettext
 ```
 then build
 ```bash
@@ -356,5 +356,238 @@ webkit_theme = lightdm-webkit-theme-aether
 ``` 
 
 Reboot or logout and we are done.
+
+# Configure shell
+
+## Install ZSH and Set up ZSH as default shell
+
+We are going to use
+**[ZSH](https://www.zsh.org/)**
+as default shell.
+
+First we need to install it:
+```bash
+sudo apt install zsh
+```
+
+and then set up as default shell for our user:
+```bash
+usermod --shell /usr/bin/zsh ${YOUR_USERNAME}
+```
+close terminal and open again.
+
+You will probably get some errors, but don't worry, we will configure them later.
+
+### Download my zshrc file
+
+The default zshrc config file it's ok, but nevermind...:
+```bash
+cd
+wget -q https://raw.githubusercontent.com/vaayroon/zshrc/main/.zshrc -O ~/.zshrc
+```
+You will probably get some errors, but don't worry, we will configure them now.
+
+### Syntax highlighting and autosuggestions
+To start with, we will fix
+**[zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting)** and
+**[zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions)**.
+
+In order to have syntax highlighting for the shell zsh. zsh-syntax-highlighting enables highlighting of commands whilst they are typed at a zsh prompt into an interactive terminal. And zsh-autosuggestions suggests commands as you type based on history and completions.
+
+To install them type:
+```bash
+sudo apt install zsh-syntax-highlighting zsh-autosuggestions
+```
+Reload terminal
+
+### Sudo Plugin
+This 
+**[sudo-plugin](https://github.com/ohmyzsh/ohmyzsh/tree/master/plugins/sudo)**
+(from **[ohmyzsh](https://github.com/ohmyzsh/ohmyzsh)**)
+will allow us to insert ***sudo*** before the command we have typed by pressing twice the ***ESC*** button.
+```bash
+sudo mkdir -p /usr/share/zsh-sudo
+```
+```bash
+sudo wget https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/plugins/sudo/sudo.plugin.zsh -O /usr/share/zsh-sudo/sudo.plugin.zsh
+```
+Reload the terminal.
+
+
+### Hacker LS and CAT
+if we type ```ls``` or ```cat``` a command not found will be showed. This is because in the zshrc file an alias has been specified for both, indicating their hacker versions.
+The
+**[lsd](https://github.com/Peltoche/lsd)**
+command is a ```ls``` with lots of added features like colors, icons, tree-view, more formatting options etc.
+**[batcat or cat](https://github.com/sharkdp/bat)**
+command is a ```cat``` that supports syntax highlighting for a large number of programming and markup languages.
+
+To install ***lsd*** we need to download the .deb file from **[latest release](https://github.com/Peltoche/lsd/releases)**
+```bash
+cd /tmp
+wget https://github.com/Peltoche/lsd/releases/download/0.23.1/lsd_0.23.1_amd64.deb
+```
+and install it
+```bash
+sudo dpkg -i ./lsd_0.23.1_amd64.deb
+```
+
+To install ***batcat*** on ubuntu
+```bash
+sudo apt install bat
+```
+Reload the terminal.
+
+
+### Hacker RM
+There is another function defined in the ***.zshrc*** file called ```rmk``` that uses scrub.
+**[Scrub](https://code.google.com/archive/p/diskscrub/)** overwrites hard disks, files, and other devices with repeating patterns intended to make recovering data from these devices more difficult.
+Install it with
+```bash
+sudo apt install scrub
+```
+try it
+```bash
+touch log.txt
+rmk log.txt
+```
+### Configure Kitty
+There are many **[kitty](https://sw.kovidgoyal.net/kitty/)**
+configurations on the internet but for simplicity you can download my configuration.
+```bash
+cd ~/.config
+mkdir kitty
+cd kitty
+wget https://raw.githubusercontent.com/vaayroon/config/main/kitty/kitty.conf -O kitty.conf
+wget https://raw.githubusercontent.com/vaayroon/config/main/kitty/color.ini -O color.ini
+```
+Reload kitty terminal.
+
+### Powerlevel10k
+**[Powerlevel10k](https://github.com/romkatv/powerlevel10k)**
+is a theme for Zsh. It emphasizes speed, flexibility and out-of-the-box experience.
+
+**[Manual Installation](https://github.com/romkatv/powerlevel10k#installation)**:
+```bash
+git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/.powerlevel10k
+echo 'source ~/.powerlevel10k/powerlevel10k.zsh-theme' >>~/.zshrc
+```
+Configure
+```bash
+zsh
+```
+and follow the instructions. My choices have been.
+
+- Does this look like a Diamond --> :heavy_check_mark: yes
+- Does this look like a lock --> :heavy_check_mark: yes
+- Does this look like a Debian Logo --> :heavy_check_mark: yes
+- Do all these icons fit between the crosses --> :heavy_check_mark: yes
+- Prompt Style --> :heavy_check_mark: Classic
+- Character Set --> :heavy_check_mark: Unicode
+- Prompt Color --> :heavy_check_mark: Dark
+- Show current time --> :heavy_check_mark: No
+- Prompt Separators --> :heavy_check_mark: Angled
+- Prompt Heads --> :heavy_check_mark: Sharp
+- Prompt Tails --> :heavy_check_mark: Slanted
+- Prompt Height --> :heavy_check_mark: One Line
+- Prompt Spacing --> :heavy_check_mark: Sparse
+- Icons --> :heavy_check_mark: Many Icons
+- Prompt Flow --> :heavy_check_mark: Fluent
+- Enable Transient Prompt --> :heavy_check_mark: Yes
+- Instant Prompt Mode --> :heavy_check_mark: Verbose
+
+Reload the terminal.
+
+You can set Powerlevel10k up in its configuration file ```~/.p10k.zsh```
+
+In the config file I have added 2 elements on the list of segments show on the left.
+```
+vim ~/.p10k.zsh
+```
+
+```
+  typeset -g POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(
+    ...
+    command_execution_time
+    context
+    ...
+  )
+```
+
+And comment out all the elements on the list of the segments show on the right. This is
+This is because I don't want anything to appear on the right side.
+
+### ROOT shell
+If you make ```sudo su``` or try to open a terminal as ROOT. You will realize that we dont have nothing configured.
+To configure everything but Powerlevel10k we have 2 options.
+- Repeat all the steps we have made (#configure-shell).
+- Create a symbolic link of yours ```~/.zshrc``` so root user use the same file.
+
+ ```bash
+ sudo su
+ cd 
+ ln -s /home/k3v1n/.zshrc .zshrc
+ ```
+Remember that we have to set up **zsh** as default shell for root user:
+```bash
+usermod --shell /usr/bin/zsh root
+```
+
+
+#### ROOT Powerlevel10k
+
+Install and configure it in the same way as we did for your user.
+
+But in the ```~/.p10k.zsh```  we need to make some changes so we can know when we are being root user.
+```
+vim ~/.p10k.zsh
+```
+and comment out the following line:
+```
+typeset -g POWERLEVEL9K_CONTEXT_PREFIX='%246Fwith '
+```
+then find the line ```typeset -g POWERLEVEL9K_CONTEXT_ROOT_TEMPLATE``` and replace what is between single quotation marks with the icon
+**nf-dev-codeigniter** from
+**[Hack Nerd Fonts - Cheat Sheet](https://www.nerdfonts.com/cheat-sheet)**
+
+```bash
+typeset -g POWERLEVEL9K_CONTEXT_ROOT_TEMPLATE=''
+```
+
+### Install FZF
+**[Fzf](https://github.com/junegunn/fzf)**
+is a general-purpose command-line fuzzy finder. It's an interactive Unix filter for command-line that can be used with any list; files, command history, processes, hostnames, bookmarks, git commits, etc.
+
+To install it:
+```bash
+sudo apt-get install fzf
+```
+
+# Install Neovim Nvchad
+**[NvChad](https://github.com/NvChad/NvChad)**
+is a neovim config written in lua aiming to provide a base configuration with very beautiful UI and blazing fast startuptime (around 0.02 secs ~ 0.07 secs). We tweak UI plugins such as telescope, nvim-tree, bufferline etc well to provide an aesthetic UI experience.
+
+Pre-requisites:
+- Neovim 0.8.0, **[latest stable](https://github.com/neovim/neovim/releases/tag/stable)** or the one specified in its installation guide,
+  if your distro/OS doesn't have it then try **[neovim version manager](https://github.com/MordechaiHadad/bob)**.
+  You can install with ```sudo apt install nvim``` in base Debian, but is not always up to date. So I prefer install from source.
+  For Debian based download the latest stable release ***.deb** file.
+  ```bash
+  cd /tmp
+  wget https://github.com/neovim/neovim/releases/download/stable/nvim-linux64.deb
+  sudo apt install ./nvim-linux64.deb
+  ```
+- Use a **[Nerd Font](https://www.nerdfonts.com/)** in your terminal emulator.
+  We have kitty configured with it.
+- Make sure to delete this folder ~/.local/share/nvim on Linux.
+- **[ripgrep](https://github.com/BurntSushi/ripgrep)** is required for grep searching with Telescope.
+  ```
+  sudo apt-get install ripgrep
+  ```
+Now we can install nvchad:
+```bash
+git clone https://github.com/NvChad/NvChad ~/.config/nvim --depth 1 && nvim
+```
+
 
 In development
