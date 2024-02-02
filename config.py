@@ -29,6 +29,7 @@ webtext = " "
 
 ## Set up environmnet variables
 os.environ["QT_STYLE_OVERRIDE"] = "kvantum"
+os.environ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "true"
 
 keys = [
     # The essentials
@@ -64,15 +65,15 @@ keys = [
         lazy.spawn(myTerm+" sudo -S ls -l"),
         desc='Doom Emacs'
         ),
-    Key([mod, "shift"], "s",
+    Key(["control", "mod1"], "l",
         lazy.spawn("i3lock -ufc 000000")
         ),
     # Switch focus to specific monitor (out of three)
-    Key([mod], "e",
+    Key([mod], "w",
         lazy.to_screen(0),
         desc='Keyboard focus to monitor 1'
         ),
-    Key([mod], "w",
+    Key([mod], "e",
         lazy.to_screen(1),
         desc='Keyboard focus to monitor 2'
         ),
@@ -176,6 +177,10 @@ keys = [
         lazy.spawn("./.dmenu/dmenu-surfraw.sh"),
         desc='Dmenu surfraw script'
         ),
+    Key([], "Menu",
+        lazy.spawn("xfce4-appfinder"),
+        desc='Collapsd App Finder'
+        ),
     # Key(["mod1", "control"], "t",
     #     lazy.spawn("./.dmenu/dmenu-trading.sh"),
     #     desc='Dmenu trading programs script'
@@ -223,12 +228,12 @@ keys = [
         desc='Spotify'
         ),
     Key([mod, "mod1"], "m",
-        lazy.spawn("microsoft-edge-dev --inprivate"),
-        desc='Microsfot Edge Developer InPrivate'
+        lazy.spawn("microsoft-edge-dev"),
+        desc='Microsfot Edge Developer'
         ),
     Key([mod, "mod1"], "t",
-        lazy.spawn("teamviewer"),
-        desc='Teamviewer'
+        lazy.spawn("rustdesk"),
+        desc='RustDesk'
         ),
     Key([mod, "mod1"], "f",
         lazy.spawn("flameshot"),
@@ -291,6 +296,13 @@ keys = [
     #Laptop Screen Brightness
     Key([], "XF86MonBrightnessUp", lazy.spawn("brightnessctl set +10%")),
     Key([], "XF86MonBrightnessDown", lazy.spawn("brightnessctl set 10%-")),
+
+    # Screen Shots
+    Key(["shift", mod], "s", lazy.spawn("flameshot gui")),
+
+    # Lock screen
+    Key([mod], "l", lazy.spawn("i3lock -ufc 000000")),
+
     # Extras
     Key([], "XF86Calculator", lazy.spawn("gnome-calculator")),
 ]
@@ -528,7 +540,7 @@ def init_widgets_list():
             colour_have_updates=colors[0],
             colour_no_updates=colors[0],
             no_update_string='UpToDate',
-            display_format='Updates: {updates}',
+            display_format='{updates}',
             update_interval=1800,
             padding=5,
             #mouse_callbacks={'Button2': lambda: qtile.cmd_spawn(
@@ -747,7 +759,7 @@ def delete_list_from_to(target_list, object_name_from):
 
 def init_widgets_screen1():
     widgets_screen1 = init_widgets_list()
-    widgets_screen1 = delete_list_from_to(widgets_screen1, "systray")
+    #widgets_screen1 = delete_list_from_to(widgets_screen1, "systray")
     #del widgets_screen1[31:]
     # Slicing removes unwanted widgets on Monitors 1,3
     return widgets_screen1
@@ -755,6 +767,7 @@ def init_widgets_screen1():
 
 def init_widgets_screen2():
     widgets_screen2 = init_widgets_list()
+    widgets_screen2 = delete_list_from_to(widgets_screen2, "systray")
     #del widgets_screen2[31]
     # Monitor 2 will display all widgets in widgets_list
     return widgets_screen2
@@ -762,25 +775,29 @@ def init_widgets_screen2():
 
 def init_widgets_screen3():
     widgets_screen3 = init_widgets_list()
+    widgets_screen3 = delete_list_from_to(widgets_screen3, "systray")
     #del widgets_screen3[31]
     # Monitor 2 will display all widgets in widgets_list
     return widgets_screen3
 
-# Single monitor support only
+# Single monitor support
 # def init_screens():
 #    return [Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20))]
 
-
+### Dual Monitor Support
 def init_screens():
     return [Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20)),
             Screen(top=bar.Bar(widgets=init_widgets_screen2(), opacity=1.0, size=20))]
 
+### Triple Monitor Support
+#def init_screens():
+#    return [Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20)),
+#            Screen(top=bar.Bar(widgets=init_widgets_screen2(), opacity=1.0, size=20)),
+#            Screen(top=bar.Bar(widgets=init_widgets_screen3(), opacity=1.0, size=20))]
+
 
 if __name__ in ["config", "__main__"]:
     screens = init_screens()
-    widgets_list = init_widgets_list()
-    widgets_screen1 = init_widgets_screen1()
-    widgets_screen2 = init_widgets_screen2()
 
 mouse = [
     Drag([mod], "Button1", lazy.window.set_position_floating(),
@@ -814,6 +831,10 @@ floating_layout = layout.Floating(float_rules=[
     Match(wm_class='Vmware-modconfig'),
     Match(wm_class='Blueman-manager'),
     Match(wm_class='fortitray'),
+    Match(wm_class='Nm-connection-editor'),
+    Match(wm_class='Todoist'),
+    Match(wm_class='gnome-todo'),
+    Match(wm_class='Xfce4-appfinder'),
     Match(title='virtual-shell'),
     Match(func=lambda c: bool(c.is_transient_for())),
     Match(title='Calendar'),
