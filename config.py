@@ -10,6 +10,7 @@ from libqtile.command import lazy
 from libqtile import layout, bar, widget, hook, qtile
 from libqtile.lazy import lazy
 from typing import List  # noqa: F401
+from dotenv import dotenv_values
 
 mod = "mod4"                                     # Sets mod key to SUPER/WINDOWS
 myTerm = "/usr/bin/qterminal"                             # My terminal of choice
@@ -28,8 +29,16 @@ webtext = " "
 # arecord -l (To List audio devices) 
 
 ## Set up environmnet variables
-os.environ["QT_STYLE_OVERRIDE"] = "kvantum"
-os.environ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "true"
+#os.environ["QT_STYLE_OVERRIDE"] = "kvantum"
+#os.environ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "true"
+
+# Get a dictionary with the values parsed from the .env file
+config = dotenv_values()
+
+# Iterate through the config dictionary and set environment variables
+for key, value in config.items():
+    os.environ[f'{key}'] = f'{value}'
+
 
 keys = [
     # The essentials
@@ -38,7 +47,7 @@ keys = [
         desc='Launches My Terminal'
         ),
     Key([mod, "mod1"], "Return",
-        lazy.spawn("qterminal"),
+        lazy.spawn("/usr/bin/warp-terminal"),
         desc='Launches Gnome Terminal'
         ),
     Key([mod, "shift"], "Return",
@@ -181,6 +190,10 @@ keys = [
         lazy.spawn("xfce4-appfinder"),
         desc='Collapsd App Finder'
         ),
+    Key([], "XF86Favorites",
+        lazy.spawn("xfce4-appfinder"),
+        desc='Collapsd App Finder'
+        ),
     # Key(["mod1", "control"], "t",
     #     lazy.spawn("./.dmenu/dmenu-trading.sh"),
     #     desc='Dmenu trading programs script'
@@ -193,7 +206,7 @@ keys = [
     Key([mod, "mod1"], "b",
         #lazy.spawn("tabbed -r 2 surf -pe x '.surf/html/homepage.html'"),
         #desc='lynx browser'
-        lazy.spawn("brave-browser-nightly --incognito"),
+        lazy.spawn("brave-browser-stable --new-window --incognito --explicitly-allowed-ports=10080"),
         desc='Brave Incognito'
         ),
     #Key([], "XF86Explorer", lazy.spawn("firefox --new-window  www.duckduckgo.com")),
@@ -308,15 +321,15 @@ keys = [
 ]
 
 
-group_names = [(" ", {'layout': 'monadtall'}),
-               (" ", {'layout': 'ratiotile'}),
-               (" ", {'layout': 'max'}),
-               (" ", {'layout': 'max'}),
-               (" ", {'layout': 'max'}),
-               (" ", {'layout': 'zoomy'}),
-               (" ", {'layout': 'floating'}),
-               (" ", {'layout': 'treetab'}),
-               (" ", {'layout': 'monadtall'})]
+group_names = [(" ", {'layout': 'monadtall'}),
+               (" ", {'layout': 'ratiotile'}),
+               ("󰨞 ", {'layout': 'max'}),
+               (" ", {'layout': 'max'}),
+               ("󱙋 ", {'layout': 'max'}),
+               (" ", {'layout': 'zoomy'}),
+               (" ", {'layout': 'floating'}),
+               ("󰇩 ", {'layout': 'monadwide'}),
+               (" ", {'layout': 'monadtall'})]
 
 groups = [Group(name, **kwargs) for name, kwargs in group_names]
 
@@ -439,11 +452,11 @@ def get_my_net_ip():
 
 
     if grepdatanetp == "":
-        setdevice = ("eth0", "")
+        setdevice = ("eth0", "󰈀 ")
     elif grepdatawifip == "":
-        setdevice = ("wlan0","")
+        setdevice = ("wlan0"," ")
     else:
-        setdevice = ("", "睊   ")
+        setdevice = ("", "󰈂  󱛅 ")
     return setdevice
 
 # def get_my_gpu_temp():
@@ -531,7 +544,7 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors2[4],
             mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
-                'qterminal -e --title virtual-shell sudo apt full-upgrade')},
+                'qterminal -e --title virtual-shell sudo apt dist-upgrade')},
             fontsize=17
         ),
         widget.CheckUpdates(
@@ -556,7 +569,7 @@ def init_widgets_list():
             fontsize=37
         ),
         widget.TextBox(
-            text="ﴑ",
+            text="󰠓 ",
             font='UbuntuMono Nerd Font',
             fontsize=19,
             padding=0,
@@ -581,7 +594,7 @@ def init_widgets_list():
             fontsize=37
         ),
         widget.TextBox(
-            text="CPU:",
+            text=" :",
             padding=0,
             foreground=colors[0],
             background=colors2[4],
@@ -598,7 +611,7 @@ def init_widgets_list():
         ),
 
         widget.TextBox(
-            text="GPU:",
+            text="󱤓 :",
             padding=2,
             foreground=colors[0],
             background=colors2[4]
@@ -627,7 +640,7 @@ def init_widgets_list():
             fontsize=37
         ),
         widget.TextBox(
-            text="",
+            text="󰍛 ",
             foreground=colors[0],
             background=colors2[3],
             padding=0,
@@ -781,19 +794,19 @@ def init_widgets_screen3():
     return widgets_screen3
 
 # Single monitor support
-# def init_screens():
-#    return [Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20))]
+    #def init_screens():
+#return [Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20))]
 
 ### Dual Monitor Support
-def init_screens():
-    return [Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20)),
-            Screen(top=bar.Bar(widgets=init_widgets_screen2(), opacity=1.0, size=20))]
+    #def init_screens():
+    #return [Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20)),
+#        Screen(top=bar.Bar(widgets=init_widgets_screen2(), opacity=1.0, size=20))]
 
 ### Triple Monitor Support
-#def init_screens():
-#    return [Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20)),
-#            Screen(top=bar.Bar(widgets=init_widgets_screen2(), opacity=1.0, size=20)),
-#            Screen(top=bar.Bar(widgets=init_widgets_screen3(), opacity=1.0, size=20))]
+def init_screens():
+    return [Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20)),
+            Screen(top=bar.Bar(widgets=init_widgets_screen2(), opacity=1.0, size=20)),
+            Screen(top=bar.Bar(widgets=init_widgets_screen3(), opacity=1.0, size=20))]
 
 
 if __name__ in ["config", "__main__"]:
@@ -831,6 +844,8 @@ floating_layout = layout.Floating(float_rules=[
     Match(wm_class='Vmware-modconfig'),
     Match(wm_class='Blueman-manager'),
     Match(wm_class='fortitray'),
+    Match(wm_class='Dnieremotewizard'),
+    Match(wm_class='endeavour'),
     Match(wm_class='Nm-connection-editor'),
     Match(wm_class='Todoist'),
     Match(wm_class='gnome-todo'),
