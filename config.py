@@ -17,7 +17,7 @@ myTerm = "/usr/bin/qterminal"                             # My terminal of choic
 # The Qtile config file location
 myConfig = "/home/kevin/.config/qtile/config.py"
 webdevice = " "
-webtext = " "
+websymbol = " "
 
 
 # evince A\ systematic\ approach\ to\ learning\ robot\ programming\ with\ ros.pdf &
@@ -199,7 +199,7 @@ keys = [
     #     desc='Dmenu trading programs script'
     #     ),
     Key(["mod1", "control"], "t",
-        lazy.spawn("thunar trash:///"),
+        lazy.spawn("nautilus trash:///"),
         desc='Open Trash'
         ),
     # My applications launched with SUPER + ALT + KEY
@@ -209,15 +209,21 @@ keys = [
         lazy.spawn("brave-browser-stable --new-window --incognito --explicitly-allowed-ports=10080"),
         desc='Brave Incognito'
         ),
-    #Key([], "XF86Explorer", lazy.spawn("firefox --new-window  www.duckduckgo.com")),
-
-    #Key([], "XF86HomePage", lazy.spawn("thunar")),
-    Key([mod, "mod1"], "d", lazy.spawn("thunar")),
-
+    Key([], "XF86Explorer",
+        lazy.spawn("firefox --new-window --private-window"),
+        desc="Private Firefox",
+        ),
+    Key([], "XF86HomePage",
+        lazy.spawn("xfce4-appfinder"),
+        desc='Collapsed App finder'
+        ),
+    Key([mod, "mod1"], "d",
+        lazy.spawn("nautilus"),
+        desc='File browser',
+        ),
     #Key([], "XF86Mail", lazy.spawn("gnome-control-wcenter")),
-
     Key([mod, "mod1"], "l",
-        lazy.spawn("/opt/firefox/firefox --private-window"),
+        lazy.spawn("firefox --new-window --private-window"),
         desc='Private Firefox Dev'
         ),
     Key([mod, "mod1"], "n",
@@ -266,8 +272,8 @@ keys = [
         desc='Volume Control Utility'
         ),
     Key([mod, "mod1"], "s",
-        lazy.spawn("code"),
-        desc='Visual Studio Code'
+        lazy.spawn("code-insiders"),
+        desc='Visual Studio Code Insiders'
         ),
     # Key([mod, "mod1"], "a",
     # lazy.spawn(myTerm+" -e ncpamixer"),
@@ -314,7 +320,7 @@ keys = [
     Key(["shift", mod], "s", lazy.spawn("flameshot gui")),
 
     # Lock screen
-    Key([mod], "l", lazy.spawn("i3lock -ufc 000000")),
+    #Key([mod], "l", lazy.spawn("i3lock -ufc 000000")),
 
     # Extras
     Key([], "XF86Calculator", lazy.spawn("gnome-calculator")),
@@ -414,11 +420,11 @@ def get_my_net():
     # datawifi1=res2[0]
     # datawifi2=res2[1]
     if datanet2 == "(connected)":
-        setdevice = ("eth0", "")
+        setdevice = ("eth0", "󰈀 ")
     # elif datawifi2=="(connected)":
     #  setdevice=("wlan0","")
     else:
-        setdevice = ("", "睊   ")
+        setdevice = ("", "󰈂  󱛅 ")
     return setdevice
 
 
@@ -452,9 +458,9 @@ def get_my_net_ip():
 
 
     if grepdatanetp == "":
-        setdevice = ("eth0", "󰈀 ")
+        setdevice = ("eth0", " ")
     elif grepdatawifip == "":
-        setdevice = ("wlan0"," ")
+        setdevice = ("wlan0", "󱚻 ")
     else:
         setdevice = ("", "󰈂  󱛅 ")
     return setdevice
@@ -481,7 +487,7 @@ extension_defaults = widget_defaults.copy()
 # a=get_my_net()
 a = get_my_net_ip()
 webdevice = a[0]
-webtext = a[1]
+websymbol = a[1]
 
 
 def init_widgets_list():
@@ -538,24 +544,16 @@ def init_widgets_list():
             padding=-2,
             fontsize=37
         ),
-        widget.TextBox(
-            text="  : ",
-            padding=0,
-            foreground=colors[0],
-            background=colors2[4],
-            mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
-                'qterminal -e --title virtual-shell sudo apt dist-upgrade')},
-            fontsize=17
-        ),
         widget.CheckUpdates(
             foreground=colors[0],
             background=colors2[4],
             colour_have_updates=colors[0],
             colour_no_updates=colors[0],
-            no_update_string='UpToDate',
-            display_format='{updates}',
+            no_update_string=' ',
+            display_format=' :{updates}',
             update_interval=1800,
             padding=5,
+            fontsize=14,
             #mouse_callbacks={'Button2': lambda: qtile.cmd_spawn(
             #myTerm + ' -e sudo apt update ; apt-show-versions -u -b')}
             #distro = 'Debian',
@@ -568,17 +566,11 @@ def init_widgets_list():
             padding=-2,
             fontsize=37
         ),
-        widget.TextBox(
-            text="󰠓 ",
-            font='UbuntuMono Nerd Font',
-            fontsize=19,
-            padding=0,
-            foreground=colors[0],
-            background=colors2[3]
-        ),
         widget.CryptoTicker(
             currency="EUR",
-            symbol="€",
+            crypto='BTC',
+            symbol=" ",
+            format=' : {symbol}{amount:.2f}',
             foreground=colors[0],
             background=colors2[3],
             mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
@@ -604,7 +596,7 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors2[4],
             threshold=90,
-            tag_sensor="Core 0",  # Tdie
+            tag_sensor="Tccd2",  # Tdie
             mouse_callbacks={
                 'Button1': lambda: qtile.cmd_spawn('xfce4-sensors')},
             padding=2
@@ -623,11 +615,11 @@ def init_widgets_list():
         #      background = colors[5],
         #     foreground = colors[2]
         #    ),
-        widget.ThermalSensor(
+        widget.NvidiaSensors(
             foreground=colors[0],
             background=colors2[4],
             threshold=90,
-            tag_sensor='nouveau-1',  # Tdie
+            format=': {temp}°C, 󰈐 : {fan_speed}, 󰓅 : {perf}',
             mouse_callbacks={
                 'Button1': lambda: qtile.cmd_spawn('xfce4-sensors')},
             padding=2
@@ -639,18 +631,12 @@ def init_widgets_list():
             padding=-2,
             fontsize=37
         ),
-        widget.TextBox(
-            text="󰍛 ",
-            foreground=colors[0],
-            background=colors2[3],
-            padding=0,
-            fontsize=20
-        ),
         widget.Memory(
             foreground=colors[0],
             background=colors2[3],
             mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
                 myTerm + ' -e htop -name htop -title virtual-shell')},
+            format=' :{MemUsed: .0f}{mm}/{MemTotal:.0f}{mm}',
             padding=5
         ),
         widget.TextBox(
@@ -659,68 +645,17 @@ def init_widgets_list():
             foreground=colors2[4],
             padding=-2,
             fontsize=37
-        ),
-        widget.TextBox(
-            text=webtext,
-            foreground=colors[0],
-            background=colors2[4],
-            padding=5,
-            mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
-                myTerm + ' -e glances -name sys-monit -title virtual-shell')},
-            fontsize=15
         ),
         widget.Net(
             # interface = "enp34s0", #ethernet
             # interface = "wlo1",	#wifi
             interface=webdevice,
-            format='{down} ↓↑ {up}',
             foreground=colors[0],
             background=colors2[4],
             padding=5,
             mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
-                myTerm + ' -e glances -name sys-monit -title virtual-shell')}
-        ),
-        widget.TextBox(
-            text='',
-            background=colors2[4],
-            foreground=colors2[3],
-            padding=-2,
-            fontsize=37
-        ),
-        widget.TextBox(
-            text="",
-            foreground=colors[0],
-            background=colors2[3],
-            fontsize=20,
-            mouse_callbacks={
-                'Button1': lambda: qtile.cmd_spawn('pavucontrol')},
-            padding=9
-        ),
-        widget.Volume(
-            cardid = 0,
-            #device = 'hw:2',
-            foreground=colors[0],
-            background=colors2[3],
-            padding=5
-        ),
-        widget.TextBox(
-            text='',
-            background=colors2[3],
-            foreground=colors2[4],
-            padding=-2,
-            fontsize=37
-        ),
-        widget.CurrentLayoutIcon(
-            custom_icon_paths=[os.path.expanduser("~/.config/qtile/icons")],
-            foreground=colors[0],
-            background=colors2[4],
-            padding=0,
-            scale=0.7
-        ),
-        widget.CurrentLayout(
-            foreground=colors[0],
-            background=colors2[4],
-            padding=5
+                myTerm + ' -e glances -name sys-monit -title virtual-shell')},
+            format=str(websymbol) + ': {down}↓↑{up}'
         ),
         widget.TextBox(
             text='',
@@ -735,13 +670,20 @@ def init_widgets_list():
             background=colors2[3],
             mouse_callbacks={
                 'Button1': lambda: qtile.cmd_spawn('gnome-calendar')},
-            format='%d/%m/%Y - %H:%M:%S '
+            format=' : %d/%m/%Y - %H:%M:%S'
         ),
         widget.Sep(
             linewidth=0,
             padding=10,
             foreground=colors[0],
-            background=colors2[3]
+            background=colors[0]
+        ),
+        widget.CurrentLayoutIcon(
+            custom_icon_paths=[os.path.expanduser("~/.config/qtile/icons")],
+            foreground=colors[2],
+            background=colors[0],
+            padding=0,
+            scale=0.7
         ),
         widget.Systray(
             background=colors[0],
@@ -841,6 +783,7 @@ floating_layout = layout.Floating(float_rules=[
     Match(title='TeamViewer'),
     Match(wm_class='toolbar'),
     Match(wm_class='Thunar'),
+    Match(wm_class='org.gnome.Nautilus'),
     Match(wm_class='Vmware-modconfig'),
     Match(wm_class='Blueman-manager'),
     Match(wm_class='fortitray'),
