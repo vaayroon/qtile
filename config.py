@@ -414,11 +414,11 @@ def get_my_net():
     # datawifi1=res2[0]
     # datawifi2=res2[1]
     if datanet2 == "(connected)":
-        setdevice = ("eth0", "")
+        setdevice = ("eth0", "󰈀 ")
     # elif datawifi2=="(connected)":
     #  setdevice=("wlan0","")
     else:
-        setdevice = ("", "睊   ")
+        setdevice = ("", "󰈂  󱛅 ")
     return setdevice
 
 
@@ -452,9 +452,9 @@ def get_my_net_ip():
 
 
     if grepdatanetp == "":
-        setdevice = ("eth0", "󰈀 ")
+        setdevice = ("eth0", " ")
     elif grepdatawifip == "":
-        setdevice = ("wlan0"," ")
+        setdevice = ("wlan0", "󱚻 ")
     else:
         setdevice = ("", "󰈂  󱛅 ")
     return setdevice
@@ -538,22 +538,13 @@ def init_widgets_list():
             padding=-2,
             fontsize=37
         ),
-        widget.TextBox(
-            text="  : ",
-            padding=0,
-            foreground=colors[0],
-            background=colors2[4],
-            mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
-                'qterminal -e --title virtual-shell sudo apt dist-upgrade')},
-            fontsize=17
-        ),
         widget.CheckUpdates(
             foreground=colors[0],
             background=colors2[4],
             colour_have_updates=colors[0],
             colour_no_updates=colors[0],
-            no_update_string='UpToDate',
-            display_format='{updates}',
+            no_update_string=' ',
+            display_format=' :{updates}',
             update_interval=1800,
             padding=5,
             #mouse_callbacks={'Button2': lambda: qtile.cmd_spawn(
@@ -568,21 +559,14 @@ def init_widgets_list():
             padding=-2,
             fontsize=37
         ),
-        widget.TextBox(
-            text="󰠓 ",
-            font='UbuntuMono Nerd Font',
-            fontsize=19,
-            padding=0,
-            foreground=colors[0],
-            background=colors2[3]
-        ),
         widget.CryptoTicker(
             currency="EUR",
-            symbol="€",
+            symbol=" ",
             foreground=colors[0],
             background=colors2[3],
             mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
                 myTerm + ' -e /home/k3v1n/go/bin/cointop -name cointop -title virtual-shell')},
+            format=' : {symbol}{amount:.2f}',
             #mouse_callbacks = {'Button1': lambda : qtile.cmd_spawn(' sleep 0.5; xdotool search --name "virtual-shell" set_window --class "virtual-shell"')},
             padding=5
         ),
@@ -604,7 +588,7 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors2[4],
             threshold=90,
-            tag_sensor="Core 0",  # Tdie
+            tag_sensor="CPU",  # Tdie
             mouse_callbacks={
                 'Button1': lambda: qtile.cmd_spawn('xfce4-sensors')},
             padding=2
@@ -627,7 +611,7 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors2[4],
             threshold=90,
-            tag_sensor='nouveau-1',  # Tdie
+            tag_sensor='Package id 0',  # Tdie
             mouse_callbacks={
                 'Button1': lambda: qtile.cmd_spawn('xfce4-sensors')},
             padding=2
@@ -639,18 +623,12 @@ def init_widgets_list():
             padding=-2,
             fontsize=37
         ),
-        widget.TextBox(
-            text="󰍛 ",
-            foreground=colors[0],
-            background=colors2[3],
-            padding=0,
-            fontsize=20
-        ),
         widget.Memory(
             foreground=colors[0],
             background=colors2[3],
             mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
                 myTerm + ' -e htop -name htop -title virtual-shell')},
+            format=' :{MemUsed: .0f}{mm}/{MemTotal:.0f}{mm}',
             padding=5
         ),
         widget.TextBox(
@@ -659,68 +637,17 @@ def init_widgets_list():
             foreground=colors2[4],
             padding=-2,
             fontsize=37
-        ),
-        widget.TextBox(
-            text=webtext,
-            foreground=colors[0],
-            background=colors2[4],
-            padding=5,
-            mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
-                myTerm + ' -e glances -name sys-monit -title virtual-shell')},
-            fontsize=15
         ),
         widget.Net(
             # interface = "enp34s0", #ethernet
             # interface = "wlo1",	#wifi
             interface=webdevice,
-            format='{down} ↓↑ {up}',
+            format=' : {down}↓↑{up}',
             foreground=colors[0],
             background=colors2[4],
             padding=5,
             mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
                 myTerm + ' -e glances -name sys-monit -title virtual-shell')}
-        ),
-        widget.TextBox(
-            text='',
-            background=colors2[4],
-            foreground=colors2[3],
-            padding=-2,
-            fontsize=37
-        ),
-        widget.TextBox(
-            text="",
-            foreground=colors[0],
-            background=colors2[3],
-            fontsize=20,
-            mouse_callbacks={
-                'Button1': lambda: qtile.cmd_spawn('pavucontrol')},
-            padding=9
-        ),
-        widget.Volume(
-            cardid = 0,
-            #device = 'hw:2',
-            foreground=colors[0],
-            background=colors2[3],
-            padding=5
-        ),
-        widget.TextBox(
-            text='',
-            background=colors2[3],
-            foreground=colors2[4],
-            padding=-2,
-            fontsize=37
-        ),
-        widget.CurrentLayoutIcon(
-            custom_icon_paths=[os.path.expanduser("~/.config/qtile/icons")],
-            foreground=colors[0],
-            background=colors2[4],
-            padding=0,
-            scale=0.7
-        ),
-        widget.CurrentLayout(
-            foreground=colors[0],
-            background=colors2[4],
-            padding=5
         ),
         widget.TextBox(
             text='',
@@ -735,13 +662,20 @@ def init_widgets_list():
             background=colors2[3],
             mouse_callbacks={
                 'Button1': lambda: qtile.cmd_spawn('gnome-calendar')},
-            format='%d/%m/%Y - %H:%M:%S '
+            format=' : %d/%m/%Y - %H:%M:%S'
         ),
         widget.Sep(
             linewidth=0,
             padding=10,
-            foreground=colors[0],
-            background=colors2[3]
+            foreground=colors[2],
+            background=colors[0]
+        ),
+        widget.CurrentLayoutIcon(
+            custom_icon_paths=[os.path.expanduser("~/.config/qtile/icons")],
+            foreground=colors[2],
+            background=colors[0],
+            padding=0,
+            scale=0.7
         ),
         widget.Systray(
             background=colors[0],
