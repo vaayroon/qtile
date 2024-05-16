@@ -17,7 +17,7 @@ myTerm = "/usr/bin/qterminal"                             # My terminal of choic
 # The Qtile config file location
 myConfig = "/home/kevin/.config/qtile/config.py"
 webdevice = " "
-webtext = " "
+websymbol = " "
 
 
 # evince A\ systematic\ approach\ to\ learning\ robot\ programming\ with\ ros.pdf &
@@ -481,7 +481,7 @@ extension_defaults = widget_defaults.copy()
 # a=get_my_net()
 a = get_my_net_ip()
 webdevice = a[0]
-webtext = a[1]
+websymbol = a[1]
 
 
 def init_widgets_list():
@@ -642,7 +642,7 @@ def init_widgets_list():
             # interface = "enp34s0", #ethernet
             # interface = "wlo1",	#wifi
             interface=webdevice,
-            format=' : {down}↓↑{up}',
+            format=str(websymbol) + ': {down}↓↑{up}',
             foreground=colors[0],
             background=colors2[4],
             padding=5,
