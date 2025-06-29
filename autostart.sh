@@ -24,8 +24,8 @@
 ### Laptop + 1 external monitor (HDMI-1 as primary on the right and eDP-1(laptop) as secondary on the left) --> OFICIAL HOME 2 (Sevilla)(1600x900)
 #xrandr --output eDP-1 --mode 1920x1200 --pos 0x0 --rotate normal --output HDMI-1 --primary --mode 1920x1080 --pos 1920x0 --rotate normal --output DP-1 --off --output DP-2 --off --output DP-3 --off --output DP-4 --off
 
-### Oficail Home ubuntu
-xrandr --output HDMI-0 --off --output DP-0 --primary --mode 1920x1080 --pos 1920x0 --rotate normal --output DP-1 --off --output DP-2 --mode 1920x1080 --pos 0x0 --rotate normal --output DP-3 --off --output DP-4 --off --output DP-5 --off --output None-1-1 --off
+### Oficial Home ubuntu
+xrandr --output HDMI-0 --off --output DP-0 --off --output DP-1 --off --output DP-2 --mode 1920x1080 --pos 0x0 --rotate normal --output DP-3 --off --output DP-4 --primary --mode 1920x1080 --pos 1920x0 --rotate normal --output DP-5 --off
 
 ### Single Laptop Layout (eDP-1)
 #xrandr --output eDP-1 --primary --mode 1920x1200 --pos 0x0 --rotate normal --output HDMI-1 --off --output DP-1 --off --output DP-2 --off --output DP-3 --off --output DP-4 --off
