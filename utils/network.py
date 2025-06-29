@@ -1,19 +1,3 @@
-import subprocess
-
-def get_my_net():
-    datanet = subprocess.Popen(["nmcli", "-g", "general.state",
-                               "device", "show", "eth0"], stdout=subprocess.PIPE).communicate()
-    datanetp = datanet[0].decode("utf-8")
-    res = datanetp.split()
-    datanet1 = res[0]
-    datanet2 = res[1]
-
-    if datanet2 == "(connected)":
-        setdevice = ("eth0", "󰈀 ")
-    else:
-        setdevice = ("", "󰈂  󱛅 ")
-    return setdevice
-
 def get_my_net_ip():
     import subprocess
     grepdatanetp = "none"
@@ -43,9 +27,9 @@ def get_my_net_ip():
             grepdatawifip = grepdatawifi[0].decode("utf-8")
 
     if grepdatanetp == "":
-        setdevice = ("eth0", " ")
+        setdevice = ("eth0", "󰈀 ")
     elif grepdatawifip == "":
         setdevice = ("wlan0", "󱚻 ")
     else:
-        setdevice = ("", "󰈂  󱛅 ")
+        setdevice = ("", " ")
     return setdevice
