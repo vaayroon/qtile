@@ -129,15 +129,15 @@ keys = [
         ),
     # Dmenu scripts launched with ALT + CTRL + KEY
     Key(["mod1", "control"], "e",
-        lazy.spawn("./.dmenu/dmenu-edit-configs.sh"),
+        lazy.spawn("./.dmenu/edit-configs.sh"),
         desc='Dmenu script for editing config files'
         ),
     Key(["mod1", "control"], "m",
-        lazy.spawn("./.dmenu/dmenu-sysmon.sh"),
+        lazy.spawn("./.dmenu/sys-monitoring.sh"),
         desc='Dmenu system monitor script'
         ),
     Key(["mod1", "control"], "f",
-        lazy.spawn("./.dmenu/dmenu-trading.sh"),
+        lazy.spawn("./.dmenu/trading-finance.sh"),
         desc='Dmenu trading programs script'
         ),
     Key(["mod1", "control"], "p",
