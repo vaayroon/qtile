@@ -1,7 +1,6 @@
 from libqtile.config import Key
 from libqtile.lazy import lazy
-from libqtile import qtile
-from ..settings import mod, myTerm, myConfig
+from settings import mod, myTerm
 
 keys = [
     # The essentials
@@ -231,9 +230,6 @@ keys = [
 
     # Screen Shots
     Key(["shift", mod], "s", lazy.spawn("flameshot gui"), desc="Flameshot GUI"),
-
-    # Lock screen
-    Key([mod], "l", lazy.spawn("i3lock -ufc 000000")),
 ]
 
 def init_keys():

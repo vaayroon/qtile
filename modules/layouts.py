@@ -1,5 +1,5 @@
 from libqtile import layout
-from ..settings import layout_theme
+from settings import layout_theme
 
 layouts = [
     layout.MonadWide(**layout_theme),

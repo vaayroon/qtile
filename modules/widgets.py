@@ -1,8 +1,8 @@
 import os
 import socket
 from libqtile import widget, qtile
-from ..settings import colors, colors2, myTerm
-from ..utils.network import get_my_net_ip
+from settings import colors, colors2, myTerm
+from utils.network import get_my_net_ip
 
 # Get network info
 network_info = get_my_net_ip()

@@ -1,6 +1,6 @@
 from libqtile.config import Drag, Click
 from libqtile.lazy import lazy
-from ..settings import mod
+from settings import mod
 
 mouse = [
     Drag([mod], "Button1", lazy.window.set_position_floating(),
