@@ -25,7 +25,13 @@ layouts = [
         section_top=10,
         panel_width=320
     ),
-    layout.Floating(**layout_theme)
+    # layout.Floating(**layout_theme)
+    layout.Floating(
+        border_width=layout_theme["border_width"],
+        margin=layout_theme["margin"],
+        border_focus=layout_theme["border_focus"],
+        border_normal=layout_theme["border_normal"],
+    ),
 ]
 
 def init_layouts():

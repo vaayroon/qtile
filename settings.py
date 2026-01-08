@@ -4,7 +4,7 @@ from dotenv import dotenv_values
 # Mod key settings
 mod = "mod4"  # Sets mod key to SUPER/WINDOWS
 myTerm = "/usr/bin/qterminal"
-myConfig = "/home/k3v1n/.config/qtile/config.py"
+myConfig = os.path.expanduser("~/.config/qtile/config.py")
 
 # Environment variables from .env file
 config = dotenv_values()

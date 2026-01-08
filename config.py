@@ -60,6 +60,7 @@ floating_layout = layout.Floating(float_rules=[
     Match(title='branchdialog'),  # gitk
     Match(title='pinentry'),  # GPG key password entry
     Match(wm_class='ssh-askpass'),  # ssh-askpass
+    Match(wm_class='Localsend_app'),  # localsend
 ])
 
 auto_fullscreen = True

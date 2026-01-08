@@ -7,7 +7,7 @@
 #urxvtd -q -o -f &
 
 ### Laptop, just 2 external monitors (HDMI-1 as secondary to the right and DP-3 as primary to the left) --> OFICIAL WORK
-#xrandr --output eDP-1 --off --output HDMI-1 --primary --mode 1920x1080 --pos 1920x0 --rotate normal --output DP-1 --off --output DP-2 --off --output DP-3 --mode 1920x1080 --pos 0x0 --rotate normal --output DP-4 --off
+# xrandr --output eDP-1 --off --output HDMI-1 --mode 1920x1080 --pos 0x0 --rotate normal --output DP-1 --primary --mode 1920x1080 --pos 1920x0 --rotate normal --output DP-2 --off --output DP-3 --off --output DP-4 --off
 
 ### 3 external monitors (DP-3 as thernary on left, HDMI-1 as primary on mid, DP-1 as secondary on right) -->> OFICIAL WORK 1
 #xrandr --output eDP-1 --off --output HDMI-1 --primary --mode 1920x1080 --pos 1920x0 --rotate normal --output DP-1 --mode 1920x1080 --pos 3840x0 --rotate normal --output DP-2 --off --output DP-3 --mode 1920x1080 --pos 0x0 --rotate normal --output DP-4 --off
@@ -28,19 +28,23 @@
 #xrandr --output eDP-1 --mode 1920x1200 --pos 0x0 --rotate normal --output HDMI-1 --primary --mode 1920x1080 --pos 1920x0 --rotate normal --output DP-1 --off --output DP-2 --off --output DP-3 --off --output DP-4 --off
 
 ### Oficial Home ubuntu
-xrandr --output HDMI-0 --off --output DP-0 --off --output DP-1 --off --output DP-2 --mode 1920x1080 --pos 0x0 --rotate normal --output DP-3 --off --output DP-4 --primary --mode 1920x1080 --pos 1920x0 --rotate normal --output DP-5 --off
+# xrandr --output HDMI-0 --off --output DP-0 --off --output DP-1 --mode 1920x1080 --pos 0x0 --rotate normal --output DP-2 --off --output DP-3 --off --output DP-4 --primary --mode 1920x1080 --pos 1920x0 --rotate normal --output DP-5 --off
+xrandr --output eDP-1 --primary --mode 1920x1080 --pos 1920x0 --rotate normal --output DP-1 --off --output DP-2 --off --output DP-3 --off --output HDMI-1 --mode 1920x1080 --pos 0x0 --rotate normal
 
 ### Single Laptop Layout (eDP-1)
-#xrandr --output eDP-1 --primary --mode 1920x1200 --pos 0x0 --rotate normal --output HDMI-1 --off --output DP-1 --off --output DP-2 --off --output DP-3 --off --output DP-4 --off
+# xrandr --output eDP-1 --primary --mode 1920x1200 --pos 0x0 --rotate normal --output HDMI-1 --off --output DP-1 --off --output DP-2 --off --output DP-3 --off --output DP-4 --off
 
 ### Single Monitor VGA Output (VGA-1)
 #xrandr --output DVI-I-1 --off --output HDMI-4 --off --output VGA-1 --mode 1920x1080 --pos 0x0 --rotate normal --output DP-1-1 --off --output HDMI-1-1 --off --output DP-1-2 --off --output HDMI-1-2 --off --output DP-1-3 --off --output HDMI-1-3 --off
+
+### Single Laptop Layout (HDMI to D-SUB / Laptop)
+# xrandr --output eDP-1 --primary --mode 1920x1080 --pos 1920x0 --rotate normal --output DP-1 --off --output DP-2 --off --output DP-3 --off --output HDMI-1 --mode 1920x1080 --pos 0x0 --rotate normal
 
 ##### Systray Icons #####
 
 ### Battery icon
 # select battery id from power supply list '-d', for me is BATT 
-cbatticon -d -u 5 -r 3 -c "poweroff" -l 15 -o "xbacklight = 5" BAT0 &
+cbatticon -d -u 5 -r 3 -c "poweroff" -l 15 -o "brightnessctl set 20%" BAT0 &
 
 ### Volume icon
 volumeicon &
