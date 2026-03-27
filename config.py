@@ -1,4 +1,4 @@
-from libqtile.config import Match
+from libqtile.config import Match, Rule
 from libqtile import layout
 
 # Import all modular components
@@ -19,7 +19,7 @@ extension_defaults = extension_defaults
 
 # Other global settings
 dgroups_key_binder = None
-dgroups_app_rules = None
+dgroups_app_rules: list[Rule] = []
 main = None
 follow_mouse_focus = True
 bring_front_click = False
