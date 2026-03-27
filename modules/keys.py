@@ -39,6 +39,10 @@ keys = [
     Key(["control", "mod1"], "l",
         lazy.spawn("i3lock -ufc 000000")
         ),
+    Key(["control"], "1",
+        lazy.spawn("boomer -w"),
+        desc="Zoom"
+        ),
     # Switch focus to specific monitor (out of three)
     Key([mod], "w",
         lazy.to_screen(0),

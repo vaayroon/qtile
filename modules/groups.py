@@ -14,7 +14,7 @@ group_names = [
     ("󰢹 ", {'layout': 'max'}),
     (" ", {'layout': 'max'}),
     ("󰇩 ", {'layout': 'max'}),
-    ("󰒒 ", {'layout': 'ratiotile'})
+    ("󰒒 ", {'layout': 'max'})
 ]
 
 """ groups = [Group(name, **kwargs) for name, kwargs in group_names]

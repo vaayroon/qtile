@@ -92,7 +92,7 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors2[3],
             mouse_callbacks={'Button1': lambda: qtile.cmd_spawn(
-                myTerm + ' -e /home/k3v1n/go/bin/cointop -name cointop -title virtual-shell')},
+                myTerm + ' -e /home/kevin/go/bin/cointop -name cointop -title virtual-shell')},
             padding=5
         ),
         widget.TextBox(
@@ -113,7 +113,7 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors2[4],
             threshold=90,
-            tag_sensor="Tccd2",  # Tdie
+            tag_sensor="Package id 0",  # Tccd2, Tdie
             mouse_callbacks={
                 'Button1': lambda: qtile.cmd_spawn('xfce4-sensors')},
             padding=2
@@ -186,12 +186,10 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors[0]
         ),
-        widget.CurrentLayoutIcon(
-            custom_icon_paths=[os.path.expanduser("~/.config/qtile/icons")],
+        widget.CurrentLayout(
             foreground=colors[2],
             background=colors[0],
-            padding=0,
-            scale=0.7
+            padding=5
         ),
         widget.Systray(
             background=colors[0],

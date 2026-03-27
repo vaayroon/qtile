@@ -1,6 +1,5 @@
 from libqtile.config import Match
 from libqtile import layout
-from typing import List
 
 # Import all modular components
 from modules import init_keys, init_groups, init_layouts, init_screens, init_mouse, init_hooks
@@ -20,7 +19,7 @@ extension_defaults = extension_defaults
 
 # Other global settings
 dgroups_key_binder = None
-dgroups_app_rules = []  # type: List
+dgroups_app_rules = None
 main = None
 follow_mouse_focus = True
 bring_front_click = False
@@ -61,6 +60,8 @@ floating_layout = layout.Floating(float_rules=[
     Match(title='pinentry'),  # GPG key password entry
     Match(wm_class='ssh-askpass'),  # ssh-askpass
     Match(wm_class='Localsend_app'),  # localsend
+    Match(wm_class='Solaar'),
+    Match(wm_class='Boomer'),
 ])
 
 auto_fullscreen = True
