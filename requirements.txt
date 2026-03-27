@@ -1,0 +1,13 @@
+cairocffi==1.7.1
+cffi==1.17.1
+dbus-fast==2.44.1
+librt==0.7.7
+mypy==1.19.1
+mypy_extensions==1.1.0
+pathspec==1.0.2
+psutil==7.0.0
+pycparser==2.22
+python-dotenv==1.1.1
+qtile==0.32.0
+typing_extensions==4.15.0
+xcffib==1.9.0
