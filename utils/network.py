@@ -1,35 +1,42 @@
-def get_my_net_ip():
-    import subprocess
-    grepdatanetp = "none"
-    grepdatawifip = "none"
+from pathlib import Path
+import subprocess
 
-    datanete = subprocess.Popen(
-        ["ip", "route", "show", "dev", "eth0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
 
-    if datanete[1].decode("utf-8") == "":
-        datanet = subprocess.Popen(
-                ["ip", "route", "show", "dev", "eth0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+type NetworkDevice = tuple[str, str]
 
-        grepdatanet = subprocess.Popen(
-                ["grep", "linkdown"], stdin=datanet.stdout, stdout=subprocess.PIPE).communicate()
-        grepdatanetp = grepdatanet[0].decode("utf-8")
 
-    if grepdatanetp != "":
-        datawifie = subprocess.Popen(
-                ["ip", "route", "show", "dev", "wlan0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+def _run_ip_command(*args: str) -> str:
+    result = subprocess.run(
+        ["ip", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip()
 
-        if datawifie[1].decode("utf-8") == "":
-            datawifi = subprocess.Popen(
-                    ["ip", "route", "show", "dev", "wlan0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-            grepdatawifi = subprocess.Popen(
-                    ["grep", "linkdown"], stdin=datawifi.stdout, stdout=subprocess.PIPE).communicate()
-            grepdatawifip = grepdatawifi[0].decode("utf-8")
+def _read_sysfs(path: str) -> str:
+    file_path = Path(path)
+    if not file_path.exists():
+        return ""
+    return file_path.read_text(encoding="utf-8").strip()
 
-    if grepdatanetp == "":
-        setdevice = ("eth0", "󰈀 ")
-    elif grepdatawifip == "":
-        setdevice = ("wlan0", "󱚻 ")
-    else:
-        setdevice = ("", " ")
-    return setdevice
+
+def _is_device_active(device: str) -> bool:
+    default_route = _run_ip_command("route", "show", "default", "dev", device)
+    if default_route:
+        return True
+
+    operstate = _read_sysfs(f"/sys/class/net/{device}/operstate")
+    carrier = _read_sysfs(f"/sys/class/net/{device}/carrier")
+    return operstate == "up" or carrier == "1"
+
+
+def get_my_net_ip() -> NetworkDevice:
+    if _is_device_active("eth0"):
+        return ("eth0", "󰈀 ")
+
+    if _is_device_active("wlan0"):
+        return ("wlan0", "󱚻 ")
+
+    return ("", " ")
