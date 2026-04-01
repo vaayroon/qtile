@@ -207,9 +207,9 @@ keys = [
         ),
 
     # Application launchers
-    Key([], "Menu", lazy.spawn("xfce4-appfinder"), desc='App Finder'),
-    Key([], "XF86Favorites", lazy.spawn("xfce4-appfinder"), desc='App Finder'),
-    Key([], "XF86HomePage", lazy.spawn("xfce4-appfinder"), desc='App Finder'),
+    Key([], "Menu", lazy.spawn("rofi -show drun"), desc='Rofi App Launcher'),
+    Key([], "XF86Favorites", lazy.spawn("rofi -show drun"), desc='Rofi App Launcher'),
+    Key([], "XF86HomePage", lazy.spawn("rofi -show drun"), desc='Rofi App Launcher'),
 
     # Web browser shortcuts
     Key([], "XF86Explorer", lazy.spawn("brave-browser-stable --new-window --incognito"), desc="Private Firefox"),

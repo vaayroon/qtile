@@ -113,9 +113,9 @@ def init_widgets_list():
             foreground=colors[0],
             background=colors2[4],
             threshold=90,
-            tag_sensor="Package id 0",  # Tccd2, Tdie
+            tag_sensor="Tctl",  # Tccd2, Tdie, Package id 0, Tctl, etc. Check with `sensors` command
             mouse_callbacks={
-                'Button1': lambda: qtile.cmd_spawn('xfce4-sensors')},
+                'Button1': lambda: qtile.cmd_spawn('psensor')},
             padding=2
         ),
 
@@ -131,7 +131,7 @@ def init_widgets_list():
             threshold=90,
             format=': {temp}°C, 󰈐 : {fan_speed}, 󰓅 : {perf}',
             mouse_callbacks={
-                'Button1': lambda: qtile.cmd_spawn('xfce4-sensors')},
+                'Button1': lambda: qtile.cmd_spawn('psensor')},
             padding=2
         ),
         widget.TextBox(

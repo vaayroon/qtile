@@ -62,6 +62,8 @@ floating_layout = layout.Floating(float_rules=[
     Match(wm_class='Localsend_app'),  # localsend
     Match(wm_class='Solaar'),
     Match(wm_class='Boomer'),
+    Match(wm_class='Psensor'),
+    Match(wm_class='Lxappearance'),
 ])
 
 auto_fullscreen = True
