@@ -246,13 +246,16 @@ def _primary_output_name(outputs: list[str]) -> str:
     return outputs[0]
 
 
-def _build_dynamic_layout_command(monitors: list[MonitorInfo]) -> list[str]:
+def _build_dynamic_layout_command(
+    monitors: list[MonitorInfo],
+    all_connected: list[MonitorInfo] | None = None,
+) -> list[str]:
     if not monitors:
         return []
 
     selected = monitors[:3]
-    selected_names = [monitor.name for monitor in selected]
-    primary = _primary_output_name(selected_names)
+    selected_names = {monitor.name for monitor in selected}
+    primary = _primary_output_name(list(selected_names))
 
     command = ["xrandr"]
     x_position = 0
@@ -262,7 +265,8 @@ def _build_dynamic_layout_command(monitors: list[MonitorInfo]) -> list[str]:
             command.append("--primary")
         x_position += _parse_mode_width(monitor.mode)
 
-    for monitor in monitors:
+    off_pool = all_connected if all_connected is not None else monitors
+    for monitor in off_pool:
         if monitor.name in selected_names:
             continue
         command.extend(["--output", monitor.name, "--off"])
@@ -338,7 +342,9 @@ def _legacy_fallback_commands() -> list[list[str]]:
 def apply_best_effort_layout() -> tuple[bool, str]:
     monitors = detect_connected_monitors()
     ordered_monitors = select_layout_monitors(monitors)
-    dynamic_command = _build_dynamic_layout_command(ordered_monitors)
+    dynamic_command = _build_dynamic_layout_command(
+        ordered_monitors, all_connected=monitors
+    )
 
     commands = [dynamic_command] if dynamic_command else []
     commands.extend(_legacy_fallback_commands())
