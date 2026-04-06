@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from libqtile import bar
-from libqtile.config import Screen
+from libqtile.config import Output, Screen
 from libqtile.log_utils import logger
 
 from .widgets import init_widgets_screen1, init_widgets_screen2, init_widgets_screen3
@@ -117,12 +117,16 @@ def _detect_monitor_serials() -> list[str]:
     return _parse_connected_monitor_serials(xrandr_output)
 
 
-def init_screens() -> list[Screen]:
-    monitor_serials = _detect_monitor_serials()
-    # Show monitors_serials in logs for debugging. Working with Xephyr
-    logger.info("Kevin debug: Detected monitor serials: %s", monitor_serials)
-    logger.error(f"Detected monitor serials: {monitor_serials}")
-    monitor_count = max(1, len(monitor_serials))
+def _screen_count_from_outputs(outputs: list[Output]) -> int:
+    if not outputs:
+        return 0
+
+    connected = [output for output in outputs if getattr(output, "connected", True)]
+    return len(connected) or len(outputs)
+
+
+def _build_screens_for_count(monitor_count: int) -> list[Screen]:
+    monitor_count = max(1, monitor_count)
 
     widget_factories: list[Callable[[], list[Any]]] = [
         init_widgets_screen1,
@@ -136,3 +140,22 @@ def init_screens() -> list[Screen]:
         screens.append(_build_screen(widget_factories[factory_index]))
 
     return screens
+
+
+def generate_screens(outputs: list[Output]) -> list[Screen]:
+    output_names = [str(getattr(output, "name", "unknown")) for output in outputs]
+    logger.error("Qtile outputs reported by backend: %s", output_names)
+
+    monitor_count = _screen_count_from_outputs(outputs)
+    if monitor_count == 0:
+        # Fallback for backends/sessions where output metadata is unavailable.
+        monitor_serials = _detect_monitor_serials()
+        logger.error("Fallback monitor serial detection: %s", monitor_serials)
+        monitor_count = len(monitor_serials)
+
+    return _build_screens_for_count(monitor_count)
+
+
+def init_screens() -> list[Screen]:
+    # Compatibility helper for code paths still expecting eager screen creation.
+    return generate_screens([])

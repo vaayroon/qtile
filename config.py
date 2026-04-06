@@ -1,24 +1,20 @@
-from libqtile import layout
-from libqtile.config import Match, Rule
+from collections.abc import Callable
 
-# Import all modular components
-from modules import (
-    init_groups,
-    init_hooks,
-    init_keys,
-    init_layouts,
-    init_mouse,
-    init_screens,
-)
+from libqtile import layout
+from libqtile.config import Match, Output, Rule, Screen
+
+from modules import generate_screens as build_screens
+from modules import init_groups, init_hooks, init_keys, init_layouts, init_mouse
 from settings import extension_defaults, widget_defaults
 
 # Initialize all components
 keys = init_keys()
 groups = init_groups()
 layouts = init_layouts()
-screens = init_screens()
 mouse = init_mouse()
 init_hooks()  # Set up hooks
+
+generate_screens: Callable[[list[Output]], list[Screen]] = build_screens
 
 # Default widget settings
 widget_defaults = widget_defaults

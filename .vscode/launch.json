@@ -5,16 +5,17 @@
             "name": "Python: Qtile",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/libqtile/scripts/main.py",
+            "program": "${workspaceFolder}/.venv/lib/python3.12/site-packages/libqtile/scripts/main.py",
             "cwd": "${workspaceFolder}",
             "args": [
+                "start",
                 "-c",
-                "libqtile/resources/default_config.py"
+                "config.py"
             ],
             "console": "integratedTerminal",
             "env": {
                 "PYTHONUNBUFFERED": "1",
-                "DISPLAY": ":1"
+                "DISPLAY": ":2"
             }
         }
     ]
