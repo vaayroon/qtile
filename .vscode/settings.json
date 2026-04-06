@@ -8,12 +8,8 @@
       "source.organizeImports.ruff": "explicit"
     }
   },
-  "python.analysis.typeCheckingMode": "strict",
   "mypy-type-checker.args": [
     "--strict"
-  ],
-  "python.analysis.extraPaths": [
-    "${workspaceFolder}/src"
   ],
   "files.exclude": {
     "**/__pycache__": true,

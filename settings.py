@@ -43,7 +43,11 @@ colors2 = [
 ]
 
 # Widget defaults
-widget_defaults = dict(
-    font="CaskaydiaCove Nerd Font", fontsize=12, padding=0, background=colors[2]
-)
+widget_defaults = {
+    "font": "CaskaydiaCove Nerd Font",
+    "fontsize": 12,
+    "padding": 0,
+    "background": colors[2],
+}
+
 extension_defaults = widget_defaults.copy()
