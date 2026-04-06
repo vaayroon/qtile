@@ -1,5 +1,0 @@
-#!/bin/bash
-
-source ~/.config/qtile/.venv2/bin/activate
-exec ~/.config/qtile/.venv2/bin/qtile "$@"
-
