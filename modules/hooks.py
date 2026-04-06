@@ -4,7 +4,7 @@ import subprocess
 from libqtile import hook
 
 
-@hook.subscribe.startup_once  # type: ignore[reportUnknownMemberType]
+@hook.subscribe.startup_once
 def start_once() -> None:
     home = os.path.expanduser("~")
     subprocess.call([home + "/.config/qtile/autostart.sh"])
