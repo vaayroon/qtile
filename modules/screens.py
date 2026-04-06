@@ -198,7 +198,7 @@ def _build_screens_for_count(monitor_count: int) -> list[Screen]:
     return screens
 
 
-def generate_screens(outputs: list[Output]) -> list[Screen]:
+def generate_screens_module(outputs: list[Output]) -> list[Screen]:
     logger.error(
         "Qtile backend outputs (%d): %s",
         len(outputs),
@@ -220,4 +220,4 @@ def generate_screens(outputs: list[Output]) -> list[Screen]:
 
 def init_screens() -> list[Screen]:
     # Compatibility helper for code paths still expecting eager screen creation.
-    return generate_screens([])
+    return generate_screens_module([])
