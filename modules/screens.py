@@ -1,26 +1,138 @@
+import os
+import re
+import subprocess
+from collections.abc import Callable
+from typing import Any
+
 from libqtile import bar
 from libqtile.config import Screen
+from libqtile.log_utils import logger
 
 from .widgets import init_widgets_screen1, init_widgets_screen2, init_widgets_screen3
 
-### Single monitor support
-""" def init_screens():
-        return [
-            Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20))
-        ] """
-
-### Dual Monitor Support
-""" def init_screens():
-        return [
-            Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20)),
-            Screen(top=bar.Bar(widgets=init_widgets_screen2(), opacity=1.0, size=20))
-        ] """
+BAR_SIZE = 20
+BAR_OPACITY = 1.0
+_CONNECTED_RE = re.compile(r"^(?P<port>\S+) connected(?:\s+primary)?")
+_SERIAL_RE = re.compile(r"^\s*\t?serial number:\s*(?P<serial>\S+)", re.IGNORECASE)
+_HEX_RE = re.compile(r"^[\t ]+[0-9a-f]{32}$", re.IGNORECASE)
 
 
-### Triple Monitor Support
-def init_screens() -> list[Screen]:
-    return [
-        Screen(top=bar.Bar(widgets=init_widgets_screen1(), opacity=1.0, size=20)),
-        Screen(top=bar.Bar(widgets=init_widgets_screen2(), opacity=1.0, size=20)),
-        Screen(top=bar.Bar(widgets=init_widgets_screen3(), opacity=1.0, size=20)),
+def _build_screen(widget_factory: Callable[[], list[Any]]) -> Screen:
+    return Screen(
+        top=bar.Bar(
+            widgets=widget_factory(),
+            opacity=BAR_OPACITY,
+            size=BAR_SIZE,
+        )
+    )
+
+
+def _serial_from_edid(edid_lines: list[str]) -> str | None:
+    hex_blob = "".join(line.strip() for line in edid_lines)
+    if len(hex_blob) < 32:
+        return None
+
+    try:
+        serial_bytes = bytes.fromhex(hex_blob)[12:16]
+    except ValueError:
+        return None
+
+    if len(serial_bytes) != 4:
+        return None
+
+    serial_value = int.from_bytes(serial_bytes, byteorder="little", signed=False)
+    return None if serial_value == 0 else str(serial_value)
+
+
+def _parse_connected_monitor_serials(xrandr_output: str) -> list[str]:
+    serials_with_ports: list[tuple[str, str]] = []
+    current_port: str | None = None
+    pending_edid: list[str] = []
+
+    for raw_line in xrandr_output.splitlines():
+        connected_match = _CONNECTED_RE.match(raw_line)
+        if connected_match:
+            current_port = connected_match.group("port")
+            pending_edid = []
+            continue
+
+        if current_port is None:
+            continue
+
+        serial_match = _SERIAL_RE.match(raw_line)
+        if serial_match:
+            serials_with_ports.append((serial_match.group("serial"), current_port))
+            current_port = None
+            pending_edid = []
+            continue
+
+        if raw_line.strip() == "EDID:":
+            pending_edid = []
+            continue
+
+        if pending_edid is not None and _HEX_RE.match(raw_line):
+            pending_edid.append(raw_line)
+            continue
+
+        if pending_edid:
+            edid_serial = _serial_from_edid(pending_edid)
+            if edid_serial is not None:
+                serials_with_ports.append((edid_serial, current_port))
+            current_port = None
+            pending_edid = []
+
+    if pending_edid and current_port is not None:
+        edid_serial = _serial_from_edid(pending_edid)
+        if edid_serial is not None:
+            serials_with_ports.append((edid_serial, current_port))
+
+    serial_priority = [
+        item.strip()
+        for item in os.environ.get("QTILE_SCREEN_SERIAL_ORDER", "").split(",")
+        if item.strip()
     ]
+
+    priority_index = {serial: index for index, serial in enumerate(serial_priority)}
+    serials_with_ports.sort(
+        key=lambda item: (
+            priority_index.get(item[0], len(serial_priority)),
+            item[0],
+            item[1],
+        )
+    )
+
+    return [serial for serial, _port in serials_with_ports]
+
+
+def _detect_monitor_serials() -> list[str]:
+    try:
+        xrandr_output = subprocess.check_output(
+            ["xrandr", "--props"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return []
+
+    return _parse_connected_monitor_serials(xrandr_output)
+
+
+def init_screens() -> list[Screen]:
+    monitor_serials = _detect_monitor_serials()
+    # Show monitors_serials in logs for debugging. Working with Xephyr
+    logger.info("Kevin debug: Detected monitor serials: %s", monitor_serials)
+    logger.error(f"Detected monitor serials: {monitor_serials}")
+    monitor_count = max(1, len(monitor_serials))
+
+    widget_factories: list[Callable[[], list[Any]]] = [
+        init_widgets_screen1,
+        init_widgets_screen2,
+        init_widgets_screen3,
+    ]
+
+    screens: list[Screen] = []
+    for index in range(monitor_count):
+        factory_index = min(index, len(widget_factories) - 1)
+        screens.append(_build_screen(widget_factories[factory_index]))
+
+    return screens
