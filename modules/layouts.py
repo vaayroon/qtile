@@ -1,7 +1,10 @@
+from typing import Any
+
 from libqtile import layout
+
 from settings import layout_theme
 
-layouts = [
+layouts: list[Any] = [
     layout.MonadWide(**layout_theme),
     layout.RatioTile(**layout_theme),
     layout.VerticalTile(**layout_theme),
@@ -23,7 +26,7 @@ layouts = [
         inactive_fg="a0a0a0",
         padding_y=5,
         section_top=10,
-        panel_width=320
+        panel_width=320,
     ),
     # layout.Floating(**layout_theme)
     layout.Floating(
@@ -34,5 +37,6 @@ layouts = [
     ),
 ]
 
-def init_layouts():
+
+def init_layouts() -> list[Any]:
     return layouts
