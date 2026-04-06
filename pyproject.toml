@@ -1,6 +1,7 @@
 [tool.ruff]
 target-version = "py312"
 line-length = 88
+src = ["src"]
 
 [tool.ruff.lint]
 select = [
@@ -16,12 +17,14 @@ select = [
 ignore = []
 
 [tool.ruff.lint.isort]
-known-first-party = ["config"]
+known-first-party = ["config", "modules", "settings", "utils"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = false
 explicit_package_bases = true
+namespace_packages = true
+mypy_path = "src"
 warn_unused_ignores = true
 warn_return_any = true
 disallow_untyped_defs = true
@@ -41,6 +44,7 @@ ignore_missing_imports = true
 [tool.pyright]
 typeCheckingMode = "basic"
 pythonVersion = "3.12"
+searchPaths = ["src"]
 reportUnknownMemberType = "none"
 reportUnknownFunctionType = "none"
 reportUnknownArgumentType = "none"

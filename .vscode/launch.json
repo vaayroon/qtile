@@ -10,7 +10,7 @@
             "args": [
                 "start",
                 "-c",
-                "config.py"
+                "src/config.py"
             ],
             "console": "integratedTerminal",
             "env": {

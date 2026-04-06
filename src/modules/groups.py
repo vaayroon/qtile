@@ -3,8 +3,9 @@ from typing import TypedDict
 from libqtile.config import Group, Key
 from libqtile.lazy import lazy
 
-from modules.keys import keys
 from settings import mod
+
+from .keys import keys
 
 
 class GroupCfg(TypedDict):
