@@ -34,4 +34,5 @@ luego recargar cache
 instalar gnome tweaks
 cambiar la fuente de interfaz de gnome
 
+instalar blueman
 

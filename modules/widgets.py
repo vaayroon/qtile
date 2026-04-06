@@ -64,7 +64,7 @@ def init_widgets_list() -> list[Any]:
             padding=5,
             fontsize=14,
             mouse_callbacks={
-                "Button1": lambda: qtile.cmd_spawn(
+                "Button1": lambda: qtile.spawn(
                     myTerm + " -e --title virtual-shell sudo apt dist-upgrade"
                 )
             },
@@ -85,7 +85,7 @@ def init_widgets_list() -> list[Any]:
             foreground=colors[0],
             background=colors2[3],
             mouse_callbacks={
-                "Button1": lambda: qtile.cmd_spawn(
+                "Button1": lambda: qtile.spawn(
                     myTerm + " -e ~/go/bin/cointop -name cointop -title virtual-shell"
                 )
             },
@@ -110,7 +110,7 @@ def init_widgets_list() -> list[Any]:
             background=colors2[4],
             threshold=90,
             tag_sensor="Tctl",  # Tccd2, Tdie, Tctl, etc. Check with `sensors` command
-            mouse_callbacks={"Button1": lambda: qtile.cmd_spawn("psensor")},
+            mouse_callbacks={"Button1": lambda: qtile.spawn("psensor")},
             padding=2,
         ),
         widget.TextBox(
@@ -121,7 +121,7 @@ def init_widgets_list() -> list[Any]:
             background=colors2[4],
             threshold=90,
             format=": {temp}°C, 󰈐 : {fan_speed}, 󰓅 : {perf}",
-            mouse_callbacks={"Button1": lambda: qtile.cmd_spawn("psensor")},
+            mouse_callbacks={"Button1": lambda: qtile.spawn("psensor")},
             padding=2,
         ),
         widget.TextBox(
@@ -135,7 +135,7 @@ def init_widgets_list() -> list[Any]:
             foreground=colors[0],
             background=colors2[3],
             mouse_callbacks={
-                "Button1": lambda: qtile.cmd_spawn(
+                "Button1": lambda: qtile.spawn(
                     myTerm + " -e htop -name htop -title virtual-shell"
                 )
             },
@@ -155,7 +155,7 @@ def init_widgets_list() -> list[Any]:
             background=colors2[4],
             padding=5,
             mouse_callbacks={
-                "Button1": lambda: qtile.cmd_spawn(
+                "Button1": lambda: qtile.spawn(
                     myTerm + " -e glances -name sys-monit -title virtual-shell"
                 )
             },
@@ -172,7 +172,7 @@ def init_widgets_list() -> list[Any]:
             padding=3,
             foreground=colors[0],
             background=colors2[3],
-            mouse_callbacks={"Button1": lambda: qtile.cmd_spawn("gnome-calendar")},
+            mouse_callbacks={"Button1": lambda: qtile.spawn("gnome-calendar")},
             format=" : %d/%m/%Y - %H:%M:%S",
         ),
         widget.Sep(linewidth=0, padding=10, foreground=colors[0], background=colors[0]),
