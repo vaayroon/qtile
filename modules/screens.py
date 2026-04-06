@@ -13,6 +13,9 @@ from .widgets import init_widgets_screen1, init_widgets_screen2, init_widgets_sc
 BAR_SIZE = 20
 BAR_OPACITY = 1.0
 _CONNECTED_RE = re.compile(r"^(?P<port>\S+) connected(?:\s+primary)?")
+_ACTIVE_OUTPUT_RE = re.compile(
+    r"^(?P<port>\S+)\s+connected(?:\s+primary)?\s+(?P<mode>\d+x\d+\+\d+\+\d+)\b"
+)
 _SERIAL_RE = re.compile(r"^\s*\t?serial number:\s*(?P<serial>\S+)", re.IGNORECASE)
 _HEX_RE = re.compile(r"^[\t ]+[0-9a-f]{32}$", re.IGNORECASE)
 
@@ -117,6 +120,59 @@ def _detect_monitor_serials() -> list[str]:
     return _parse_connected_monitor_serials(xrandr_output)
 
 
+def _detect_active_monitor_count() -> tuple[int, str]:
+    # Preferred source: xrandr reports only currently active monitors.
+    try:
+        list_output = subprocess.check_output(
+            ["xrandr", "--listactivemonitors"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        list_output = ""
+
+    for raw_line in list_output.splitlines():
+        if raw_line.startswith("Monitors:"):
+            _, _, value = raw_line.partition(":")
+            try:
+                return max(0, int(value.strip())), "xrandr --listactivemonitors"
+            except ValueError:
+                break
+
+    # Secondary source: active outputs have current geometry in xrandr --query.
+    try:
+        query_output = subprocess.check_output(
+            ["xrandr", "--query"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return 0, "no-xrandr-fallback"
+
+    return (
+        sum(
+            1
+            for raw_line in query_output.splitlines()
+            if _ACTIVE_OUTPUT_RE.match(raw_line)
+        ),
+        "xrandr --query",
+    )
+
+
+def _format_backend_outputs(outputs: list[Output]) -> str:
+    if not outputs:
+        return "none"
+
+    parts: list[str] = []
+    for index, output in enumerate(outputs):
+        name = getattr(output, "name", "unknown")
+        connected = getattr(output, "connected", "unknown")
+        enabled = getattr(output, "enabled", "unknown")
+        parts.append(f"#{index}:name={name},connected={connected},enabled={enabled}")
+
+    return "; ".join(parts)
+
+
 def _screen_count_from_outputs(outputs: list[Output]) -> int:
     if not outputs:
         return 0
@@ -143,15 +199,21 @@ def _build_screens_for_count(monitor_count: int) -> list[Screen]:
 
 
 def generate_screens(outputs: list[Output]) -> list[Screen]:
-    output_names = [str(getattr(output, "name", "unknown")) for output in outputs]
-    logger.error("Qtile outputs reported by backend: %s", output_names)
+    logger.error(
+        "Qtile backend outputs (%d): %s",
+        len(outputs),
+        _format_backend_outputs(outputs),
+    )
 
     monitor_count = _screen_count_from_outputs(outputs)
     if monitor_count == 0:
         # Fallback for backends/sessions where output metadata is unavailable.
-        monitor_serials = _detect_monitor_serials()
-        logger.error("Fallback monitor serial detection: %s", monitor_serials)
-        monitor_count = len(monitor_serials)
+        monitor_count, source = _detect_active_monitor_count()
+        logger.error(
+            "Fallback active monitor count: %d (source=%s)",
+            monitor_count,
+            source,
+        )
 
     return _build_screens_for_count(monitor_count)
 
