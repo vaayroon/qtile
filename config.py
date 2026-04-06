@@ -30,6 +30,7 @@ dgroups_app_rules: list[Rule] = []
 main = None
 follow_mouse_focus = True
 bring_front_click = False
+floats_kept_above = True
 cursor_warp = False
 
 floating_layout = layout.Floating(
@@ -77,4 +78,9 @@ floating_layout = layout.Floating(
 
 auto_fullscreen = True
 focus_on_window_activation = "smart"
+focus_previous_on_window_remove = False
+reconfigure_screens = True
+
+auto_minimize = True
+
 wmname = "LG3D"

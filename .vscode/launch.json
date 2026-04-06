@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Qtile",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/libqtile/scripts/main.py",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "-c",
+                "libqtile/resources/default_config.py"
+            ],
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONUNBUFFERED": "1",
+                "DISPLAY": ":1"
+            }
+        }
+    ]
+}
