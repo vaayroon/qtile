@@ -19,7 +19,7 @@ websymbol = network_info[1]
 prompt = "{}@{}: ".format(os.environ["USER"], socket.gethostname())
 
 
-def init_widgets_list() -> list[Any]:
+def init_widgets_list(*, include_systray: bool) -> list[Any]:
     widgets_list = [
         widget.Sep(linewidth=0, padding=6, foreground=colors[2], background=colors[0]),
         widget.GroupBox(
@@ -177,32 +177,21 @@ def init_widgets_list() -> list[Any]:
         ),
         widget.Sep(linewidth=0, padding=10, foreground=colors[0], background=colors[0]),
         widget.CurrentLayout(foreground=colors[2], background=colors[0], padding=5),
-        widget.Systray(background=colors[0], padding=5),
     ]
+
+    if include_systray:
+        widgets_list.append(widget.Systray(background=colors[0], padding=5))
 
     return widgets_list
 
 
-def delete_list_from_to(target_list: list[Any], object_name_from: str) -> list[Any]:
-    for index, widdgets in enumerate(target_list):
-        if widdgets.name == object_name_from:
-            del target_list[index:]
-            return target_list
-    return target_list
-
-
 def init_widgets_screen1() -> list[Any]:
-    widgets_screen1 = init_widgets_list()
-    return widgets_screen1
+    return init_widgets_list(include_systray=True)
 
 
 def init_widgets_screen2() -> list[Any]:
-    widgets_screen2 = init_widgets_list()
-    widgets_screen2 = delete_list_from_to(widgets_screen2, "systray")
-    return widgets_screen2
+    return init_widgets_list(include_systray=False)
 
 
 def init_widgets_screen3() -> list[Any]:
-    widgets_screen3 = init_widgets_list()
-    widgets_screen3 = delete_list_from_to(widgets_screen3, "systray")
-    return widgets_screen3
+    return init_widgets_list(include_systray=False)
