@@ -8,8 +8,8 @@
 
 ##### Set up the environment for gnome-keyring-daemon #####
 
-dbus-update-activation-environment --all
-gnome-keyring-daemon --start --components=secrets
+/usr/bin/dbus-update-activation-environment --all &
+/usr/bin/gnome-keyring-daemon --start --components=secrets &
 
 ##### Systray Icons #####
 
