@@ -108,7 +108,7 @@ def _build_screens_for_count(monitor_count: int) -> list[Screen]:
 
 
 def generate_screens_module(outputs: list[Output]) -> list[Screen]:
-    logger.error(
+    logger.info(
         "Qtile backend outputs (%d): %s",
         len(outputs),
         _format_backend_outputs(outputs),
@@ -121,7 +121,7 @@ def generate_screens_module(outputs: list[Output]) -> list[Screen]:
             # Final fallback for sessions where xrandr --props cannot be read.
             monitor_count, source = _detect_active_monitor_count()
 
-        logger.error(
+        logger.info(
             "Fallback active monitor count: %d (source=%s)",
             monitor_count,
             source,
