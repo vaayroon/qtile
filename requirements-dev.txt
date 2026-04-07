@@ -23,7 +23,7 @@ cffi==2.0.0
     #   cairocffi
     #   qtile
     #   xcffib
-click==8.3.1
+click==8.3.2
     # via pip-tools
 dbus-fast==4.0.4
     # via -r requirements.in
@@ -67,7 +67,7 @@ python-dotenv==1.2.2
     # via -r requirements.in
 qtile==0.35.0
     # via -r requirements.in
-ruff==0.15.8
+ruff==0.15.9
     # via -r requirements-dev.in
 typing-extensions==4.15.0
     # via
