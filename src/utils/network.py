@@ -36,7 +36,10 @@ def _read_sysfs(path: str) -> str:
     file_path = Path(path)
     if not file_path.exists():
         return ""
-    return file_path.read_text(encoding="utf-8").strip()
+    try:
+        return file_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 def _is_device_active(device: str) -> bool:
