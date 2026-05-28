@@ -7,6 +7,7 @@ from libqtile import widget
 
 from settings import colors, colors2, myTerm
 from utils.network import get_my_net_ip
+from widgets import PhoneMirrorWidget
 
 qtile: Any = _qtile_raw
 
@@ -165,6 +166,25 @@ def init_widgets_list(*, include_systray: bool) -> list[Any]:
             text="",
             background=colors2[4],
             foreground=colors2[3],
+            padding=-2,
+            fontsize=37,
+        ),
+        PhoneMirrorWidget(
+            foreground=colors[0],
+            background=colors2[3],
+            padding=6,
+            adb_path="/opt/genymobile/adb",
+            scrcpy_path="scrcpy",
+            wireless_target="",
+            device="",
+            turn_screen_off=True,
+            show_device=False,
+            update_interval=8,
+        ),
+        widget.TextBox(
+            text="",
+            background=colors2[3],
+            foreground=colors2[4],
             padding=-2,
             fontsize=37,
         ),

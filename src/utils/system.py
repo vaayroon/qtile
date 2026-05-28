@@ -234,8 +234,12 @@ def _primary_output_name(outputs: list[str]) -> str:
     if not outputs:
         return ""
 
-    if len(outputs) == 1 and "DP-2" in outputs:
-        return "DP-2"
+    if len(outputs) == 1:
+        return outputs[0]
+
+    env_primary = os.environ.get("QTILE_PRIMARY_MONITOR", "").strip()
+    if env_primary and env_primary in outputs:
+        return env_primary
 
     if "HDMI-0" in outputs:
         return "HDMI-0"
