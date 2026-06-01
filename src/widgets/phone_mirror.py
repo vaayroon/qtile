@@ -15,7 +15,7 @@ if TYPE_CHECKING:
         def tick(self) -> None: ...
 
 else:
-    from libqtile.widget.base import ThreadPoolText as ThreadPoolTextBase
+    from libqtile.widget.base import InLoopPollText as ThreadPoolTextBase
 
 
 class PhoneMirrorWidget(ThreadPoolTextBase):
@@ -58,7 +58,7 @@ class PhoneMirrorWidget(ThreadPoolTextBase):
     ]
 
     def __init__(self, **config: Any) -> None:
-        super().__init__(text="PHONE:INIT", **config)
+        super().__init__(**config)
         self.add_defaults(self.defaults)
         self._scrcpy_process: subprocess.Popen[str] | None = None
         self.turn_screen_off: bool = bool(getattr(self, "turn_screen_off", True))
