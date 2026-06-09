@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Any
 
 from dotenv import dotenv_values
@@ -7,8 +8,11 @@ from dotenv import dotenv_values
 mod = "mod4"  # Sets mod key to SUPER/WINDOWS
 myTerm = "/usr/bin/qterminal"
 
-# Environment variables from .env file
-config = dotenv_values()
+# Environment variables from .env file.
+# Resolve the path relative to this file (repo root) so the config loads
+# regardless of the working directory Qtile is launched from.
+ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+config = dotenv_values(ENV_FILE)
 for key, value in config.items():
     os.environ[f"{key}"] = f"{value}"
 

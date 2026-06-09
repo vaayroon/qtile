@@ -1,5 +1,0 @@
--r requirements.in
-
-ruff
-mypy
-pip-tools
