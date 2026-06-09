@@ -186,3 +186,6 @@ poetry.toml
 # Ignore all local history of files
 .history
 .ionide
+
+# gentle-ai
+.atl

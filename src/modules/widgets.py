@@ -7,7 +7,7 @@ from libqtile import widget
 
 from settings import colors, colors2, myTerm
 from utils.network import get_my_net_ip
-from widgets import PhoneMirrorWidget
+from widgets.phone_mirror import PhoneMirrorWidget
 
 qtile: Any = _qtile_raw
 
@@ -174,7 +174,7 @@ def init_widgets_list(*, include_systray: bool) -> list[Any]:
             background=colors2[3],
             padding=6,
             adb_path="/opt/genymobile/adb",
-            scrcpy_path="scrcpy",
+            scrcpy_path="/opt/genymobile/scrcpy",
             wireless_target="",
             device="",
             turn_screen_off=True,
