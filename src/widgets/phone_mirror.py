@@ -1,25 +1,15 @@
+import asyncio
 import os
 import shutil
 import subprocess
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-
-    class ThreadPoolTextBase:
-        def __init__(self, text: str = "", **config: Any) -> None: ...
-
-        def add_defaults(self, defaults: list[tuple[str, Any, str]]) -> None: ...
-
-        def add_callbacks(self, callbacks: dict[str, Any]) -> None: ...
-
-        def tick(self) -> None: ...
-
-else:
-    from libqtile.widget.base import InLoopPollText as ThreadPoolTextBase
+from libqtile.log_utils import logger
+from libqtile.widget import base
 
 
-class PhoneMirrorWidget(ThreadPoolTextBase):
+class PhoneMirrorWidget(base.BackgroundPoll):
     """Control wireless ADB + scrcpy mirroring directly from the Qtile bar.
 
     Mouse controls:
@@ -105,6 +95,10 @@ class PhoneMirrorWidget(ThreadPoolTextBase):
             }
         )
 
+    # -------------------------------------------------------------------------
+    # Poll (sync — runs in executor thread via BackgroundPoll)
+    # -------------------------------------------------------------------------
+
     def poll(self) -> str:
         resolved = self._resolve_settings()
 
@@ -140,54 +134,190 @@ class PhoneMirrorWidget(ThreadPoolTextBase):
             return f"{base_text}:{device}"
         return base_text
 
-    def _toggle_mirroring(self) -> None:
-        if self._is_mirroring_running():
-            self._stop_mirroring()
-            self.tick()
-            return
+    # -------------------------------------------------------------------------
+    # Async button callbacks
+    # -------------------------------------------------------------------------
 
-        if not self._ensure_ready_for_mirroring(triggered_by_user=True):
-            self.tick()
-            return
+    async def _toggle_mirroring(self) -> None:
+        try:
+            if self._is_mirroring_running():
+                self._stop_mirroring()
+                self.force_update()
+                return
 
-        self._start_mirroring()
-        self.tick()
+            if not await self._ensure_ready_for_mirroring_async(triggered_by_user=True):
+                self.force_update()
+                return
 
-    def _toggle_turn_screen_off(self) -> None:
+            await self._start_mirroring_async()
+            self.force_update()
+        except Exception:
+            logger.exception("PhoneMirrorWidget: error in _toggle_mirroring")
+            self.force_update()
+
+    async def _toggle_turn_screen_off(self) -> None:
         current = self._to_bool(self._resolve_value("turn_screen_off"))
         self._session_values["turn_screen_off"] = self._bool_to_string(not current)
-        self.tick()
+        self.force_update()
 
-    def _reconnect_wireless(self) -> None:
+    async def _reconnect_wireless(self) -> None:
+        try:
+            resolved = self._resolve_settings()
+            target = resolved["wireless_target"]
+            device = resolved["device"]
+            adb_path = resolved["adb_path"]
+
+            if target:
+                await self._adb_call_async(adb_path, ["disconnect", target])
+                await self._adb_call_async(adb_path, ["connect", target])
+            elif device:
+                await self._adb_call_async(adb_path, ["disconnect", device])
+                await self._adb_call_async(adb_path, ["connect", device])
+            else:
+                await self._adb_call_async(adb_path, ["disconnect"])
+
+            ready = await self._ensure_ready_for_mirroring_async(
+                triggered_by_user=False
+            )
+            if not ready:
+                await self._prompt_for_missing_or_failed_connection_async()
+
+            self.force_update()
+        except Exception:
+            logger.exception("PhoneMirrorWidget: error in _reconnect_wireless")
+            self.force_update()
+
+    async def _volume_up(self) -> None:
+        try:
+            step = max(1, self._safe_int(self._resolve_value("volume_step"), 5))
+            for _ in range(step):
+                await self._send_keyevent_async(24)
+        except Exception:
+            logger.exception("PhoneMirrorWidget: error in _volume_up")
+
+    async def _volume_down(self) -> None:
+        try:
+            step = max(1, self._safe_int(self._resolve_value("volume_step"), 5))
+            for _ in range(step):
+                await self._send_keyevent_async(25)
+        except Exception:
+            logger.exception("PhoneMirrorWidget: error in _volume_down")
+
+    # -------------------------------------------------------------------------
+    # Async adb infrastructure
+    # -------------------------------------------------------------------------
+
+    async def _adb_call_async(self, adb_path: str, args: Sequence[str]) -> str | None:
+        command = [adb_path, *args]
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        except TimeoutError:
+            if proc is not None:
+                proc.kill()
+                await proc.wait()
+            logger.debug("PhoneMirrorWidget: adb command timed out: %s", command)
+            return None
+        except OSError:
+            logger.debug("PhoneMirrorWidget: OSError running adb command: %s", command)
+            return None
+
+        if proc.returncode != 0:
+            return None
+
+        return stdout.decode(errors="replace")
+
+    async def _has_connected_device_async(
+        self, adb_path: str, expected_device: str
+    ) -> bool:
+        output = await self._adb_call_async(adb_path, ["devices"])
+        if output is None:
+            return False
+
+        for raw_line in output.splitlines()[1:]:
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.endswith("\tdevice"):
+                serial = line.split("\t", maxsplit=1)[0]
+                if not expected_device or expected_device == serial:
+                    return True
+
+        return False
+
+    async def _send_keyevent_async(self, keycode: int) -> None:
         resolved = self._resolve_settings()
-        target = resolved["wireless_target"]
-        device = resolved["device"]
-        adb_path = resolved["adb_path"]
+        args: list[str] = ["shell", "input", "keyevent", str(keycode)]
+        if resolved["device"]:
+            args = ["-s", resolved["device"], *args]
+        await self._adb_call_async(resolved["adb_path"], args)
 
-        if target:
-            self._adb_call(adb_path, ["disconnect", target])
-            self._adb_call(adb_path, ["connect", target])
-        elif device:
-            self._adb_call(adb_path, ["disconnect", device])
-            self._adb_call(adb_path, ["connect", device])
-        else:
-            self._adb_call(adb_path, ["disconnect"])
+    async def _ensure_ready_for_mirroring_async(
+        self, *, triggered_by_user: bool
+    ) -> bool:
+        resolved = self._resolve_settings()
 
-        if not self._ensure_ready_for_mirroring(triggered_by_user=False):
-            self._prompt_for_missing_or_failed_connection()
-        self.tick()
+        if not self._has_binary(resolved["adb_path"]) or not self._has_binary(
+            resolved["scrcpy_path"]
+        ):
+            if not triggered_by_user:
+                return False
+            if not await self._prompt_for_missing_or_failed_connection_async():
+                return False
+            resolved = self._resolve_settings()
 
-    def _start_mirroring(self) -> None:
+        connected = await self._has_connected_device_async(
+            resolved["adb_path"],
+            resolved["device"],
+        )
+        if connected:
+            return True
+
+        if resolved["wireless_target"]:
+            await self._adb_call_async(
+                resolved["adb_path"],
+                ["connect", resolved["wireless_target"]],
+            )
+            if await self._has_connected_device_async(
+                resolved["adb_path"],
+                resolved["device"],
+            ):
+                return True
+
+        if not triggered_by_user:
+            return False
+
+        if not await self._prompt_for_missing_or_failed_connection_async():
+            return False
+
+        resolved = self._resolve_settings()
+        if resolved["wireless_target"]:
+            await self._adb_call_async(
+                resolved["adb_path"],
+                ["connect", resolved["wireless_target"]],
+            )
+
+        return await self._has_connected_device_async(
+            resolved["adb_path"],
+            resolved["device"],
+        )
+
+    async def _start_mirroring_async(self) -> None:
         resolved = self._resolve_settings()
 
         if (
-            not self._has_connected_device(
+            not await self._has_connected_device_async(
                 resolved["adb_path"],
                 resolved["device"],
             )
             and resolved["wireless_target"]
         ):
-            self._adb_call(
+            await self._adb_call_async(
                 resolved["adb_path"],
                 ["connect", resolved["wireless_target"]],
             )
@@ -205,6 +335,115 @@ class PhoneMirrorWidget(ThreadPoolTextBase):
             stderr=subprocess.DEVNULL,
             text=True,
         )
+
+    # -------------------------------------------------------------------------
+    # Async zenity prompt
+    # -------------------------------------------------------------------------
+
+    async def _prompt_for_missing_or_failed_connection_async(self) -> bool:
+        initial = self._resolve_settings()
+        values = await self._prompt_with_zenity_async(initial)
+        if not values:
+            return False
+
+        self._session_values.update(values)
+        return True
+
+    async def _prompt_with_zenity_async(
+        self, initial: dict[str, str]
+    ) -> dict[str, str] | None:
+        if shutil.which("zenity") is None:
+            logger.warning("PhoneMirrorWidget: zenity not found; skipping setup prompt")
+            return None
+
+        # Zenity forms cannot prefill defaults directly, so values are shown in labels.
+        command = [
+            "zenity",
+            "--forms",
+            "--title=Phone Mirror Setup",
+            "--text=Ingresa solo lo minimo para conectar el telefono",
+            "--separator=|",
+            (
+                "--add-entry=ADB host:port "
+                f"({initial['wireless_target'] or '192.168.1.10:5555'})"
+            ),
+            f"--add-entry=Device serial opcional ({initial['device'] or 'auto'})",
+            f"--add-entry=ADB path ({initial['adb_path']})",
+            f"--add-entry=scrcpy path ({initial['scrcpy_path']})",
+        ]
+
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+        except TimeoutError:
+            if proc is not None:
+                proc.kill()
+                await proc.wait()
+            return None
+        except OSError:
+            return None
+
+        if proc.returncode != 0:
+            return None
+
+        values = stdout.decode(errors="replace").strip().split("|")
+        if len(values) < 4:
+            return None
+
+        target = values[0].strip() or initial["wireless_target"]
+        device = values[1].strip() or initial["device"]
+        adb_path = values[2].strip() or initial["adb_path"]
+        scrcpy_path = values[3].strip() or initial["scrcpy_path"]
+
+        return {
+            "wireless_target": target,
+            "device": device,
+            "adb_path": adb_path,
+            "scrcpy_path": scrcpy_path,
+        }
+
+    # -------------------------------------------------------------------------
+    # Sync adb infrastructure (poll path — runs in executor thread)
+    # -------------------------------------------------------------------------
+
+    def _adb_call(self, adb_path: str, args: Sequence[str]) -> str | None:
+        command: list[str] = [adb_path, *args]
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+        if completed.returncode != 0:
+            return None
+
+        return completed.stdout
+
+    def _has_connected_device(self, adb_path: str, expected_device: str) -> bool:
+        output = self._adb_call(adb_path, ["devices"])
+        if output is None:
+            return False
+
+        for raw_line in output.splitlines()[1:]:
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.endswith("\tdevice"):
+                serial = line.split("\t", maxsplit=1)[0]
+                if not expected_device or expected_device == serial:
+                    return True
+
+        return False
 
     def _stop_mirroring(self) -> None:
         if self._scrcpy_process is None:
@@ -225,56 +464,17 @@ class PhoneMirrorWidget(ThreadPoolTextBase):
 
         return True
 
-    def _has_connected_device(self, adb_path: str, expected_device: str) -> bool:
-        output = self._adb_call(adb_path, ["devices"])
-        if output is None:
-            return False
+    # -------------------------------------------------------------------------
+    # Lifecycle
+    # -------------------------------------------------------------------------
 
-        for raw_line in output.splitlines()[1:]:
-            line = raw_line.strip()
-            if not line:
-                continue
-            if line.endswith("\tdevice"):
-                serial = line.split("\t", maxsplit=1)[0]
-                if not expected_device or expected_device == serial:
-                    return True
+    def finalize(self) -> None:
+        self._stop_mirroring()
+        super().finalize()
 
-        return False
-
-    def _adb_call(self, adb_path: str, args: Sequence[str]) -> str | None:
-        command: list[str] = [adb_path, *args]
-        try:
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return None
-
-        if completed.returncode != 0:
-            return None
-
-        return completed.stdout
-
-    def _send_keyevent(self, keycode: int) -> None:
-        resolved = self._resolve_settings()
-        args: list[str] = ["shell", "input", "keyevent", str(keycode)]
-        if resolved["device"]:
-            args = ["-s", resolved["device"], *args]
-        self._adb_call(resolved["adb_path"], args)
-
-    def _volume_up(self) -> None:
-        step = max(1, self._safe_int(self._resolve_value("volume_step"), 5))
-        for _ in range(step):
-            self._send_keyevent(24)
-
-    def _volume_down(self) -> None:
-        step = max(1, self._safe_int(self._resolve_value("volume_step"), 5))
-        for _ in range(step):
-            self._send_keyevent(25)
+    # -------------------------------------------------------------------------
+    # Settings resolution (unchanged)
+    # -------------------------------------------------------------------------
 
     def _resolve_value(self, key: str) -> str:
         # Priority: session runtime values -> .env -> widget config defaults.
@@ -300,183 +500,9 @@ class PhoneMirrorWidget(ThreadPoolTextBase):
             "volume_step": self._resolve_value("volume_step"),
         }
 
-    def _ensure_ready_for_mirroring(self, *, triggered_by_user: bool) -> bool:
-        resolved = self._resolve_settings()
-
-        if not self._has_binary(resolved["adb_path"]) or not self._has_binary(
-            resolved["scrcpy_path"]
-        ):
-            if not triggered_by_user:
-                return False
-            if not self._prompt_for_missing_or_failed_connection():
-                return False
-            resolved = self._resolve_settings()
-
-        connected = self._has_connected_device(
-            resolved["adb_path"],
-            resolved["device"],
-        )
-        if connected:
-            return True
-
-        if resolved["wireless_target"]:
-            self._adb_call(
-                resolved["adb_path"],
-                ["connect", resolved["wireless_target"]],
-            )
-            if self._has_connected_device(
-                resolved["adb_path"],
-                resolved["device"],
-            ):
-                return True
-
-        if not triggered_by_user:
-            return False
-
-        if not self._prompt_for_missing_or_failed_connection():
-            return False
-
-        resolved = self._resolve_settings()
-        if resolved["wireless_target"]:
-            self._adb_call(
-                resolved["adb_path"],
-                ["connect", resolved["wireless_target"]],
-            )
-
-        return self._has_connected_device(
-            resolved["adb_path"],
-            resolved["device"],
-        )
-
-    def _prompt_for_missing_or_failed_connection(self) -> bool:
-        initial = self._resolve_settings()
-        values = self._prompt_with_zenity(initial)
-        if not values:
-            values = self._prompt_with_tkinter(initial)
-        if not values:
-            return False
-
-        self._session_values.update(values)
-        return True
-
-    def _prompt_with_zenity(self, initial: dict[str, str]) -> dict[str, str] | None:
-        if shutil.which("zenity") is None:
-            return None
-
-        # Zenity forms cannot prefill defaults directly, so values are shown in labels.
-        command = [
-            "zenity",
-            "--forms",
-            "--title=Phone Mirror Setup",
-            "--text=Ingresa solo lo minimo para conectar el telefono",
-            "--separator=|",
-            (
-                "--add-entry=ADB host:port "
-                f"({initial['wireless_target'] or '192.168.1.10:5555'})"
-            ),
-            f"--add-entry=Device serial opcional ({initial['device'] or 'auto'})",
-            f"--add-entry=ADB path ({initial['adb_path']})",
-            f"--add-entry=scrcpy path ({initial['scrcpy_path']})",
-        ]
-
-        try:
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=120,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return None
-
-        if completed.returncode != 0:
-            return None
-
-        values = completed.stdout.strip().split("|")
-        if len(values) < 4:
-            return None
-
-        target = values[0].strip() or initial["wireless_target"]
-        device = values[1].strip() or initial["device"]
-        adb_path = values[2].strip() or initial["adb_path"]
-        scrcpy_path = values[3].strip() or initial["scrcpy_path"]
-
-        return {
-            "wireless_target": target,
-            "device": device,
-            "adb_path": adb_path,
-            "scrcpy_path": scrcpy_path,
-        }
-
-    def _prompt_with_tkinter(self, initial: dict[str, str]) -> dict[str, str] | None:
-        try:
-            import tkinter as tk
-        except ImportError:
-            return None
-
-        result: dict[str, str] = {}
-
-        root = tk.Tk()
-        root.title("Phone Mirror Setup")
-        root.resizable(False, False)
-
-        labels = [
-            "ADB host:port",
-            "Device serial (opcional)",
-            "ADB path",
-            "scrcpy path",
-        ]
-        keys = ["wireless_target", "device", "adb_path", "scrcpy_path"]
-        entries: dict[str, tk.Entry] = {}
-
-        for index, (label, key) in enumerate(zip(labels, keys, strict=True)):
-            tk.Label(root, text=label).grid(
-                row=index,
-                column=0,
-                padx=8,
-                pady=4,
-                sticky="w",
-            )
-            entry = tk.Entry(root, width=42)
-            entry.insert(0, initial[key])
-            entry.grid(row=index, column=1, padx=8, pady=4)
-            entries[key] = entry
-
-        def submit() -> None:
-            for key in keys:
-                result[key] = entries[key].get().strip()
-            root.destroy()
-
-        def cancel() -> None:
-            result.clear()
-            root.destroy()
-
-        button_frame = tk.Frame(root)
-        button_frame.grid(row=len(keys), column=0, columnspan=2, pady=8)
-        tk.Button(button_frame, text="Conectar", command=submit).pack(
-            side="left",
-            padx=6,
-        )
-        tk.Button(button_frame, text="Cancelar", command=cancel).pack(
-            side="left",
-            padx=6,
-        )
-
-        root.mainloop()
-
-        if not result:
-            return None
-
-        return {
-            "wireless_target": result.get(
-                "wireless_target",
-                initial["wireless_target"],
-            ),
-            "device": result.get("device", initial["device"]),
-            "adb_path": result.get("adb_path", initial["adb_path"]),
-            "scrcpy_path": result.get("scrcpy_path", initial["scrcpy_path"]),
-        }
+    # -------------------------------------------------------------------------
+    # Static helpers (unchanged)
+    # -------------------------------------------------------------------------
 
     @staticmethod
     def _safe_int(value: str, default: int) -> int:
