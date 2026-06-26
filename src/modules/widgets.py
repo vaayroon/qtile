@@ -192,7 +192,11 @@ def init_widgets_list(*, include_systray: bool) -> list[Any]:
             padding=3,
             foreground=colors[0],
             background=colors2[3],
-            mouse_callbacks={"Button1": lambda: qtile.spawn("gnome-calendar")},
+            mouse_callbacks={
+                "Button1": lambda: qtile.spawn(
+                    myTerm + " -e khal interactive -name calendar -title virtual-shell"
+                )
+            },
             format=" : %d/%m/%Y - %H:%M:%S",
         ),
         widget.Sep(linewidth=0, padding=10, foreground=colors[0], background=colors[0]),
