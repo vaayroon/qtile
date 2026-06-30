@@ -18,6 +18,12 @@ keys = [
         lazy.spawn("dmenu_run -p 'Run: '"),
         desc="Dmenu Run Launcher",
     ),
+    Key(
+        [mod],
+        "grave",
+        lazy.group["scratchpad"].dropdown_toggle("term"),
+        desc="Toggle floating dropdown terminal",
+    ),
     Key([mod], "Tab", lazy.next_layout(), desc="Toggle through layouts"),
     Key([mod, "shift"], "c", lazy.window.kill(), desc="Kill active window"),
     Key([mod, "shift"], "r", lazy.reload_config(), desc="Reload Qtile"),

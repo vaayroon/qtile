@@ -126,6 +126,28 @@ EOF
     fi
 fi
 
+# --- 5. Rofi launcher entry ---------------------------------------------------
+# Write a .desktop file so the scratchpad terminal can be toggled from
+# `rofi -show drun` (in addition to the Super+grave keybind).
+SCRATCHPAD_TOGGLE="${REPO_DIR}/src/assets/scratchpad/scratchpad-toggle.sh"
+DESKTOP_DIR="${HOME}/.local/share/applications"
+SCRATCHPAD_DESKTOP="${DESKTOP_DIR}/qtile-scratchpad.desktop"
+
+log "Registering rofi launcher entry at ${SCRATCHPAD_DESKTOP}"
+mkdir -p "$DESKTOP_DIR"
+chmod +x "$SCRATCHPAD_TOGGLE" 2>/dev/null || true
+cat > "$SCRATCHPAD_DESKTOP" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Scratchpad Terminal
+Comment=Toggle the floating dropdown terminal
+Exec=${SCRATCHPAD_TOGGLE}
+Icon=utilities-terminal
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=scratchpad;dropdown;quake;terminal;
+EOF
+
 # --- Done ---------------------------------------------------------------------
 log "Done."
 echo
