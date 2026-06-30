@@ -13,13 +13,13 @@ class GroupCfg(TypedDict):
 
 
 group_names = [
-    ("󱐡 ", {"layout": "ratiotile"}),
+    (" ", {"layout": "ratiotile"}),
     (" ", {"layout": "ratiotile"}),
     ("󰨞 ", {"layout": "max"}),
-    ("󰢹 ", {"layout": "max"}),
+    (" ", {"layout": "max"}),
     (" ", {"layout": "max"}),
-    ("󰇩 ", {"layout": "max"}),
-    ("󰒒 ", {"layout": "max"}),
+    (" ", {"layout": "max"}),
+    (" ", {"layout": "max"}),
 ]
 
 """ groups = [Group(name, **kwargs) for name, kwargs in group_names]
