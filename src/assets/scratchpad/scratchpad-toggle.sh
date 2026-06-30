@@ -4,7 +4,7 @@
 #
 # Qtile exposes an IPC command interface via `qtile cmd-obj`. This reaches the
 # running Qtile instance and toggles the "term" DropDown defined in the
-# "scratchpad" group — the exact same action as the Super+grave keybind.
+# "scratchpad" group — the exact same action as the Super+masculine (º) keybind.
 
 set -euo pipefail
 

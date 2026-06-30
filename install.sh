@@ -128,7 +128,7 @@ fi
 
 # --- 5. Rofi launcher entry ---------------------------------------------------
 # Write a .desktop file so the scratchpad terminal can be toggled from
-# `rofi -show drun` (in addition to the Super+grave keybind).
+# `rofi -show drun` (in addition to the Super+masculine (º) keybind).
 SCRATCHPAD_TOGGLE="${REPO_DIR}/src/assets/scratchpad/scratchpad-toggle.sh"
 DESKTOP_DIR="${HOME}/.local/share/applications"
 SCRATCHPAD_DESKTOP="${DESKTOP_DIR}/qtile-scratchpad.desktop"
