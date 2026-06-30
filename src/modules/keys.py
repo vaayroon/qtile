@@ -20,9 +20,9 @@ keys = [
     ),
     Key(
         [mod],
-        "grave",
+        "masculine",
         lazy.group["scratchpad"].dropdown_toggle("term"),
-        desc="Toggle floating dropdown terminal",
+        desc="Toggle floating dropdown terminal (key below Esc, es layout)",
     ),
     Key([mod], "Tab", lazy.next_layout(), desc="Toggle through layouts"),
     Key([mod, "shift"], "c", lazy.window.kill(), desc="Kill active window"),
