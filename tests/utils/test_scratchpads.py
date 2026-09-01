@@ -366,21 +366,29 @@ def test_duplicate_name_within_single_file_keeps_first(tmp_path: Path, caplog) -
     assert any("duplicate" in message.lower() for message in caplog.messages)
 
 
-def test_profile_dir_and_match_wm_class_are_mutually_exclusive(tmp_path: Path) -> None:
+def test_profile_dir_without_match_wm_class_is_skipped(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """`profile_dir` alone provides no base WM_CLASS to derive from — there
+    is no single Chromium-family literal base string (Chrome and Brave emit
+    different bases; see obs #927/measured xprop evidence), so
+    `match_wm_class` is REQUIRED input whenever `profile_dir` is set. The
+    entry must be skipped with a warning, never raise."""
     registry = _write_registry(
         tmp_path,
         """
         [[scratchpad]]
         name = "private"
         command = "brave-browser-stable --incognito --new-window"
-        match_wm_class = "brave-browser"
         profile_dir = "~/.cache/qtile-scratchpad/brave-private"
         """,
     )
 
-    apps = load_scratchpads_from(registry, None)
+    with caplog.at_level(logging.WARNING):
+        apps = load_scratchpads_from(registry, None)
 
     assert apps == [BUILTIN_TERM]
+    assert any("match_wm_class" in message for message in caplog.messages)
 
 
 def test_bare_title_regex_without_wm_class_is_skipped(tmp_path: Path) -> None:
@@ -508,6 +516,7 @@ def test_profile_dir_derivation_does_not_resolve_symlinks(tmp_path: Path) -> Non
         [[scratchpad]]
         name = "private"
         command = "brave-browser-stable --incognito --new-window"
+        match_wm_class = "brave-browser"
         profile_dir = "{literal_path}"
         """,
     )
@@ -534,6 +543,7 @@ def test_profile_dir_expands_home_tilde(
         [[scratchpad]]
         name = "private"
         command = "brave-browser-stable --incognito --new-window"
+        match_wm_class = "brave-browser"
         profile_dir = "~/brave-private"
         """,
     )
@@ -557,6 +567,7 @@ def test_profile_dir_does_not_create_directory(tmp_path: Path) -> None:
         [[scratchpad]]
         name = "private"
         command = "brave-browser-stable --incognito --new-window"
+        match_wm_class = "brave-browser"
         profile_dir = "{target}"
         """,
     )
@@ -573,6 +584,7 @@ def test_profile_dir_with_non_chromium_binary_is_skipped(tmp_path: Path) -> None
         [[scratchpad]]
         name = "not-chromium"
         command = "xterm"
+        match_wm_class = "xterm"
         profile_dir = "~/.cache/qtile-scratchpad/whatever"
         """,
     )
@@ -591,6 +603,7 @@ def test_profile_dir_with_preexisting_user_data_dir_flag_is_skipped(
         [[scratchpad]]
         name = "double-specified"
         command = "brave-browser-stable --user-data-dir=/already/set"
+        match_wm_class = "brave-browser"
         profile_dir = "~/.cache/qtile-scratchpad/whatever"
         """,
     )
@@ -598,6 +611,56 @@ def test_profile_dir_with_preexisting_user_data_dir_flag_is_skipped(
     apps = load_scratchpads_from(registry, None)
 
     assert apps == [BUILTIN_TERM]
+
+
+def test_profile_dir_derives_brave_base_wm_class(tmp_path: Path) -> None:
+    """Brave-shaped entry: `match_wm_class = "brave-browser"` + `profile_dir`
+    derives `"brave-browser (<expanded>)"`. Measured via xprop on this
+    machine: `brave-browser-stable --user-data-dir=<P> --new-window` emits
+    `WM_CLASS = "brave-browser (<P>)", "Brave-browser"`."""
+    registry = _write_registry(
+        tmp_path,
+        """
+        [[scratchpad]]
+        name = "private"
+        command = "brave-browser-stable --incognito --new-window"
+        match_wm_class = "brave-browser"
+        profile_dir = "~/.cache/qtile-scratchpad/brave-private"
+        """,
+    )
+
+    apps = load_scratchpads_from(registry, None)
+
+    assert len(apps) == 1
+    expected = os.path.expanduser("~/.cache/qtile-scratchpad/brave-private")
+    assert apps[0].match is not None
+    assert apps[0].match.wm_class == f"brave-browser ({expected})"
+
+
+def test_profile_dir_derives_chrome_base_wm_class(tmp_path: Path) -> None:
+    """Chrome-shaped entry: `match_wm_class = "google-chrome"` + `profile_dir`
+    derives `"google-chrome (<expanded>)"`. This is the regression test that
+    fails against a hardcoded `"brave-browser"` base: measured via xprop,
+    `google-chrome --user-data-dir=<P> --new-window` emits
+    `WM_CLASS = "google-chrome (<P>)", "Google-chrome"` — a DIFFERENT base
+    string than Brave's."""
+    registry = _write_registry(
+        tmp_path,
+        """
+        [[scratchpad]]
+        name = "chrome-private"
+        command = "google-chrome --incognito --new-window"
+        match_wm_class = "google-chrome"
+        profile_dir = "~/.cache/qtile-scratchpad/chrome-private"
+        """,
+    )
+
+    apps = load_scratchpads_from(registry, None)
+
+    assert len(apps) == 1
+    expected = os.path.expanduser("~/.cache/qtile-scratchpad/chrome-private")
+    assert apps[0].match is not None
+    assert apps[0].match.wm_class == f"google-chrome ({expected})"
 
 
 # ---------------------------------------------------------------------------

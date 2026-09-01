@@ -140,10 +140,6 @@ _RESERVED_VALIDATE_KEYS = {"Escape"}
 _RESERVED_CHORD_KEY = "masculine"
 
 _CHROMIUM_BINARY_MARKERS = ("brave", "chrom", "vivaldi", "opera", "microsoft-edge")
-# Empirically verified (see project memory: profile_dir-derivation
-# discovery) — Chromium/Brave always emits this literal base string in
-# WM_CLASS, regardless of the invoked binary's own basename.
-_CHROMIUM_BASE_WM_CLASS = "brave-browser"
 
 
 def _entry_identity(raw_entry: dict[str, Any], index: int, source: str) -> str:
@@ -439,10 +435,22 @@ def _coerce_bool(
 
 
 def _apply_chromium_profile(
-    command: str, profile_dir: str, identity: str
+    command: str, profile_dir: str, base_wm_class: str, identity: str
 ) -> tuple[str, str]:
     """Derive the final spawn command and match wm_class for a
     Chromium-family `profile_dir` entry.
+
+    `base_wm_class` is the entry's own `match_wm_class` value, used as the
+    base of the derivation `f"{base_wm_class} ({profile_dir})"`. It MUST be
+    supplied by the caller (required input, see `_build_entry`): the base
+    WM_CLASS string is NOT a single literal shared across the Chromium
+    family. Measured via xprop on this machine:
+      - `brave-browser-stable --user-data-dir=<P> --new-window` ->
+        `WM_CLASS = "brave-browser (<P>)", "Brave-browser"`
+      - `google-chrome --user-data-dir=<P> --new-window` ->
+        `WM_CLASS = "google-chrome (<P>)", "Google-chrome"`
+    Hardcoding a single base (e.g. always `"brave-browser"`) would make the
+    derived match silently never fire for any other Chromium-family binary.
 
     IMPORTANT: `profile_dir` is expanded with `os.path.expanduser` ONLY.
     `Path.resolve()` is deliberately NOT called: Chromium echoes the
@@ -475,7 +483,7 @@ def _apply_chromium_profile(
 
     expanded = os.path.expanduser(profile_dir)
     final_command = f"{command} --user-data-dir={expanded}"
-    derived_wm_class = f"{_CHROMIUM_BASE_WM_CLASS} ({expanded})"
+    derived_wm_class = f"{base_wm_class} ({expanded})"
     return final_command, derived_wm_class
 
 
@@ -552,14 +560,6 @@ def _build_entry(
                 )
                 raise _SkipEntry from error
 
-        if profile_dir is not None and match_wm_class is not None:
-            logger.warning(
-                "scratchpad registry: entry %s sets both profile_dir and "
-                "match_wm_class, which are mutually exclusive",
-                identity,
-            )
-            raise _SkipEntry
-
         if (
             match_title_regex is not None
             and match_wm_class is None
@@ -575,8 +575,17 @@ def _build_entry(
 
         match: MatchSpec | None
         if profile_dir is not None:
+            if match_wm_class is None:
+                logger.warning(
+                    "scratchpad registry: entry %s sets profile_dir without "
+                    "match_wm_class; match_wm_class is required as the base "
+                    "class to derive the profile-scoped match from, "
+                    "skipping",
+                    identity,
+                )
+                raise _SkipEntry
             command, derived_wm_class = _apply_chromium_profile(
-                command, profile_dir, identity
+                command, profile_dir, match_wm_class, identity
             )
             match = MatchSpec(wm_class=derived_wm_class, title_regex=match_title_regex)
         elif match_wm_class is not None or match_title_regex is not None:
