@@ -43,7 +43,7 @@ pycparser==3.0
     # via cffi
 python-dotenv==1.2.2
     # via qtile-config (pyproject.toml)
-qtile==0.35.0
+qtile==0.36.0
     # via qtile-config (pyproject.toml)
 typing-extensions==4.15.0
     # via aiosignal

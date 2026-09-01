@@ -2,7 +2,7 @@
 
 A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11: multi-monitor aware, Nerd Font powerline bar, media/brightness keys, and a custom widget to mirror and control an Android phone over wireless ADB + scrcpy.
 
-> Built and tested on Debian/Kali with Python 3.12 and Qtile 0.35.0.
+> Built and tested on Ubuntu 24.04.4 LTS with Python 3.12 and Qtile 0.36.0.
 
 ![Session selector](.screenshots/select_manager.png)
 
