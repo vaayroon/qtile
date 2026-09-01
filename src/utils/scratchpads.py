@@ -17,6 +17,7 @@ entries after the full pipeline falls back to :data:`BUILTIN_TERM`, so the
 shipped terminal dropdown can never disappear.
 """
 
+import functools
 import logging
 import math
 import os
@@ -74,11 +75,36 @@ class ScratchpadApp:
     match: MatchSpec | None = None
 
 
+# The config package's `src/` directory, resolved relative to this file so
+# it works regardless of Qtile's working directory or where the repo is
+# checked out. This is also what the `{repo}` token (see
+# `_expand_repo_token`) expands to in a `command` field, so a TOML entry can
+# reference shipped assets (e.g. the scratchpad kitty.conf) portably.
+_SRC_DIR = Path(__file__).resolve().parent.parent
+
+
 def _builtin_kitty_conf_path() -> str:
     """Path to the shipped scratchpad kitty config, resolved relative to this
     file so it works regardless of Qtile's working directory."""
-    repo_src = Path(__file__).resolve().parent.parent
-    return str(repo_src / "assets" / "scratchpad" / "kitty.conf")
+    return str(_SRC_DIR / "assets" / "scratchpad" / "kitty.conf")
+
+
+_REPO_TOKEN = "{repo}"
+
+
+def _expand_repo_token(command: str) -> str:
+    """Expand the `{repo}` token in a `command` field to the absolute `src/`
+    directory path, so a committed TOML entry can reference a shipped asset
+    (e.g. a `--config <path>` flag) without hardcoding a machine-specific
+    absolute path. Entries with no `{repo}` token are returned unchanged.
+
+    Deliberately minimal: only `{repo}` is supported (no `{home}`, no
+    `os.path.expandvars`) because exactly one real case exists today (the
+    `term` entry's kitty config path). A private one-line substitution is
+    cheaper to extend later than a general templating engine is to maintain
+    now — the same rationale the Chromium `profile_dir` derivation follows.
+    """
+    return command.replace(_REPO_TOKEN, str(_SRC_DIR))
 
 
 # The built-in fallback entry, intentionally duplicated from
@@ -508,7 +534,7 @@ def _build_entry(
                 )
 
         name = _require_str(raw_entry, "name", identity)
-        command = _require_str(raw_entry, "command", identity)
+        command = _expand_repo_token(_require_str(raw_entry, "command", identity))
         key = _optional_key(raw_entry, identity)
         label = _optional_str(raw_entry, "label", identity) or name
         icon = _optional_str(raw_entry, "icon", identity) or "utilities-terminal"
@@ -663,6 +689,24 @@ def load_scratchpads_from(
         # down with it.
         logger.exception("scratchpad registry: unexpected loader failure")
         return [BUILTIN_TERM]
+
+
+@functools.lru_cache(maxsize=1)
+def load_scratchpads() -> list[ScratchpadApp]:
+    """Memoized public entrypoint consumers (`modules.groups`,
+    `modules.keys`) call to get the scratchpad registry.
+
+    Reads `scratchpads.toml` (committed) and `scratchpads.local.toml`
+    (gitignored override) from the repo root, resolved relative to this
+    file. `functools.lru_cache(maxsize=1)` ensures the files are read once
+    per qtile config load and every consumer sees the identical list.
+    Tests target the uncached `load_scratchpads_from(base, local)` instead,
+    so this wrapper carries no independently-testable logic of its own.
+    """
+    repo_root = _SRC_DIR.parent
+    base_path = repo_root / "scratchpads.toml"
+    local_path = repo_root / "scratchpads.local.toml"
+    return load_scratchpads_from(base_path, local_path)
 
 
 # ---------------------------------------------------------------------------

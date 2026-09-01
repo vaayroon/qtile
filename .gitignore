@@ -189,3 +189,6 @@ poetry.toml
 
 # gentle-ai
 .atl
+
+# Personal scratchpad app overrides (see scratchpads.toml)
+scratchpads.local.toml

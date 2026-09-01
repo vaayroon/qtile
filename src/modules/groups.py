@@ -1,9 +1,11 @@
+import re
 from typing import TypedDict
 
 from libqtile.config import DropDown, Group, Key, Match, ScratchPad
 from libqtile.lazy import lazy
 
-from settings import SCRATCHPAD_WM_CLASS, mod, myScratchpadTerm
+from settings import mod
+from utils.scratchpads import MatchSpec, load_scratchpads
 
 from .keys import keys
 
@@ -32,25 +34,40 @@ for i, (name, kwargs) in enumerate(group_names, 1):
 
 groups = [Group(name, layout=cfg["layout"]) for name, cfg in group_names]
 
-# Floating dropdown terminal (quake-style). Centered popup: x=0.25 + width=0.5
-# leaves equal 0.25 margins left/right; y=0.15 + height=0.6 leaves 0.25 below.
-# on_focus_lost_hide makes it auto-dismiss when you click away.
+
+def _to_match(spec: MatchSpec | None) -> Match | None:
+    """Translate a loader-owned `MatchSpec` into a libqtile `Match`. This is
+    the only place `MatchSpec.title_regex` gets compiled (see design D2):
+    the loader validates it compiles but stores the source string, so
+    dataclass equality stays flaky-free in tests."""
+    if spec is None:
+        return None
+    wm_class = spec.wm_class or None
+    title = re.compile(spec.title_regex) if spec.title_regex else None
+    if wm_class is None and title is None:
+        return None
+    return Match(wm_class=wm_class, title=title)
+
+
+# Floating dropdown apps (quake-style), built from the scratchpad registry
+# (`scratchpads.toml` + `scratchpads.local.toml`, see `utils.scratchpads`).
 groups.append(
     ScratchPad(
         "scratchpad",
         [
             DropDown(
-                "term",
-                myScratchpadTerm,
-                x=0.25,
-                y=0.15,
-                width=0.5,
-                height=0.6,
-                opacity=1.0,
-                on_focus_lost_hide=True,
-                warp_pointer=True,
-                match=Match(wm_class=SCRATCHPAD_WM_CLASS),
-            ),
+                app.name,
+                app.command,
+                x=app.x,
+                y=app.y,
+                width=app.width,
+                height=app.height,
+                opacity=app.opacity,
+                on_focus_lost_hide=app.on_focus_lost_hide,
+                warp_pointer=app.warp_pointer,
+                match=_to_match(app.match),
+            )
+            for app in load_scratchpads()
         ],
     )
 )
