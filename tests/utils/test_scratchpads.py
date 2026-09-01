@@ -10,6 +10,7 @@ from src.utils.scratchpads import (
     ScratchpadApp,
     dedupe_chord_keys,
     leader_is_free,
+    load_scratchpads,
     load_scratchpads_from,
 )
 
@@ -839,3 +840,80 @@ def test_hostile_unreadable_file_never_crashes(tmp_path: Path) -> None:
 
     assert isinstance(result, list)
     assert len(result) >= 1
+
+
+# ---------------------------------------------------------------------------
+# 2.1/2.2 — `{repo}` command token expansion, real registry regression,
+# memoized `load_scratchpads()` wrapper
+# ---------------------------------------------------------------------------
+
+
+def _src_dir() -> Path:
+    """The `src/` directory as the loader itself computes it (mirrors
+    `_builtin_kitty_conf_path`'s own base), independent of this test file's
+    own location."""
+    import src.utils.scratchpads as module
+
+    return Path(module.__file__).resolve().parent.parent
+
+
+def test_command_repo_token_is_expanded_to_src_dir(tmp_path: Path) -> None:
+    registry = _write_registry(
+        tmp_path,
+        """
+        [[scratchpad]]
+        name = "term-like"
+        command = "kitty --config {repo}/assets/scratchpad/kitty.conf"
+        """,
+    )
+
+    apps = load_scratchpads_from(registry, None)
+
+    assert len(apps) == 1
+    expected = f"kitty --config {_src_dir()}/assets/scratchpad/kitty.conf"
+    assert apps[0].command == expected
+    assert "{repo}" not in apps[0].command
+
+
+def test_command_without_repo_token_is_left_untouched(tmp_path: Path) -> None:
+    registry = _write_registry(
+        tmp_path,
+        """
+        [[scratchpad]]
+        name = "plain"
+        command = "gnome-calculator --no-braces-here"
+        """,
+    )
+
+    apps = load_scratchpads_from(registry, None)
+
+    assert apps[0].command == "gnome-calculator --no-braces-here"
+
+
+def test_real_registry_term_entry_matches_builtin(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Regression pin (task 2.2): the committed `scratchpads.toml` must load
+    a `term` entry that is byte-for-behaviour identical to `BUILTIN_TERM`,
+    with zero warnings (proving nothing was skipped/malformed)."""
+    repo_root = Path(__file__).resolve().parents[2]
+    registry = repo_root / "scratchpads.toml"
+    local = repo_root / "scratchpads.local.toml"
+
+    assert registry.is_file(), "scratchpads.toml must exist at the repo root"
+
+    with caplog.at_level(logging.WARNING):
+        apps = load_scratchpads_from(registry, local)
+
+    assert caplog.messages == []
+    term_entries = [app for app in apps if app.name == "term"]
+    assert len(term_entries) == 1
+    assert term_entries[0] == BUILTIN_TERM
+
+
+def test_load_scratchpads_wrapper_is_memoized() -> None:
+    first = load_scratchpads()
+    second = load_scratchpads()
+
+    assert first is second
+    assert any(app.name == "term" for app in first)

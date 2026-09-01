@@ -1,0 +1,17 @@
+# Scratchpad app registry (floating dropdown apps).
+#
+# Each `[[scratchpad]]` table declares one dropdown app. Only `name` and
+# `command` are required; every other field falls back to a documented
+# default (see `src/utils/scratchpads.py::ScratchpadApp`).
+#
+# The `{repo}` token in `command` expands to this config's `src/` directory,
+# so shipped assets (like the kitty config below) can be referenced without
+# hardcoding a machine-specific absolute path.
+#
+# Add your own personal overrides in `scratchpads.local.toml` (gitignored)
+# instead of editing this file — see the README for the override workflow.
+
+[[scratchpad]]
+name = "term"
+command = "kitty --class scratchpad-term --config {repo}/assets/scratchpad/kitty.conf"
+match_wm_class = "scratchpad-term"
