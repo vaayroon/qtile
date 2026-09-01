@@ -129,6 +129,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# virtual folder environments which names start with .venv
+.venv*/
+
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -183,3 +186,6 @@ poetry.toml
 # Ignore all local history of files
 .history
 .ionide
+
+# gentle-ai
+.atl
