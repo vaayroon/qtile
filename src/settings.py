@@ -8,17 +8,9 @@ from dotenv import dotenv_values
 mod = "mod4"  # Sets mod key to SUPER/WINDOWS
 myTerm = "/usr/bin/qterminal"
 
-# Scratchpad (floating dropdown) terminal.
-# A dedicated kitty instance with its own config and a fixed WM class so the
-# DropDown can reliably match its window. Path is resolved relative to this
-# file so it works regardless of Qtile's working directory.
-SCRATCHPAD_WM_CLASS = "scratchpad-term"
-_SCRATCHPAD_KITTY_CONF = (
-    Path(__file__).resolve().parent / "assets" / "scratchpad" / "kitty.conf"
-)
-myScratchpadTerm = (
-    f"kitty --class {SCRATCHPAD_WM_CLASS} --config {_SCRATCHPAD_KITTY_CONF}"
-)
+# Scratchpad (floating dropdown) apps are declared in `scratchpads.toml` /
+# `scratchpads.local.toml` and loaded via `utils.scratchpads.load_scratchpads()`
+# — see `modules/groups.py`. Nothing scratchpad-specific lives here anymore.
 
 # Environment variables from .env file.
 # Resolve the path relative to this file (repo root) so the config loads
