@@ -1,7 +1,8 @@
-from libqtile.config import Key
+from libqtile.config import Key, KeyChord
 from libqtile.lazy import lazy
 
 from settings import mod, myTerm
+from utils.scratchpads import build_scratchpad_chord, load_scratchpads
 
 keys = [
     # The essentials
@@ -136,18 +137,6 @@ keys = [
     Key(["mod1", "control"], "p", lazy.spawn("passmenu"), desc="Passmenu"),
     Key(["mod1", "control"], "t", lazy.spawn("nautilus trash:///"), desc="Open Trash"),
     # My applications launched with SUPER + ALT + KEY
-    Key(
-        [mod, "mod1"],
-        "b",
-        lazy.spawn("brave-browser-stable --new-window --incognito"),
-        desc="Brave Incognito",
-    ),
-    Key(
-        [mod, "mod1"],
-        "d",
-        lazy.spawn("nautilus"),
-        desc="File browser",
-    ),
     Key([mod, "mod1"], "n", lazy.spawn("gnome-todo"), desc="Take Notes"),
     Key([mod, "mod1"], "a", lazy.spawn("anydesk"), desc="AnyDesk Remote Desktop"),
     Key(
@@ -215,11 +204,35 @@ keys = [
         desc="Decrease Brightness",
     ),
     # Extras
-    Key([], "XF86Calculator", lazy.spawn("gnome-calculator"), desc="Open Calculator"),
+    Key(
+        [],
+        "XF86Calculator",
+        lazy.group["scratchpad"].dropdown_toggle("calc"),
+        desc="Toggle calculator scratchpad",
+    ),
     # Screen Shots
     Key(["shift", mod], "s", lazy.spawn("flameshot gui"), desc="Flameshot GUI"),
 ]
 
 
-def init_keys() -> list[Key]:
-    return keys
+def _scratchpad_chord() -> KeyChord | None:
+    """`Super+s` chord generated from the scratchpad registry. Built after
+    `keys` so the leader collision check sees every existing top-level bind."""
+    taken = {(frozenset(k.modifiers), str(k.key)) for k in keys}
+    return build_scratchpad_chord(
+        load_scratchpads(),
+        taken,
+        [mod],
+        "s",
+        make_key=Key,
+        make_chord=KeyChord,
+        make_action=lambda name: lazy.group["scratchpad"].dropdown_toggle(name),
+    )
+
+
+def init_keys() -> list[Key | KeyChord]:
+    all_keys: list[Key | KeyChord] = [*keys]
+    chord = _scratchpad_chord()
+    if chord is not None:
+        all_keys.append(chord)
+    return all_keys
