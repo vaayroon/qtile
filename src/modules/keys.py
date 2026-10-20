@@ -3,6 +3,7 @@ from libqtile.lazy import lazy
 from libqtile.log_utils import logger
 
 from settings import mod, myTerm
+from utils.scratchpad_size import cycle_focused_dropdown
 from utils.scratchpads import build_scratchpad_chord, load_scratchpads
 
 keys = [
@@ -25,6 +26,18 @@ keys = [
         "masculine",
         lazy.group["scratchpad"].dropdown_toggle("term"),
         desc="Toggle floating dropdown terminal (key below Esc, es layout)",
+    ),
+    Key(
+        [mod, "control"],
+        "l",
+        lazy.function(cycle_focused_dropdown, "grow", load_scratchpads),
+        desc="Grow focused scratchpad (cycle size presets)",
+    ),
+    Key(
+        [mod, "control"],
+        "h",
+        lazy.function(cycle_focused_dropdown, "shrink", load_scratchpads),
+        desc="Shrink focused scratchpad (cycle size presets)",
     ),
     Key([mod], "Tab", lazy.next_layout(), desc="Toggle through layouts"),
     Key([mod, "shift"], "c", lazy.window.kill(), desc="Kill active window"),
