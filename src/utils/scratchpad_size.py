@@ -1,0 +1,129 @@
+"""Size presets for scratchpad dropdowns.
+
+Pure preset math (derive, detect, step, pixel placement) plus a duck-typed
+glue function that re-places the focused dropdown. This module MUST NOT
+import ``libqtile``: Qtile wiring lives in ``modules.keys``.
+
+Never-crash contract: the glue entry point catches every exception and logs
+it, so a bad keypress can never take Qtile down.
+"""
+
+import logging
+import math
+from dataclasses import dataclass
+from typing import Any, Literal
+
+# Same logger object qtile configures, without importing libqtile.
+logger = logging.getLogger("libqtile")
+
+MIN_FRACTION = 0.05
+_ABS_TOL = 1e-6
+_SMALL_FACTOR = 0.6
+
+Direction = Literal["grow", "shrink"]
+
+
+@dataclass(frozen=True, slots=True)
+class Geometry:
+    """Window geometry as fractions of the screen."""
+
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+@dataclass(frozen=True, slots=True)
+class Preset:
+    label: str  # full | medium | default | small
+    geometry: Geometry
+
+
+def _close(a: Geometry, b: Geometry) -> bool:
+    return all(
+        math.isclose(p, q, abs_tol=_ABS_TOL)
+        for p, q in (
+            (a.x, b.x),
+            (a.y, b.y),
+            (a.width, b.width),
+            (a.height, b.height),
+        )
+    )
+
+
+def _centered(center: float, size: float) -> float:
+    """Start coordinate of a span of `size` around `center`, kept in [0, 1]."""
+    return min(max(center - size / 2, 0.0), 1.0 - size)
+
+
+def _derived(default: Geometry, width: float, height: float) -> Geometry:
+    width, height = min(width, 1.0), min(height, 1.0)
+    return Geometry(
+        _centered(default.x + default.width / 2, width),
+        _centered(default.y + default.height / 2, height),
+        width,
+        height,
+    )
+
+
+def derive_presets(default: Geometry) -> list[Preset]:
+    """Return the distinct presets ordered largest to smallest.
+
+    Order is full, medium, default, small. Derived presets that coincide with
+    the default or an earlier one are dropped; the default is never altered.
+    """
+    w, h = default.width, default.height
+    candidates = [
+        Preset("full", Geometry(0.0, 0.0, 1.0, 1.0)),
+        Preset("medium", _derived(default, (w + 1) / 2, (h + 1) / 2)),
+        Preset("default", default),
+        Preset(
+            "small",
+            _derived(
+                default,
+                max(w * _SMALL_FACTOR, MIN_FRACTION),
+                max(h * _SMALL_FACTOR, MIN_FRACTION),
+            ),
+        ),
+    ]
+    kept: list[Preset] = []
+    for preset in candidates:
+        if preset.label != "default" and (
+            _close(preset.geometry, default)
+            or any(_close(preset.geometry, k.geometry) for k in kept)
+        ):
+            continue
+        kept.append(preset)
+    return kept
+
+
+def current_index(presets: list[Preset], current: Geometry) -> int:
+    """Index of the preset matching `current`, else the default's index."""
+    fallback = 0
+    for i, preset in enumerate(presets):
+        if _close(preset.geometry, current):
+            return i
+        if preset.label == "default":
+            fallback = i
+    return fallback
+
+
+def step(index: int, n: int, direction: Direction) -> int:
+    """Next preset index; grow moves toward full, shrink toward small."""
+    if direction == "grow":
+        return (index - 1) % n
+    if direction == "shrink":
+        return (index + 1) % n
+    raise ValueError(f"invalid direction: {direction!r}")
+
+
+def compute_placement(
+    g: Geometry, screen: Any, border_width: int
+) -> tuple[int, int, int, int]:
+    """Pixel x, y, width, height; mirrors Qtile's DropDownToggler.show()."""
+    return (
+        int(screen.dx + g.x * screen.dwidth),
+        int(screen.dy + g.y * screen.dheight),
+        int(screen.dwidth * g.width) - 2 * border_width,
+        int(screen.dheight * g.height) - 2 * border_width,
+    )
