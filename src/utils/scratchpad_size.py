@@ -40,6 +40,19 @@ class Preset:
     geometry: Geometry
 
 
+@dataclass(frozen=True, slots=True)
+class PresetOverrides:
+    """Optional user-chosen medium/small sizes (fractions of the screen).
+
+    `None` means "derive this dimension"; `PresetOverrides()` derives all.
+    """
+
+    medium_width: float | None = None
+    medium_height: float | None = None
+    small_width: float | None = None
+    small_height: float | None = None
+
+
 def _close(a: Geometry, b: Geometry) -> bool:
     return all(
         math.isclose(p, q, abs_tol=_ABS_TOL)
@@ -67,25 +80,35 @@ def _derived(default: Geometry, width: float, height: float) -> Geometry:
     )
 
 
-def derive_presets(default: Geometry) -> list[Preset]:
+def derive_presets(
+    default: Geometry, overrides: PresetOverrides | None = None
+) -> list[Preset]:
     """Return the distinct presets ordered largest to smallest.
 
     Order is full, medium, default, small. Derived presets that coincide with
     the default or an earlier one are dropped; the default is never altered.
+    An override replaces the derived width/height of its preset as given
+    (the small cap does not apply); the preset stays centered and clamped.
     """
+    o = overrides or PresetOverrides()
     w, h = default.width, default.height
+    mw = o.medium_width if o.medium_width is not None else (w + 1) / 2
+    mh = o.medium_height if o.medium_height is not None else (h + 1) / 2
+    sw = (
+        o.small_width
+        if o.small_width is not None
+        else min(w, max(w * _SMALL_FACTOR, MIN_FRACTION))
+    )
+    sh = (
+        o.small_height
+        if o.small_height is not None
+        else min(h, max(h * _SMALL_FACTOR, MIN_FRACTION))
+    )
     candidates = [
         Preset("full", Geometry(0.0, 0.0, 1.0, 1.0)),
-        Preset("medium", _derived(default, (w + 1) / 2, (h + 1) / 2)),
+        Preset("medium", _derived(default, mw, mh)),
         Preset("default", default),
-        Preset(
-            "small",
-            _derived(
-                default,
-                min(w, max(w * _SMALL_FACTOR, MIN_FRACTION)),
-                min(h, max(h * _SMALL_FACTOR, MIN_FRACTION)),
-            ),
-        ),
+        Preset("small", _derived(default, sw, sh)),
     ]
     kept: list[Preset] = []
     for preset in candidates:

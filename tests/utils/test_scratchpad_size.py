@@ -6,6 +6,7 @@ import pytest
 from src.utils.scratchpad_size import (
     MIN_FRACTION,
     Geometry,
+    PresetOverrides,
     compute_placement,
     current_index,
     cycle_focused_dropdown,
@@ -112,6 +113,87 @@ def test_off_canvas_default_is_kept_verbatim() -> None:
         if p.label not in ("default", "full"):
             g = p.geometry
             assert 0 <= g.x and g.x + g.width <= 1 + 1e-9
+
+
+SQUARE = Geometry(0.1, 0.1, 0.8, 0.8)
+
+
+def _labels(presets) -> list[str]:
+    return [p.label for p in presets]
+
+
+@pytest.mark.parametrize("default", [TERM, CALC, SQUARE])
+def test_no_overrides_forms_are_identical(default: Geometry) -> None:
+    baseline = derive_presets(default)
+    assert derive_presets(default, None) == baseline
+    assert derive_presets(default, PresetOverrides()) == baseline
+
+
+def test_full_override_replaces_derived_sizes_centered() -> None:
+    o = PresetOverrides(0.95, 0.95, 0.3, 0.2)
+    g = _by_label(derive_presets(SQUARE, o))
+    assert _as_tuple(g["medium"]) == pytest.approx((0.025, 0.025, 0.95, 0.95))
+    assert _as_tuple(g["small"]) == pytest.approx((0.35, 0.4, 0.3, 0.2))
+    assert _as_tuple(g["full"]) == (0, 0, 1, 1)
+    assert _as_tuple(g["default"]) == _as_tuple(SQUARE)
+
+
+def test_partial_override_keeps_derived_other_dimension() -> None:
+    g = _by_label(derive_presets(SQUARE, PresetOverrides(medium_width=0.95)))
+    assert _as_tuple(g["medium"]) == pytest.approx((0.025, 0.05, 0.95, 0.9))
+    g = _by_label(derive_presets(SQUARE, PresetOverrides(small_height=0.3)))
+    assert _as_tuple(g["small"]) == pytest.approx((0.26, 0.35, 0.48, 0.3))
+
+
+def test_override_near_edge_is_clamped_inside_canvas() -> None:
+    edge = Geometry(0.7, 0.7, 0.3, 0.3)
+    g = _by_label(derive_presets(edge, PresetOverrides(medium_width=0.9)))
+    assert g["medium"].x == pytest.approx(0.1)
+    assert g["medium"].x + g["medium"].width <= 1 + 1e-9
+
+
+def test_override_of_one_spans_the_axis() -> None:
+    g = _by_label(derive_presets(SQUARE, PresetOverrides(medium_width=1.0)))
+    assert (g["medium"].x, g["medium"].width) == (0.0, 1.0)
+
+
+def test_small_override_may_exceed_default_without_cap() -> None:
+    g = _by_label(derive_presets(TERM, PresetOverrides(small_width=0.6)))
+    assert g["small"].width == pytest.approx(0.6)
+
+
+def test_medium_override_equal_to_default_is_dropped() -> None:
+    o = PresetOverrides(medium_width=0.8, medium_height=0.8)
+    assert _labels(derive_presets(SQUARE, o)) == ["full", "default", "small"]
+
+
+def test_small_override_equal_to_default_is_dropped() -> None:
+    o = PresetOverrides(small_width=0.8, small_height=0.8)
+    assert _labels(derive_presets(SQUARE, o)) == ["full", "medium", "default"]
+
+
+def test_small_override_equal_to_medium_drops_small() -> None:
+    o = PresetOverrides(small_width=0.9, small_height=0.9)
+    assert _labels(derive_presets(SQUARE, o)) == ["full", "medium", "default"]
+
+
+def test_medium_override_equal_to_full_is_dropped() -> None:
+    o = PresetOverrides(medium_width=1.0, medium_height=1.0)
+    assert _labels(derive_presets(SQUARE, o)) == ["full", "default", "small"]
+
+
+def test_all_collapsing_overrides_leave_a_single_default() -> None:
+    full = Geometry(0.0, 0.0, 1.0, 1.0)
+    o = PresetOverrides(1.0, 1.0, 1.0, 1.0)
+    assert _labels(derive_presets(full, o)) == ["default"]
+
+
+def test_out_of_order_overrides_are_kept_in_label_order() -> None:
+    o = PresetOverrides(medium_width=0.5, medium_height=0.5, small_width=0.85)
+    presets = derive_presets(SQUARE, o)
+    assert _labels(presets) == ["full", "medium", "default", "small"]
+    g = _by_label(presets)
+    assert g["medium"].width < g["default"].width < g["small"].width
 
 
 def test_current_index_matches_with_noise_and_falls_back_to_default() -> None:
