@@ -23,6 +23,7 @@ import math
 import os
 import re
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -749,3 +750,44 @@ def dedupe_chord_keys(entries: list[ScratchpadApp]) -> list[ScratchpadApp]:
         seen_keys.add(entry.key)
         result.append(entry)
     return result
+
+
+def build_scratchpad_chord[K, C](
+    apps: list[ScratchpadApp],
+    taken: set[tuple[frozenset[str], str]],
+    modifiers: list[str],
+    leader: str,
+    *,
+    make_key: Callable[..., K],
+    make_chord: Callable[[list[str], str, list[K]], C],
+    make_action: Callable[[str], Any],
+) -> C | None:
+    """Build the scratchpad leader chord from registry entries.
+
+    Reconciled collision rule: first `leader_is_free` against the already
+    bound top-level combos (if taken, no chord is built and the error names
+    the leader), then `dedupe_chord_keys` for entry-vs-entry collisions.
+    Entries without a `key` get no submapping. Returns `None` when no chord
+    should be bound. Key/KeyChord/action factories are injected so this
+    stays free of any `libqtile` import."""
+    if not leader_is_free(taken, modifiers, leader):
+        logger.error(
+            "scratchpad registry: chord leader %s+%s is already bound; "
+            "scratchpad chord not created (entries remain reachable via rofi)",
+            "+".join(modifiers),
+            leader,
+        )
+        return None
+    submappings = [
+        make_key(
+            [],
+            app.key,
+            make_action(app.name),
+            desc=f"Toggle {app.name} scratchpad",
+        )
+        for app in dedupe_chord_keys(apps)
+        if app.key is not None
+    ]
+    if not submappings:
+        return None
+    return make_chord(modifiers, leader, submappings)

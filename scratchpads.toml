@@ -15,3 +15,26 @@
 name = "term"
 command = "kitty --class scratchpad-term --config {repo}/assets/scratchpad/kitty.conf"
 match_wm_class = "scratchpad-term"
+
+[[scratchpad]]
+name = "files"
+command = "nautilus --new-window"
+match_wm_class = "org.gnome.Nautilus"
+key = "n"
+
+[[scratchpad]]
+name = "private"
+command = "brave-browser-stable --new-window --incognito"
+match_wm_class = "brave-browser"
+profile_dir = "~/.local/share/qtile/scratchpad/brave-private"
+key = "b"
+
+[[scratchpad]]
+name = "calc"
+command = "gnome-calculator"
+match_wm_class = "gnome-calculator"
+x = 0.375
+y = 0.2
+width = 0.25
+height = 0.5
+key = "c"

@@ -8,6 +8,7 @@ from src.utils.scratchpads import (
     BUILTIN_TERM,
     MatchSpec,
     ScratchpadApp,
+    build_scratchpad_chord,
     dedupe_chord_keys,
     leader_is_free,
     load_scratchpads,
@@ -909,6 +910,136 @@ def test_real_registry_term_entry_matches_builtin(
     term_entries = [app for app in apps if app.name == "term"]
     assert len(term_entries) == 1
     assert term_entries[0] == BUILTIN_TERM
+
+
+def test_real_registry_ships_files_private_calc_with_chord_keys(
+    caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:
+    """Task 3.1: the committed registry loads `files`/`private`/`calc` with
+    zero warnings, each with its chord key and window-match spec."""
+    repo_root = Path(__file__).resolve().parents[2]
+    registry = repo_root / "scratchpads.toml"
+
+    with caplog.at_level(logging.WARNING):
+        apps = load_scratchpads_from(registry, tmp_path / "absent.local.toml")
+
+    assert caplog.messages == []
+    by_name = {app.name: app for app in apps}
+    assert list(by_name) == ["term", "files", "private", "calc"]
+    assert by_name["term"].key is None
+
+    files = by_name["files"]
+    assert files.key == "n"
+    assert files.command == "nautilus --new-window"
+    assert files.match == MatchSpec(wm_class="org.gnome.Nautilus")
+
+    private = by_name["private"]
+    assert private.key == "b"
+    expected_profile = os.path.expanduser(
+        "~/.local/share/qtile/scratchpad/brave-private"
+    )
+    assert private.command == (
+        "brave-browser-stable --new-window --incognito "
+        f"--user-data-dir={expected_profile}"
+    )
+    assert private.match == MatchSpec(wm_class=f"brave-browser ({expected_profile})")
+
+    calc = by_name["calc"]
+    assert calc.key == "c"
+    assert calc.command == "gnome-calculator"
+    assert calc.match == MatchSpec(wm_class="gnome-calculator")
+    assert (calc.x, calc.y, calc.width, calc.height) == (0.375, 0.2, 0.25, 0.5)
+
+
+# ---------------------------------------------------------------------------
+# 3.2 — build_scratchpad_chord (reconciled collision rule), libqtile-free
+# ---------------------------------------------------------------------------
+
+
+def _fake_key(modifiers: list[str], key: str, action: str, desc: str = "") -> tuple:
+    return ("key", tuple(modifiers), key, action, desc)
+
+
+def _fake_chord(modifiers: list[str], key: str, submappings: list) -> tuple:
+    return ("chord", tuple(modifiers), key, tuple(submappings))
+
+
+def _fake_action(name: str) -> str:
+    return f"toggle:{name}"
+
+
+def _build(apps: list[ScratchpadApp], taken: set | None = None):
+    return build_scratchpad_chord(
+        apps,
+        taken if taken is not None else set(),
+        ["mod4"],
+        "s",
+        make_key=_fake_key,
+        make_chord=_fake_chord,
+        make_action=_fake_action,
+    )
+
+
+def _app(name: str, key: str | None) -> ScratchpadApp:
+    return ScratchpadApp(name=name, command=name, key=key)
+
+
+def test_chord_maps_each_keyed_entry_to_its_toggle() -> None:
+    chord = _build([_app("files", "n"), _app("calc", "c")])
+
+    assert chord == (
+        "chord",
+        ("mod4",),
+        "s",
+        (
+            ("key", (), "n", "toggle:files", "Toggle files scratchpad"),
+            ("key", (), "c", "toggle:calc", "Toggle calc scratchpad"),
+        ),
+    )
+
+
+def test_chord_skips_entries_without_key() -> None:
+    chord = _build([_app("term", None), _app("calc", "c")])
+
+    assert chord is not None
+    assert [sub[2] for sub in chord[3]] == ["c"]
+
+
+def test_chord_is_none_when_no_entry_has_a_key() -> None:
+    assert _build([_app("term", None)]) is None
+
+
+def test_chord_not_built_when_leader_is_taken(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    taken = {(frozenset(["mod4"]), "s")}
+
+    with caplog.at_level(logging.ERROR):
+        chord = _build([_app("files", "n")], taken)
+
+    assert chord is None
+    assert any("leader" in m for m in caplog.messages)
+
+
+def test_chord_built_when_only_near_miss_leaders_are_taken() -> None:
+    taken = {(frozenset(["shift", "mod4"]), "s"), (frozenset(["mod4", "mod1"]), "s")}
+
+    chord = _build([_app("files", "n")], taken)
+
+    assert chord is not None
+
+
+def test_chord_drops_duplicate_and_reserved_keys(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    apps = [_app("files", "n"), _app("notes", "n"), _app("term2", "masculine")]
+
+    with caplog.at_level(logging.WARNING):
+        chord = _build(apps)
+
+    assert chord is not None
+    assert [(sub[2], sub[3]) for sub in chord[3]] == [("n", "toggle:files")]
+    assert any("dropping chord key" in m for m in caplog.messages)
 
 
 def test_load_scratchpads_wrapper_is_memoized() -> None:
