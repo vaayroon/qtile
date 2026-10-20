@@ -10,6 +10,16 @@
 #
 # Add your own personal overrides in `scratchpads.local.toml` (gitignored)
 # instead of editing this file — see the README for the override workflow.
+#
+# Optional size-preset overrides (fractions, 0 < v <= 1), per entry:
+#   medium_width = 0.8    medium_height = 0.8
+#   small_width  = 0.3    small_height  = 0.4
+# Any subset is allowed; omitted values keep their derived size. Presets
+# stay centered on the entry's default geometry. An invalid value is
+# ignored with a warning (the entry still loads).
+#
+# NOTE: an entry in scratchpads.local.toml REPLACES the base entry with the
+# same name in full, so repeat any preset overrides there.
 
 [[scratchpad]]
 name = "term"
