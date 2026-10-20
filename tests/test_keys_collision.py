@@ -48,11 +48,13 @@ def test_top_level_bindings_are_unique(init_keys):
     assert not dupes
 
 
-@pytest.mark.parametrize("key_name", ["h", "l"])
-def test_scratchpad_size_bindings_exist_once(init_keys, key_name):
+@pytest.mark.parametrize(("key_name", "direction"), [("h", "shrink"), ("l", "grow")])
+def test_scratchpad_size_bindings_exist_once(init_keys, key_name, direction):
     combo = (frozenset({"mod4", "control"}), key_name)
     matches = [k for k in init_keys() if _combo(k) == combo]
     assert len(matches) == 1
     (binding,) = matches
     (command,) = binding.commands
     assert command.name == "function"
+    # LazyCall args: (function, direction, registry provider)
+    assert command.args[1] == direction

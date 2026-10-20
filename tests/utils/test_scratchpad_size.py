@@ -315,6 +315,23 @@ def test_bad_direction_is_caught(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level("ERROR", logger="libqtile"):
         cycle_focused_dropdown(_qtile(win, dd), "sideways", TERM_DEFAULTS)
     assert win.placed == []
+    assert any(r.levelname == "ERROR" and r.exc_info for r in caplog.records)
+
+
+def test_single_remaining_preset_is_a_logged_noop(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import src.utils.scratchpad_size as module
+
+    only = module.Preset("default", TERM)
+    monkeypatch.setattr(module, "derive_presets", lambda _default: [only])
+    win = FakeWindow()
+    dd = _toggler(win)
+    with caplog.at_level("DEBUG", logger="libqtile"):
+        cycle_focused_dropdown(_qtile(win, dd), "grow", TERM_DEFAULTS)
+    assert win.placed == []
+    assert (dd.x, dd.y, dd.width, dd.height) == _as_tuple(TERM)
+    assert any("single preset" in r.getMessage() for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
@@ -375,30 +392,42 @@ def test_contract_toggler_attributes(libqtile_scratchpad) -> None:
 
 
 def test_contract_formula_parity_with_real_show(libqtile_scratchpad) -> None:
-    placed: list[tuple] = []
-    win = SimpleNamespace(
+    screen = SimpleNamespace(dx=70, dy=30, dwidth=1366, dheight=767)
+    medium = _by_label(derive_presets(CALC))["medium"]
+
+    # What the real libqtile show() passes to place() for the medium geometry.
+    real_calls: list[tuple] = []
+    real_win = SimpleNamespace(
         group=None,
         bordercolor="#abc",
-        place=lambda *a, **_k: placed.append(a),
+        place=lambda *a, **k: real_calls.append((a, k)),
         togroup=lambda *_a, **_k: None,
         bring_to_front=lambda: None,
-        qtile=SimpleNamespace(
-            current_screen=SimpleNamespace(dx=70, dy=30, dwidth=1366, dheight=767)
-        ),
+        qtile=SimpleNamespace(current_screen=screen),
     )
-    toggler = object.__new__(libqtile_scratchpad.DropDownToggler)
-    toggler.__dict__.update(
-        window=win,
+    real = object.__new__(libqtile_scratchpad.DropDownToggler)
+    real.__dict__.update(
+        window=real_win,
         shown=False,
         on_focus_lost_hide=False,
         warp_pointer=False,
         scratchpad_name="scratchpad",
         border_width=3,
-        x=CALC.x,
-        y=CALC.y,
-        width=CALC.width,
-        height=CALC.height,
+        x=medium.x,
+        y=medium.y,
+        width=medium.width,
+        height=medium.height,
     )
-    toggler.show()
-    expected = compute_placement(CALC, win.qtile.current_screen, 3)
-    assert placed[0][:4] == expected
+    real.show()
+
+    # What our glue passes when growing the calc default to the same preset.
+    win = FakeWindow()
+    win.bordercolor = "#abc"
+    dd = _toggler(win, "calc", CALC)
+    dd.border_width = 3
+    cycle_focused_dropdown(
+        _qtile(win, dd, screen=screen), "grow", _defaults(("calc", CALC))
+    )
+
+    assert len(real_calls) == len(win.placed) == 1
+    assert win.placed[0] == real_calls[0]
