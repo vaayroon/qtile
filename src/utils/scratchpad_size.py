@@ -10,6 +10,7 @@ it, so a bad keypress can never take Qtile down.
 
 import logging
 import math
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -127,3 +128,51 @@ def compute_placement(
         int(screen.dwidth * g.width) - 2 * border_width,
         int(screen.dheight * g.height) - 2 * border_width,
     )
+
+
+def find_focused_dropdown(qtile: Any) -> tuple[str, Any] | None:
+    """The (name, toggler) owning the focused window, or None."""
+    win = qtile.current_window
+    pad = qtile.groups_map.get("scratchpad")
+    if win is None or pad is None:
+        return None
+    for name, toggler in pad.dropdowns.items():
+        if toggler.window is win:
+            return name, toggler
+    return None
+
+
+def cycle_focused_dropdown(
+    qtile: Any, direction: Direction, defaults: Callable[[], Iterable[Any]]
+) -> None:
+    """Move the focused dropdown to its next size preset.
+
+    `defaults` returns the registry entries (name, x, y, width, height) the
+    dropdowns were built from. The new fractions are stored on the toggler
+    BEFORE placing, so a failing place() still converges on the next show().
+    Never raises and never touches the window's floating state.
+    """
+    try:
+        found = find_focused_dropdown(qtile)
+        if found is None:
+            logger.debug("scratchpad size: focused window is not a dropdown")
+            return
+        name, dd = found
+        entry = next((e for e in defaults() if e.name == name), None)
+        if entry is None:
+            logger.warning("scratchpad size: no registry entry for %r", name)
+            return
+        presets = derive_presets(Geometry(entry.x, entry.y, entry.width, entry.height))
+        if len(presets) < 2:
+            logger.debug("scratchpad size: %r has a single preset", name)
+            return
+        current = Geometry(dd.x, dd.y, dd.width, dd.height)
+        target = presets[step(current_index(presets, current), len(presets), direction)]
+        g = target.geometry
+        dd.x, dd.y, dd.width, dd.height = g.x, g.y, g.width, g.height
+        x, y, w, h = compute_placement(g, qtile.current_screen, dd.border_width)
+        win = dd.window
+        win.float_x, win.float_y = x, y
+        win.place(x, y, w, h, dd.border_width, win.bordercolor, respect_hints=True)
+    except Exception:
+        logger.exception("scratchpad size: failed to cycle focused dropdown")
