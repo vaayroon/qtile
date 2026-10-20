@@ -153,6 +153,22 @@ def compute_placement(
     )
 
 
+def _overrides_of(entry: Any) -> PresetOverrides:
+    """Preset overrides carried by a registry entry; missing attributes (older
+    entries, duck-typed fakes) mean "no override"."""
+    return PresetOverrides(
+        *(
+            getattr(entry, field, None)
+            for field in (
+                "medium_width",
+                "medium_height",
+                "small_width",
+                "small_height",
+            )
+        )
+    )
+
+
 def find_focused_dropdown(qtile: Any) -> tuple[str, Any] | None:
     """The (name, toggler) owning the focused window, or None."""
     win = qtile.current_window
@@ -186,7 +202,10 @@ def cycle_focused_dropdown(
         if entry is None:
             logger.warning("scratchpad size: no registry entry for %r", name)
             return
-        presets = derive_presets(Geometry(entry.x, entry.y, entry.width, entry.height))
+        presets = derive_presets(
+            Geometry(entry.x, entry.y, entry.width, entry.height),
+            _overrides_of(entry),
+        )
         if len(presets) < 2:
             logger.debug("scratchpad size: %r has a single preset", name)
             return

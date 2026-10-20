@@ -315,6 +315,50 @@ def test_cycle_grows_to_medium_and_places_window() -> None:
     assert not {"floating", "_float_state"} & set(win.assigned)
 
 
+def _entry_defaults(**overrides: float):
+    entry = SimpleNamespace(
+        name="term",
+        x=SQUARE.x,
+        y=SQUARE.y,
+        width=SQUARE.width,
+        height=SQUARE.height,
+        **overrides,
+    )
+    return lambda: [entry]
+
+
+def test_cycle_uses_entry_overrides() -> None:
+    win = FakeWindow()
+    dd = _toggler(win, geometry=SQUARE)
+    defaults = _entry_defaults(medium_width=0.95, medium_height=0.95)
+    cycle_focused_dropdown(_qtile(win, dd), "grow", defaults)
+    assert (dd.x, dd.y, dd.width, dd.height) == pytest.approx(
+        (0.025, 0.025, 0.95, 0.95)
+    )
+    ((args, _kwargs),) = win.placed
+    assert args[:4] == pytest.approx((25, 20, 946, 756), abs=1)
+
+
+def test_cycle_wraps_and_is_stateless_over_overridden_list() -> None:
+    win = FakeWindow()
+    dd = _toggler(win, geometry=SQUARE)
+    q = _qtile(win, dd)
+    defaults = _entry_defaults(small_width=0.3, small_height=0.2)
+    cycle_focused_dropdown(q, "shrink", defaults)
+    assert (dd.width, dd.height) == pytest.approx((0.3, 0.2))
+    cycle_focused_dropdown(q, "shrink", defaults)  # wraps small -> full
+    assert (dd.x, dd.y, dd.width, dd.height) == (0.0, 0.0, 1.0, 1.0)
+    cycle_focused_dropdown(q, "grow", defaults)  # full -> small (wrap back)
+    assert (dd.width, dd.height) == pytest.approx((0.3, 0.2))
+
+
+def test_entry_without_override_attributes_behaves_as_no_overrides() -> None:
+    win = FakeWindow()
+    dd = _toggler(win)
+    cycle_focused_dropdown(_qtile(win, dd), "grow", TERM_DEFAULTS)  # bare fakes
+    assert (dd.x, dd.y, dd.width, dd.height) == pytest.approx((0.125, 0.05, 0.75, 0.8))
+
+
 def test_cycle_shrink_then_grow_restores_default() -> None:
     win = FakeWindow()
     dd = _toggler(win)
@@ -406,7 +450,7 @@ def test_single_remaining_preset_is_a_logged_noop(
     import src.utils.scratchpad_size as module
 
     only = module.Preset("default", TERM)
-    monkeypatch.setattr(module, "derive_presets", lambda _default: [only])
+    monkeypatch.setattr(module, "derive_presets", lambda *_args: [only])
     win = FakeWindow()
     dd = _toggler(win)
     with caplog.at_level("DEBUG", logger="libqtile"):
