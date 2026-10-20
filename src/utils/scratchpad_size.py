@@ -82,8 +82,8 @@ def derive_presets(default: Geometry) -> list[Preset]:
             "small",
             _derived(
                 default,
-                max(w * _SMALL_FACTOR, MIN_FRACTION),
-                max(h * _SMALL_FACTOR, MIN_FRACTION),
+                min(w, max(w * _SMALL_FACTOR, MIN_FRACTION)),
+                min(h, max(h * _SMALL_FACTOR, MIN_FRACTION)),
             ),
         ),
     ]
@@ -150,7 +150,8 @@ def cycle_focused_dropdown(
     `defaults` returns the registry entries (name, x, y, width, height) the
     dropdowns were built from. The new fractions are stored on the toggler
     BEFORE placing, so a failing place() still converges on the next show().
-    Never raises and never touches the window's floating state.
+    Never raises and never touches the window's floating state. The chosen
+    size intentionally persists across hide/show until the config is reloaded.
     """
     try:
         found = find_focused_dropdown(qtile)

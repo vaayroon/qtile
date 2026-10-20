@@ -79,10 +79,24 @@ def test_derived_presets_are_clamped_near_edge() -> None:
 
 
 def test_small_preset_respects_floor() -> None:
-    g = _by_label(derive_presets(Geometry(0.4, 0.4, 0.02, 0.5)))
+    g = _by_label(derive_presets(Geometry(0.4, 0.4, 0.06, 0.5)))
     assert MIN_FRACTION == 0.05
     assert g["small"].width == pytest.approx(0.05)
     assert g["small"].height == pytest.approx(0.3)
+
+
+def test_small_preset_never_grows_a_tiny_default() -> None:
+    g = _by_label(derive_presets(Geometry(0.4, 0.4, 0.02, 0.5)))
+    assert g["small"].width == pytest.approx(0.02)
+    assert g["small"].width <= g["default"].width
+    assert g["small"].height == pytest.approx(0.3)
+
+
+def test_small_equal_to_default_is_dropped() -> None:
+    default = Geometry(0.4, 0.4, 0.02, 0.02)
+    presets = derive_presets(default)
+    assert [p.label for p in presets] == ["full", "medium", "default"]
+    assert _by_label(presets)["default"] == default
 
 
 def test_default_already_full_collapses_to_two_presets() -> None:
