@@ -1,5 +1,6 @@
 from libqtile.config import Key, KeyChord
 from libqtile.lazy import lazy
+from libqtile.log_utils import logger
 
 from settings import mod, myTerm
 from utils.scratchpads import build_scratchpad_chord, load_scratchpads
@@ -232,7 +233,12 @@ def _scratchpad_chord() -> KeyChord | None:
 
 def init_keys() -> list[Key | KeyChord]:
     all_keys: list[Key | KeyChord] = [*keys]
-    chord = _scratchpad_chord()
+    try:
+        chord = _scratchpad_chord()
+    except Exception:
+        # Never let a bad registry entry take down the whole config.
+        logger.exception("scratchpad chord: failed to build, skipping Super+s chord")
+        chord = None
     if chord is not None:
         all_keys.append(chord)
     return all_keys
