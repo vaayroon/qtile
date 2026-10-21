@@ -427,7 +427,11 @@ def _coerce_geometry(
         )
         raise _SkipEntry
 
-    numeric_value = float(value)
+    try:
+        numeric_value = float(value)
+    except OverflowError:
+        # TOML ints are unbounded; one too large for a float is not finite.
+        numeric_value = math.inf
     if math.isnan(numeric_value) or math.isinf(numeric_value):
         logger.warning(
             "scratchpad registry: entry %s field %r has a non-finite value "

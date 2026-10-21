@@ -1113,6 +1113,7 @@ _INVALID_OVERRIDES = [
     "nan",
     "inf",
     "[0.5]",
+    pytest.param("1" + "0" * 400, id="int-overflowing-float"),
 ]
 
 
