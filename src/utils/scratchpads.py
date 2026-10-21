@@ -74,6 +74,12 @@ class ScratchpadApp:
     warp_pointer: bool = True
     desktop_entry: bool = True
     match: MatchSpec | None = None
+    # Optional size-preset overrides (fractions of the screen, 0 < v <= 1).
+    # None means "derive this dimension" (see `scratchpad_size.derive_presets`).
+    medium_width: float | None = None
+    medium_height: float | None = None
+    small_width: float | None = None
+    small_height: float | None = None
 
 
 # The config package's `src/` directory, resolved relative to this file so
@@ -161,6 +167,10 @@ _KNOWN_FIELDS = {
     "profile_dir",
     "desktop_entry",
     "enabled",
+    "medium_width",
+    "medium_height",
+    "small_width",
+    "small_height",
 }
 
 _RESERVED_VALIDATE_KEYS = {"Escape"}
@@ -417,7 +427,11 @@ def _coerce_geometry(
         )
         raise _SkipEntry
 
-    numeric_value = float(value)
+    try:
+        numeric_value = float(value)
+    except OverflowError:
+        # TOML ints are unbounded; one too large for a float is not finite.
+        numeric_value = math.inf
     if math.isnan(numeric_value) or math.isinf(numeric_value):
         logger.warning(
             "scratchpad registry: entry %s field %r has a non-finite value "
@@ -441,6 +455,62 @@ def _coerce_geometry(
         raise _SkipEntry
 
     return numeric_value
+
+
+def _optional_fraction(
+    raw_entry: dict[str, Any], field: str, identity: str
+) -> float | None:
+    """Lenient 0 < v <= 1 fraction for an optional preset override.
+
+    Reuses `_coerce_geometry` for the rules, but an invalid value only drops
+    this one override (warning + None); the entry itself is never skipped.
+    """
+    if field not in raw_entry:
+        return None
+    try:
+        return _coerce_geometry(
+            raw_entry,
+            field,
+            identity,
+            0.0,
+            minimum=0.0,
+            maximum=1.0,
+            exclusive_min=True,
+        )
+    except _SkipEntry:
+        logger.warning(
+            "scratchpad registry: entry %s override %r ignored, using the "
+            "derived value",
+            identity,
+            field,
+        )
+        return None
+
+
+def _warn_out_of_order_overrides(
+    identity: str, default: float, axis: str, medium: float | None, small: float | None
+) -> None:
+    """Warn (never reject) when a preset override breaks full > medium >
+    default > small ordering on one axis; the cycle may then be
+    non-monotonic."""
+    if medium is not None and medium < default:
+        logger.warning(
+            "scratchpad registry: entry %s medium_%s=%r is smaller than the "
+            "default %r; the size cycle may be non-monotonic",
+            identity,
+            axis,
+            medium,
+            default,
+        )
+    if small is not None and small > default:
+        logger.warning(
+            "scratchpad registry: entry %s small_%s=%r is larger than the "
+            "default %r; the size cycle may be non-monotonic",
+            identity,
+            axis,
+            small,
+            default,
+        )
 
 
 def _coerce_bool(
@@ -564,6 +634,17 @@ def _build_entry(
             raw_entry, "opacity", identity, 1.0, minimum=0.0, maximum=1.0
         )
 
+        medium_width = _optional_fraction(raw_entry, "medium_width", identity)
+        medium_height = _optional_fraction(raw_entry, "medium_height", identity)
+        small_width = _optional_fraction(raw_entry, "small_width", identity)
+        small_height = _optional_fraction(raw_entry, "small_height", identity)
+        _warn_out_of_order_overrides(
+            identity, width, "width", medium_width, small_width
+        )
+        _warn_out_of_order_overrides(
+            identity, height, "height", medium_height, small_height
+        )
+
         on_focus_lost_hide = _coerce_bool(
             raw_entry, "on_focus_lost_hide", identity, True
         )
@@ -635,6 +716,10 @@ def _build_entry(
             warp_pointer=warp_pointer,
             desktop_entry=desktop_entry,
             match=match,
+            medium_width=medium_width,
+            medium_height=medium_height,
+            small_width=small_width,
+            small_height=small_height,
         )
     except _SkipEntry:
         return None

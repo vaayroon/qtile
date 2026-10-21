@@ -1048,3 +1048,188 @@ def test_load_scratchpads_wrapper_is_memoized() -> None:
 
     assert first is second
     assert any(app.name == "term" for app in first)
+
+
+# ---------------------------------------------------------------------------
+# Preset override keys (medium_*/small_*): parse, validate, warn
+# ---------------------------------------------------------------------------
+
+_OVERRIDE_KEYS = ("medium_width", "medium_height", "small_width", "small_height")
+
+
+def _override_values(app) -> tuple:
+    return tuple(getattr(app, key) for key in _OVERRIDE_KEYS)
+
+
+def _load_one(tmp_path: Path, body: str):
+    registry = _write_registry(
+        tmp_path,
+        f"""
+        [[scratchpad]]
+        name = "pad"
+        command = "kitty"
+        {body}
+        """,
+    )
+    apps = load_scratchpads_from(registry, None)
+    assert len(apps) == 1
+    return apps[0]
+
+
+def test_override_keys_default_to_none(tmp_path: Path) -> None:
+    assert _override_values(_load_one(tmp_path, "")) == (None, None, None, None)
+    assert _override_values(BUILTIN_TERM) == (None, None, None, None)
+
+
+def test_full_override_set_is_parsed(tmp_path: Path, caplog) -> None:
+    body = (
+        "width = 0.5\nheight = 0.6\n"
+        "medium_width = 0.7\nmedium_height = 0.8\n"
+        "small_width = 0.3\nsmall_height = 0.4"
+    )
+    with caplog.at_level(logging.WARNING, logger="libqtile"):
+        app = _load_one(tmp_path, body)
+    assert _override_values(app) == (0.7, 0.8, 0.3, 0.4)
+    assert caplog.messages == []
+
+
+def test_partial_override_set_is_parsed(tmp_path: Path) -> None:
+    app = _load_one(tmp_path, "medium_width = 0.7\nsmall_height = 0.2")
+    assert _override_values(app) == (0.7, None, None, 0.2)
+
+
+def test_override_boundary_one_is_valid_and_int_is_coerced(tmp_path: Path) -> None:
+    app = _load_one(tmp_path, "medium_width = 1\nmedium_height = 1.0")
+    assert _override_values(app) == (1.0, 1.0, None, None)
+    assert isinstance(app.medium_width, float)
+
+
+_INVALID_OVERRIDES = [
+    "true",
+    '"0.5"',
+    "0",
+    "1.5",
+    "-0.1",
+    "nan",
+    "inf",
+    "[0.5]",
+    pytest.param("1" + "0" * 400, id="int-overflowing-float"),
+]
+
+
+@pytest.mark.parametrize("raw", _INVALID_OVERRIDES)
+def test_invalid_override_is_ignored_with_warning_entry_kept(
+    tmp_path: Path, caplog, raw: str
+) -> None:
+    body = f"width = 0.4\nmedium_width = {raw}\nsmall_width = 0.2"
+    with caplog.at_level(logging.WARNING, logger="libqtile"):
+        app = _load_one(tmp_path, body)
+
+    assert app.medium_width is None
+    assert app.small_width == 0.2
+    assert app.width == 0.4
+    assert any("'pad'" in m and "medium_width" in m for m in caplog.messages)
+
+
+def test_invalid_geometry_still_skips_entry_despite_overrides(
+    tmp_path: Path,
+) -> None:
+    registry = _write_registry(
+        tmp_path,
+        """
+        [[scratchpad]]
+        name = "bad"
+        command = "kitty"
+        width = 1.5
+        medium_width = 0.7
+        """,
+    )
+    assert load_scratchpads_from(registry, None) == [BUILTIN_TERM]
+
+
+def test_override_keys_are_not_reported_unknown_but_typos_are(
+    tmp_path: Path, caplog
+) -> None:
+    body = (
+        "medium_width = 0.7\nmedium_height = 0.8\n"
+        "small_width = 0.3\nsmall_height = 0.4\nmedum_width = 0.9"
+    )
+    with caplog.at_level(logging.WARNING, logger="libqtile"):
+        app = _load_one(tmp_path, body)
+
+    unknown = [m for m in caplog.messages if "unknown field" in m]
+    assert len(unknown) == 1
+    assert "medum_width" in unknown[0]
+    assert app.medium_width == 0.7
+
+
+def test_local_entry_replaces_base_without_inheriting_overrides(
+    tmp_path: Path,
+) -> None:
+    base = _write_registry(
+        tmp_path,
+        """
+        [[scratchpad]]
+        name = "calc"
+        command = "gnome-calculator"
+        medium_width = 0.7
+        """,
+        name="scratchpads.toml",
+    )
+    local = _write_registry(
+        tmp_path,
+        """
+        [[scratchpad]]
+        name = "calc"
+        command = "gnome-calculator"
+        small_width = 0.2
+        """,
+        name="scratchpads.local.toml",
+    )
+
+    (app,) = load_scratchpads_from(base, local)
+
+    assert _override_values(app) == (None, None, 0.2, None)
+
+
+@pytest.mark.parametrize(
+    ("body", "key"),
+    [
+        ("width = 0.5\nsmall_width = 0.6", "small_width"),
+        ("height = 0.8\nsmall_height = 0.9", "small_height"),
+        ("width = 0.5\nmedium_width = 0.4", "medium_width"),
+        ("height = 0.8\nmedium_height = 0.7", "medium_height"),
+    ],
+)
+def test_out_of_order_override_warns_but_is_kept(
+    tmp_path: Path, caplog, body: str, key: str
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="libqtile"):
+        app = _load_one(tmp_path, body)
+
+    assert getattr(app, key) is not None
+    assert any(key in m and "non-monotonic" in m for m in caplog.messages)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "width = 0.5\nheight = 0.6\nsmall_width = 0.3\nmedium_width = 0.7\n"
+        "small_height = 0.4\nmedium_height = 0.8",
+        "width = 0.5\nheight = 0.6\nsmall_width = 0.5\nmedium_width = 0.5\n"
+        "small_height = 0.6\nmedium_height = 0.6",
+    ],
+)
+def test_in_order_and_equal_overrides_do_not_warn(
+    tmp_path: Path, caplog, body: str
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="libqtile"):
+        _load_one(tmp_path, body)
+    assert not [m for m in caplog.messages if "non-monotonic" in m]
+
+
+def test_ignored_override_is_not_order_checked(tmp_path: Path, caplog) -> None:
+    with caplog.at_level(logging.WARNING, logger="libqtile"):
+        app = _load_one(tmp_path, "width = 0.5\nsmall_width = 1.5")
+    assert app.small_width is None
+    assert not [m for m in caplog.messages if "non-monotonic" in m]
