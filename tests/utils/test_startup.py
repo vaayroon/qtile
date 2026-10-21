@@ -123,6 +123,16 @@ def test_run_command_unexpected_exception_is_logged_not_raised(
     _assert_exception_logged(caplog, RuntimeError)
 
 
+def test_run_command_tolerates_non_utf8_output_on_success(caplog, tmp_path) -> None:
+    script = tmp_path / "noisy.sh"
+    script.write_text("#!/bin/sh\nprintf '\\377\\376' >&2\nexit 0\n")
+    script.chmod(0o755)
+    with caplog.at_level(logging.DEBUG, logger="libqtile"):
+        assert run_command([str(script)], label="probe") is True
+    assert not _records(caplog, logging.ERROR)
+    assert not _records(caplog, logging.WARNING)
+
+
 @pytest.mark.parametrize(
     ("kwargs", "expected_timeout"),
     [({"timeout": 2.5}, 2.5), ({}, 5.0)],

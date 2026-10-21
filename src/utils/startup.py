@@ -34,6 +34,7 @@ def run_command(cmd: Sequence[str], *, label: str, timeout: float = 5.0) -> bool
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
+            errors="replace",  # stray non-UTF-8 output must not fail the step
             timeout=timeout,
             check=False,
         )
