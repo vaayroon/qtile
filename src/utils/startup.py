@@ -4,8 +4,12 @@ Blocking and detached subprocess helpers plus the thin startup steps built on
 them (root background, autostart script). This module MUST NOT import
 ``libqtile``: Qtile wiring lives in ``modules.hooks``.
 
-Never-crash contract: every public function catches every exception and logs
-it, so a failing startup step can never take Qtile down or skip later steps.
+Never-crash contract: the entry points (`run_command`, `spawn_detached`,
+`run_autostart`, `set_root_background`, `run_steps`) catch every exception and
+log it, so a failing startup step can never take Qtile down or skip later
+steps. The path helpers (`resolve_autostart_path`, `autostart_log_path`) are
+plain lookups that may raise (e.g. `~nouser` or an unknown home directory);
+`run_autostart` is the one that guards them.
 """
 
 import logging
