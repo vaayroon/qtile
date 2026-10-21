@@ -21,6 +21,17 @@ def _records(caplog: pytest.LogCaptureFixture, level: int) -> list[logging.LogRe
     return [r for r in caplog.records if r.levelno == level]
 
 
+def _assert_exception_logged(
+    caplog: pytest.LogCaptureFixture, exc_type: type[BaseException]
+) -> logging.LogRecord:
+    """Exactly one ERROR record, with the traceback of `exc_type` attached."""
+    (record,) = _records(caplog, logging.ERROR)
+    assert record.name == "libqtile"
+    assert record.exc_info is not None
+    assert record.exc_info[0] is exc_type
+    return record
+
+
 def test_module_has_no_libqtile_import() -> None:
     tree = ast.parse(Path(startup.__file__).read_text(encoding="utf-8"))
     roots: set[str] = set()
@@ -50,43 +61,42 @@ def test_run_command_success_returns_true_and_logs_debug(caplog) -> None:
     assert not _records(caplog, logging.WARNING)
 
 
-def test_run_command_nonzero_exit_warns_with_returncode(caplog) -> None:
+@pytest.mark.parametrize(
+    ("returncode", "stderr"), [(1, ""), (3, "boom happened")], ids=["bare", "stderr"]
+)
+def test_run_command_nonzero_exit_warns_with_returncode_and_stderr(
+    caplog, tmp_path, returncode, stderr
+) -> None:
+    script = tmp_path / "fail.sh"
+    script.write_text(f"#!/bin/sh\necho '{stderr}' >&2\nexit {returncode}\n")
+    script.chmod(0o755)
     with caplog.at_level(logging.DEBUG, logger="libqtile"):
-        assert run_command(["false"], label="probe") is False
+        assert run_command([str(script)], label="probe") is False
     (record,) = _records(caplog, logging.WARNING)
     assert record.name == "libqtile"
     assert "probe" in record.getMessage()
-    assert "returncode 1" in record.getMessage()
+    assert f"returncode {returncode}" in record.getMessage()
+    assert stderr in record.getMessage()
 
 
-def test_run_command_includes_stripped_stderr_in_warning(caplog, tmp_path) -> None:
-    script = tmp_path / "fail.sh"
-    script.write_text("#!/bin/sh\necho 'boom happened' >&2\nexit 3\n")
-    script.chmod(0o755)
-    with caplog.at_level(logging.WARNING, logger="libqtile"):
-        assert run_command([str(script)], label="probe") is False
-    (record,) = _records(caplog, logging.WARNING)
-    assert "returncode 3" in record.getMessage()
-    assert "boom happened" in record.getMessage()
-
-
-def test_run_command_missing_binary_warns_not_found(caplog, tmp_path) -> None:
-    missing = str(tmp_path / "no-such-binary")
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [(None, "not found"), (0o644, "could not run")],
+    ids=["missing-binary", "non-executable-file"],
+)
+def test_run_command_unlaunchable_command_warns(
+    caplog, tmp_path, mode, expected
+) -> None:
+    target = tmp_path / "program"
+    if mode is not None:
+        target.write_text("not a program\n")
+        target.chmod(mode)
     with caplog.at_level(logging.DEBUG, logger="libqtile"):
-        assert run_command([missing], label="probe") is False
-    (record,) = _records(caplog, logging.WARNING)
-    assert "not found" in record.getMessage()
-    assert missing in record.getMessage()
-
-
-def test_run_command_non_executable_file_warns(caplog, tmp_path) -> None:
-    script = tmp_path / "plain.txt"
-    script.write_text("not a program\n")
-    script.chmod(0o644)
-    with caplog.at_level(logging.DEBUG, logger="libqtile"):
-        assert run_command([str(script)], label="probe") is False
+        assert run_command([str(target)], label="probe") is False
     (record,) = _records(caplog, logging.WARNING)
     assert "probe" in record.getMessage()
+    assert expected in record.getMessage()
+    assert str(target) in record.getMessage()
     assert not _records(caplog, logging.ERROR)
 
 
@@ -110,40 +120,32 @@ def test_run_command_unexpected_exception_is_logged_not_raised(
     monkeypatch.setattr(startup.subprocess, "run", fake_run)
     with caplog.at_level(logging.DEBUG, logger="libqtile"):
         assert run_command(["x"], label="probe") is False
-    (record,) = _records(caplog, logging.ERROR)
-    assert record.name == "libqtile"
-    assert record.exc_info is not None
-    assert record.exc_info[0] is RuntimeError
+    _assert_exception_logged(caplog, RuntimeError)
 
 
-def test_run_command_passes_timeout_and_closed_stdin(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("kwargs", "expected_timeout"),
+    [({"timeout": 2.5}, 2.5), ({}, 5.0)],
+    ids=["explicit", "default"],
+)
+def test_run_command_passes_timeout_and_closed_stdin(
+    monkeypatch, kwargs, expected_timeout
+) -> None:
     seen: dict[str, object] = {}
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd, **run_kwargs):
         seen["cmd"] = cmd
-        seen.update(kwargs)
+        seen.update(run_kwargs)
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(startup.subprocess, "run", fake_run)
-    assert run_command(["a", "b"], label="probe", timeout=2.5) is True
+    assert run_command(["a", "b"], label="probe", **kwargs) is True
     assert seen["cmd"] == ["a", "b"]
-    assert seen["timeout"] == 2.5
+    assert seen["timeout"] == expected_timeout
     assert seen["stdin"] == subprocess.DEVNULL
     assert seen["check"] is False
     assert seen["capture_output"] is True
     assert seen["text"] is True
-
-
-def test_run_command_default_timeout_is_five_seconds(monkeypatch) -> None:
-    seen: dict[str, object] = {}
-
-    def fake_run(cmd, **kwargs):
-        seen.update(kwargs)
-        return subprocess.CompletedProcess(cmd, 0, "", "")
-
-    monkeypatch.setattr(startup.subprocess, "run", fake_run)
-    assert run_command(["a"], label="probe") is True
-    assert seen["timeout"] == 5.0
 
 
 # --- spawn_detached ----------------------------------------------------------
@@ -234,59 +236,55 @@ def test_spawn_detached_popen_kwargs_and_handle_closed(tmp_path, fake_popen) -> 
     assert stdout.closed is True  # the parent's copy is closed after spawning
 
 
-def test_spawn_detached_without_log_path_inherits_stdio(fake_popen) -> None:
-    result = spawn_detached(["prog"], log_path=None, label="job")
+def _blocked_parent(tmp_path: Path) -> Path:
+    blocker = tmp_path / "blocker"
+    blocker.write_text("i am a file, not a directory")
+    return blocker / "qtile" / "autostart.log"  # mkdir fails: NotADirectoryError
+
+
+def _directory_as_file(tmp_path: Path) -> Path:
+    log = tmp_path / "is-a-directory"
+    log.mkdir()
+    return log  # open() fails: IsADirectoryError
+
+
+def _nul_byte_path(tmp_path: Path) -> Path:
+    return tmp_path / "bad\0name" / "autostart.log"  # ValueError, not OSError
+
+
+@pytest.mark.parametrize(
+    "make_log",
+    [_blocked_parent, _directory_as_file, _nul_byte_path],
+    ids=["mkdir-failure", "open-failure", "nul-byte-path"],
+)
+def test_spawn_detached_unusable_log_falls_back_to_inherited_stdio(
+    tmp_path, fake_popen, caplog, make_log
+) -> None:
+    log = make_log(tmp_path)
+    with caplog.at_level(logging.DEBUG, logger="libqtile"):
+        result = spawn_detached(["prog"], log_path=log, label="job")
     assert result is not None
     (call,) = fake_popen.calls
     assert call["stdout"] is None
     assert call["stderr"] is None
     assert call["start_new_session"] is True
-
-
-def test_spawn_detached_mkdir_failure_falls_back_to_inherited_stdio(
-    tmp_path, fake_popen, caplog
-) -> None:
-    blocker = tmp_path / "blocker"
-    blocker.write_text("i am a file, not a directory")
-    log = blocker / "qtile" / "autostart.log"
-    with caplog.at_level(logging.DEBUG, logger="libqtile"):
-        result = spawn_detached(["prog"], log_path=log, label="job")
-    assert result is not None
-    (call,) = fake_popen.calls
-    assert call["stdout"] is None
-    assert call["stderr"] is None
-    (record,) = _records(caplog, logging.WARNING)
-    assert record.name == "libqtile"
-    assert str(log) in record.getMessage()
-
-
-def test_spawn_detached_open_failure_falls_back_to_inherited_stdio(
-    tmp_path, fake_popen, caplog
-) -> None:
-    log = tmp_path / "is-a-directory"
-    log.mkdir()
-    with caplog.at_level(logging.DEBUG, logger="libqtile"):
-        result = spawn_detached(["prog"], log_path=log, label="job")
-    assert result is not None
-    (call,) = fake_popen.calls
-    assert call["stdout"] is None
-    assert call["stderr"] is None
-    assert len(_records(caplog, logging.WARNING)) == 1
-
-
-def test_spawn_detached_invalid_log_path_falls_back_to_inherited_stdio(
-    tmp_path, fake_popen, caplog
-) -> None:
-    log = tmp_path / "bad\0name" / "autostart.log"  # NUL byte: ValueError, not OSError
-    with caplog.at_level(logging.DEBUG, logger="libqtile"):
-        result = spawn_detached(["prog"], log_path=log, label="job")
-    assert result is not None
-    (call,) = fake_popen.calls
-    assert call["stdout"] is None
-    assert call["stderr"] is None
     (record,) = _records(caplog, logging.WARNING)
     assert record.name == "libqtile"
     assert "job" in record.getMessage()
+    assert str(log) in record.getMessage()
+
+
+def test_spawn_detached_without_log_path_inherits_stdio_quietly(
+    fake_popen, caplog
+) -> None:
+    with caplog.at_level(logging.DEBUG, logger="libqtile"):
+        result = spawn_detached(["prog"], log_path=None, label="job")
+    assert result is not None
+    (call,) = fake_popen.calls
+    assert call["stdout"] is None
+    assert call["stderr"] is None
+    assert call["start_new_session"] is True
+    assert not _records(caplog, logging.WARNING)  # no log requested: nothing to warn
 
 
 def test_spawn_detached_unexpected_log_setup_error_is_logged_not_raised(
@@ -300,42 +298,35 @@ def test_spawn_detached_unexpected_log_setup_error_is_logged_not_raised(
         result = spawn_detached(["prog"], log_path=tmp_path / "out.log", label="job")
     assert result is None
     assert fake_popen.calls == []  # nothing was started
-    (record,) = _records(caplog, logging.ERROR)
-    assert record.exc_info is not None
-    assert record.exc_info[0] is RuntimeError
+    _assert_exception_logged(caplog, RuntimeError)
 
 
-def test_spawn_detached_popen_oserror_returns_none_and_warns(
-    tmp_path, monkeypatch, caplog
+@pytest.mark.parametrize(
+    ("raised", "level", "traceback_of"),
+    [
+        (FileNotFoundError("zsh"), logging.WARNING, None),
+        (RuntimeError("kaboom"), logging.ERROR, RuntimeError),
+    ],
+    ids=["oserror-warns", "unexpected-logs-exception"],
+)
+def test_spawn_detached_popen_failure_returns_none_and_logs(
+    tmp_path, monkeypatch, caplog, raised, level, traceback_of
 ) -> None:
     seen: dict[str, object] = {}
 
     def fake_popen(_cmd, **kwargs):
         seen.update(kwargs)
-        raise FileNotFoundError("zsh")
+        raise raised
 
     monkeypatch.setattr(startup.subprocess, "Popen", fake_popen)
     with caplog.at_level(logging.DEBUG, logger="libqtile"):
         result = spawn_detached(["prog"], log_path=tmp_path / "out.log", label="job")
     assert result is None
-    (record,) = _records(caplog, logging.WARNING)
+    (record,) = _records(caplog, level)
+    assert record.name == "libqtile"
     assert "job" in record.getMessage()
+    assert (record.exc_info[0] if record.exc_info else None) is traceback_of
     assert seen["stdout"].closed is True  # no leaked handle on failure
-
-
-def test_spawn_detached_unexpected_exception_is_logged_not_raised(
-    tmp_path, monkeypatch, caplog
-) -> None:
-    def fake_popen(_cmd, **_kwargs):
-        raise RuntimeError("kaboom")
-
-    monkeypatch.setattr(startup.subprocess, "Popen", fake_popen)
-    with caplog.at_level(logging.DEBUG, logger="libqtile"):
-        result = spawn_detached(["prog"], log_path=tmp_path / "out.log", label="job")
-    assert result is None
-    (record,) = _records(caplog, logging.ERROR)
-    assert record.exc_info is not None
-    assert record.exc_info[0] is RuntimeError
 
 
 # --- resolve_autostart_path --------------------------------------------------
@@ -348,12 +339,6 @@ def test_default_autostart_is_the_repo_script() -> None:
     assert DEFAULT_AUTOSTART.is_file()
 
 
-def test_resolve_autostart_path_uses_env_override(monkeypatch, tmp_path) -> None:
-    custom = tmp_path / "custom-autostart.sh"
-    monkeypatch.setenv("QTILE_AUTOSTART_PATH", str(custom))
-    assert resolve_autostart_path() == custom
-
-
 @pytest.mark.parametrize("value", [None, "", "   ", "\t\n"])
 def test_resolve_autostart_path_falls_back_to_default(monkeypatch, value) -> None:
     if value is None:
@@ -363,10 +348,20 @@ def test_resolve_autostart_path_falls_back_to_default(monkeypatch, value) -> Non
     assert resolve_autostart_path() == DEFAULT_AUTOSTART
 
 
-def test_resolve_autostart_path_strips_and_expands_user(monkeypatch, tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("raw", "relative"),
+    [
+        ("{home}/custom-autostart.sh", "custom-autostart.sh"),
+        ("  ~/bin/start.sh  ", "bin/start.sh"),
+    ],
+    ids=["override", "strip-and-expanduser"],
+)
+def test_resolve_autostart_path_uses_env_value(
+    monkeypatch, tmp_path, raw, relative
+) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("QTILE_AUTOSTART_PATH", "  ~/bin/start.sh  ")
-    assert resolve_autostart_path() == tmp_path / "bin" / "start.sh"
+    monkeypatch.setenv("QTILE_AUTOSTART_PATH", raw.format(home=tmp_path))
+    assert resolve_autostart_path() == tmp_path / relative
 
 
 def test_resolve_autostart_path_reads_env_at_call_time(monkeypatch, tmp_path) -> None:
@@ -476,9 +471,7 @@ def test_run_autostart_unexpected_exception_is_logged_not_raised(
     monkeypatch.setattr(startup, "resolve_autostart_path", boom)
     with caplog.at_level(logging.DEBUG, logger="libqtile"):
         assert run_autostart() is False
-    (record,) = _records(caplog, logging.ERROR)
-    assert record.exc_info is not None
-    assert record.exc_info[0] is RuntimeError
+    _assert_exception_logged(caplog, RuntimeError)
 
 
 def test_run_autostart_end_to_end_writes_script_output_to_log(
@@ -551,11 +544,7 @@ def test_run_steps_isolates_a_raising_step(failing, caplog) -> None:
     with caplog.at_level(logging.DEBUG, logger="libqtile"):
         run_steps([(name, make(name)) for name in names])
     assert ran == names  # later steps still ran, the failing one included
-    (record,) = _records(caplog, logging.ERROR)
-    assert record.name == "libqtile"
-    assert failing in record.getMessage()
-    assert record.exc_info is not None
-    assert record.exc_info[0] is RuntimeError
+    assert failing in _assert_exception_logged(caplog, RuntimeError).getMessage()
 
 
 def test_run_steps_accepts_a_generator_and_ignores_return_values() -> None:
