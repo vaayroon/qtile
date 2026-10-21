@@ -5,7 +5,16 @@ from pathlib import Path
 
 import pytest
 from src.utils import startup
-from src.utils.startup import run_command, spawn_detached
+from src.utils.startup import (
+    DEFAULT_AUTOSTART,
+    autostart_log_path,
+    resolve_autostart_path,
+    run_autostart,
+    run_command,
+    run_steps,
+    set_root_background,
+    spawn_detached,
+)
 
 
 def _records(caplog: pytest.LogCaptureFixture, level: int) -> list[logging.LogRecord]:
@@ -296,3 +305,234 @@ def test_spawn_detached_unexpected_exception_is_logged_not_raised(
     (record,) = _records(caplog, logging.ERROR)
     assert record.exc_info is not None
     assert record.exc_info[0] is RuntimeError
+
+
+# --- resolve_autostart_path --------------------------------------------------
+
+
+def test_default_autostart_is_the_repo_script() -> None:
+    repo_root = Path(startup.__file__).resolve().parents[2]
+    assert DEFAULT_AUTOSTART == repo_root / "autostart.sh"
+    assert DEFAULT_AUTOSTART.is_absolute()
+    assert DEFAULT_AUTOSTART.is_file()
+
+
+def test_resolve_autostart_path_uses_env_override(monkeypatch, tmp_path) -> None:
+    custom = tmp_path / "custom-autostart.sh"
+    monkeypatch.setenv("QTILE_AUTOSTART_PATH", str(custom))
+    assert resolve_autostart_path() == custom
+
+
+@pytest.mark.parametrize("value", [None, "", "   ", "\t\n"])
+def test_resolve_autostart_path_falls_back_to_default(monkeypatch, value) -> None:
+    if value is None:
+        monkeypatch.delenv("QTILE_AUTOSTART_PATH", raising=False)
+    else:
+        monkeypatch.setenv("QTILE_AUTOSTART_PATH", value)
+    assert resolve_autostart_path() == DEFAULT_AUTOSTART
+
+
+def test_resolve_autostart_path_strips_and_expands_user(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("QTILE_AUTOSTART_PATH", "  ~/bin/start.sh  ")
+    assert resolve_autostart_path() == tmp_path / "bin" / "start.sh"
+
+
+def test_resolve_autostart_path_reads_env_at_call_time(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("QTILE_AUTOSTART_PATH", raising=False)
+    assert resolve_autostart_path() == DEFAULT_AUTOSTART
+    monkeypatch.setenv("QTILE_AUTOSTART_PATH", str(tmp_path / "later.sh"))
+    assert resolve_autostart_path() == tmp_path / "later.sh"
+
+
+# --- autostart_log_path ------------------------------------------------------
+
+
+def test_autostart_log_path_uses_xdg_data_home(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    assert autostart_log_path() == tmp_path / "qtile" / "autostart.log"
+
+
+@pytest.mark.parametrize("value", [None, "", "relative/data"])
+def test_autostart_log_path_falls_back_to_home(monkeypatch, tmp_path, value) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    if value is None:
+        monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    else:
+        monkeypatch.setenv("XDG_DATA_HOME", value)
+    expected = tmp_path / ".local" / "share" / "qtile" / "autostart.log"
+    assert autostart_log_path() == expected
+
+
+# --- run_autostart -----------------------------------------------------------
+
+
+@pytest.fixture
+def spawn_calls(monkeypatch) -> list[tuple[list[str], Path | None, str]]:
+    calls: list[tuple[list[str], Path | None, str]] = []
+
+    def fake_spawn(cmd, *, log_path, label):
+        calls.append((list(cmd), log_path, label))
+        return _FakePopen(cmd)
+
+    monkeypatch.setattr(startup, "spawn_detached", fake_spawn)
+    return calls
+
+
+def test_run_autostart_missing_script_warns_and_does_not_spawn(
+    monkeypatch, tmp_path, caplog, spawn_calls
+) -> None:
+    missing = tmp_path / "nope.sh"
+    monkeypatch.setenv("QTILE_AUTOSTART_PATH", str(missing))
+    with caplog.at_level(logging.DEBUG, logger="libqtile"):
+        assert run_autostart() is False
+    (record,) = _records(caplog, logging.WARNING)
+    assert record.name == "libqtile"
+    assert "not found" in record.getMessage()
+    assert str(missing) in record.getMessage()
+    assert spawn_calls == []
+
+
+def test_run_autostart_directory_counts_as_missing(
+    monkeypatch, tmp_path, caplog, spawn_calls
+) -> None:
+    monkeypatch.setenv("QTILE_AUTOSTART_PATH", str(tmp_path))
+    with caplog.at_level(logging.DEBUG, logger="libqtile"):
+        assert run_autostart() is False
+    assert "not found" in _records(caplog, logging.WARNING)[0].getMessage()
+    assert spawn_calls == []
+
+
+def test_run_autostart_non_executable_script_warns_and_does_not_spawn(
+    monkeypatch, tmp_path, caplog, spawn_calls
+) -> None:
+    script = tmp_path / "autostart.sh"
+    script.write_text("#!/bin/sh\n")
+    script.chmod(0o644)
+    monkeypatch.setenv("QTILE_AUTOSTART_PATH", str(script))
+    with caplog.at_level(logging.DEBUG, logger="libqtile"):
+        assert run_autostart() is False
+    (record,) = _records(caplog, logging.WARNING)
+    assert "not executable" in record.getMessage()
+    assert spawn_calls == []
+
+
+def test_run_autostart_spawns_executable_script_with_log_path(
+    monkeypatch, tmp_path, spawn_calls
+) -> None:
+    script = _script(tmp_path, "true", name="autostart.sh")
+    monkeypatch.setenv("QTILE_AUTOSTART_PATH", str(script))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    assert run_autostart() is True
+    assert spawn_calls == [
+        ([str(script)], tmp_path / "data" / "qtile" / "autostart.log", "autostart")
+    ]
+
+
+def test_run_autostart_returns_false_when_spawn_fails(monkeypatch, tmp_path) -> None:
+    script = _script(tmp_path, "true", name="autostart.sh")
+    monkeypatch.setenv("QTILE_AUTOSTART_PATH", str(script))
+    monkeypatch.setattr(startup, "spawn_detached", lambda *_a, **_k: None)
+    assert run_autostart() is False
+
+
+def test_run_autostart_unexpected_exception_is_logged_not_raised(
+    monkeypatch, caplog
+) -> None:
+    def boom() -> Path:
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(startup, "resolve_autostart_path", boom)
+    with caplog.at_level(logging.DEBUG, logger="libqtile"):
+        assert run_autostart() is False
+    (record,) = _records(caplog, logging.ERROR)
+    assert record.exc_info is not None
+    assert record.exc_info[0] is RuntimeError
+
+
+def test_run_autostart_end_to_end_writes_script_output_to_log(
+    monkeypatch, tmp_path
+) -> None:
+    script = _script(tmp_path, "echo started-by-autostart", name="autostart.sh")
+    monkeypatch.setenv("QTILE_AUTOSTART_PATH", str(script))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    spawned: list[subprocess.Popen[bytes] | None] = []
+    real_spawn = startup.spawn_detached
+
+    def recording_spawn(cmd, *, log_path, label):
+        proc = real_spawn(cmd, log_path=log_path, label=label)
+        spawned.append(proc)
+        return proc
+
+    monkeypatch.setattr(startup, "spawn_detached", recording_spawn)
+    assert run_autostart() is True
+    (proc,) = spawned
+    assert proc is not None
+    assert proc.wait(timeout=5) == 0
+    log = tmp_path / "data" / "qtile" / "autostart.log"
+    assert log.read_text() == "started-by-autostart\n"
+
+
+# --- set_root_background -----------------------------------------------------
+
+
+@pytest.mark.parametrize("outcome", [True, False])
+def test_set_root_background_runs_exact_xsetroot_command(monkeypatch, outcome) -> None:
+    calls: list[tuple[list[str], str]] = []
+
+    def fake_run(cmd, *, label, **_kwargs):
+        calls.append((list(cmd), label))
+        return outcome
+
+    monkeypatch.setattr(startup, "run_command", fake_run)
+    assert set_root_background() is outcome
+    assert calls == [(["xsetroot", "-solid", "#000000"], "root background")]
+
+
+# --- run_steps ---------------------------------------------------------------
+
+
+def test_run_steps_runs_every_step_once_in_order() -> None:
+    ran: list[str] = []
+    run_steps(
+        [
+            ("layout", lambda: ran.append("layout")),
+            ("background", lambda: ran.append("background")),
+            ("autostart", lambda: ran.append("autostart")),
+        ]
+    )
+    assert ran == ["layout", "background", "autostart"]
+
+
+@pytest.mark.parametrize("failing", ["layout", "background", "autostart"])
+def test_run_steps_isolates_a_raising_step(failing, caplog) -> None:
+    ran: list[str] = []
+
+    def make(name: str):
+        def step() -> None:
+            ran.append(name)
+            if name == failing:
+                raise RuntimeError(f"{name} exploded")
+
+        return step
+
+    names = ["layout", "background", "autostart"]
+    with caplog.at_level(logging.DEBUG, logger="libqtile"):
+        run_steps([(name, make(name)) for name in names])
+    assert ran == names  # later steps still ran, the failing one included
+    (record,) = _records(caplog, logging.ERROR)
+    assert record.name == "libqtile"
+    assert failing in record.getMessage()
+    assert record.exc_info is not None
+    assert record.exc_info[0] is RuntimeError
+
+
+def test_run_steps_accepts_a_generator_and_ignores_return_values() -> None:
+    ran: list[int] = []
+
+    def steps():
+        for i in range(3):
+            yield (f"step-{i}", lambda i=i: ran.append(i) or "ignored")
+
+    run_steps(steps())
+    assert ran == [0, 1, 2]

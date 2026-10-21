@@ -9,8 +9,9 @@ it, so a failing startup step can never take Qtile down or skip later steps.
 """
 
 import logging
+import os
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import IO
 
@@ -107,3 +108,55 @@ def _popen(
         return None
     logger.debug("startup: %s: started pid %s", label, proc.pid)
     return proc
+
+
+def resolve_autostart_path() -> Path:
+    """Autostart script: `$QTILE_AUTOSTART_PATH` if set, else the repo's own.
+
+    The environment is read at call time: `settings` copies `.env` into it
+    during config import, which happens before the startup hook fires.
+    """
+    value = os.environ.get(AUTOSTART_ENV, "").strip()
+    return Path(value).expanduser() if value else DEFAULT_AUTOSTART
+
+
+def autostart_log_path() -> Path:
+    """`$XDG_DATA_HOME/qtile/autostart.log`, defaulting to `~/.local/share`."""
+    data_home = Path(os.environ.get("XDG_DATA_HOME", "").strip())
+    # The XDG spec says relative values must be ignored.
+    if not data_home.is_absolute():
+        data_home = Path.home() / ".local" / "share"
+    return data_home / "qtile" / "autostart.log"
+
+
+def run_autostart() -> bool:
+    """Spawn the autostart script, detached, with its output in a log file."""
+    try:
+        path = resolve_autostart_path()
+        if not path.is_file():
+            logger.warning("startup: autostart: script not found: %s", path)
+            return False
+        if not os.access(path, os.X_OK):
+            logger.warning("startup: autostart: script not executable: %s", path)
+            return False
+        proc = spawn_detached(
+            [str(path)], log_path=autostart_log_path(), label="autostart"
+        )
+        return proc is not None
+    except Exception:
+        logger.exception("startup: autostart: unexpected error")
+        return False
+
+
+def set_root_background() -> bool:
+    """Paint the X root window black."""
+    return run_command(["xsetroot", "-solid", "#000000"], label="root background")
+
+
+def run_steps(steps: Iterable[tuple[str, Callable[[], object]]]) -> None:
+    """Run labelled steps in order; one failing never skips the others."""
+    for label, step in steps:
+        try:
+            step()
+        except Exception:
+            logger.exception("startup: step %r failed", label)
