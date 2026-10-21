@@ -136,7 +136,9 @@ def autostart_log_path() -> Path:
 def run_autostart() -> bool:
     """Spawn the autostart script, detached, with its output in a log file."""
     try:
-        path = resolve_autostart_path()
+        # Absolute so Popen never falls back to a PATH lookup for a bare name,
+        # and so the checks below and the spawn refer to the same file.
+        path = resolve_autostart_path().absolute()
         if not path.is_file():
             logger.warning("startup: autostart: script not found: %s", path)
             return False

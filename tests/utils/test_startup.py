@@ -455,6 +455,20 @@ def test_run_autostart_spawns_executable_script_with_log_path(
     ]
 
 
+def test_run_autostart_spawns_relative_override_by_absolute_path(
+    monkeypatch, tmp_path, spawn_calls
+) -> None:
+    # A bare name would make Popen do a PATH lookup instead of using the file
+    # that passed the is_file()/X_OK checks against the cwd.
+    script = _script(tmp_path, "true", name="autostart.sh")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("QTILE_AUTOSTART_PATH", "autostart.sh")
+    assert run_autostart() is True
+    ((cmd, _log_path, _label),) = spawn_calls
+    assert cmd == [str(script)]
+    assert Path(cmd[0]).is_absolute()
+
+
 def test_run_autostart_returns_false_when_spawn_fails(monkeypatch, tmp_path) -> None:
     script = _script(tmp_path, "true", name="autostart.sh")
     monkeypatch.setenv("QTILE_AUTOSTART_PATH", str(script))
