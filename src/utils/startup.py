@@ -68,7 +68,8 @@ def spawn_detached(
 
     The child gets its own session and, when `log_path` is usable, stdout and
     stderr are written to it (truncated first, so it holds one session). If the
-    log cannot be opened the child inherits our stdio instead. Never raises.
+    log cannot be opened (including an invalid path) the child inherits our
+    stdio instead. Never raises.
     """
     log_file = None
     try:
@@ -76,7 +77,7 @@ def spawn_detached(
             try:
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 log_file = open(log_path, "wb")
-            except OSError as exc:
+            except (OSError, ValueError) as exc:  # ValueError: e.g. NUL in path
                 logger.warning(
                     "startup: %s: cannot open log %s, inheriting stdio: %s",
                     label,
@@ -84,6 +85,9 @@ def spawn_detached(
                     exc,
                 )
         return _popen(cmd, log_file, label)
+    except Exception:
+        logger.exception("startup: %s: unexpected error", label)
+        return None
     finally:
         if log_file is not None:
             log_file.close()

@@ -274,6 +274,37 @@ def test_spawn_detached_open_failure_falls_back_to_inherited_stdio(
     assert len(_records(caplog, logging.WARNING)) == 1
 
 
+def test_spawn_detached_invalid_log_path_falls_back_to_inherited_stdio(
+    tmp_path, fake_popen, caplog
+) -> None:
+    log = tmp_path / "bad\0name" / "autostart.log"  # NUL byte: ValueError, not OSError
+    with caplog.at_level(logging.DEBUG, logger="libqtile"):
+        result = spawn_detached(["prog"], log_path=log, label="job")
+    assert result is not None
+    (call,) = fake_popen.calls
+    assert call["stdout"] is None
+    assert call["stderr"] is None
+    (record,) = _records(caplog, logging.WARNING)
+    assert record.name == "libqtile"
+    assert "job" in record.getMessage()
+
+
+def test_spawn_detached_unexpected_log_setup_error_is_logged_not_raised(
+    tmp_path, fake_popen, monkeypatch, caplog
+) -> None:
+    def boom(*_args, **_kwargs) -> None:
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(Path, "mkdir", boom)
+    with caplog.at_level(logging.DEBUG, logger="libqtile"):
+        result = spawn_detached(["prog"], log_path=tmp_path / "out.log", label="job")
+    assert result is None
+    assert fake_popen.calls == []  # nothing was started
+    (record,) = _records(caplog, logging.ERROR)
+    assert record.exc_info is not None
+    assert record.exc_info[0] is RuntimeError
+
+
 def test_spawn_detached_popen_oserror_returns_none_and_warns(
     tmp_path, monkeypatch, caplog
 ) -> None:
