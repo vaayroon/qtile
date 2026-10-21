@@ -230,6 +230,18 @@ def test_spawn_detached_does_not_wait_for_the_child(tmp_path) -> None:
         proc.wait(timeout=5)
 
 
+def test_spawn_detached_logs_debug_with_label_and_pid(
+    tmp_path, caplog, fake_popen
+) -> None:
+    with caplog.at_level(logging.DEBUG, logger="libqtile"):
+        assert spawn_detached(["prog"], log_path=tmp_path / "o.log", label="job")
+    (record,) = _records(caplog, logging.DEBUG)
+    assert record.name == "libqtile"
+    assert "job" in record.getMessage()
+    assert str(fake_popen.pid) in record.getMessage()
+    assert not _records(caplog, logging.WARNING)
+
+
 def test_spawn_detached_popen_kwargs_and_handle_closed(tmp_path, fake_popen) -> None:
     log = tmp_path / "out.log"
     result = spawn_detached(["prog", "arg"], log_path=log, label="job")
