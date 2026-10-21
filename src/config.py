@@ -3,7 +3,6 @@ from libqtile.config import Match, Rule
 
 from modules import (
     init_groups,
-    init_hooks,
     init_keys,
     init_layouts,
     init_mouse,
@@ -16,7 +15,6 @@ keys = init_keys()
 groups = init_groups()
 layouts = init_layouts()
 mouse = init_mouse()
-init_hooks()  # Set up hooks
 
 screens = init_screens()
 # generate_screens_module: Callable[[list[Output]], list[Screen]] = build_screens
