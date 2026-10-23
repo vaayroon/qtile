@@ -118,6 +118,14 @@ Runtime behavior is controlled through `.env` (loaded by `python-dotenv` at star
 | `QTILE_PHONE_MIRROR_SHOW_DEVICE` | `false` | Append the device serial to the bar status text. |
 | `QTILE_PHONE_MIRROR_VOLUME_STEP` | `5` | ADB volume key-events sent per scroll tick. |
 
+### Startup
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `QTILE_AUTOSTART_PATH` | _(empty)_ | Script run once per login (empty = [`autostart.sh`](autostart.sh) from this checkout). |
+
+The script is started in the background; a missing or non-executable script only logs a warning. Its output is written to `$XDG_DATA_HOME/qtile/autostart.log` (default `~/.local/share/qtile/autostart.log`) and truncated each session.
+
 ### Appearance
 
 Colors, borders, fonts, and the terminal are defined in [`src/settings.py`](src/settings.py):
@@ -260,7 +268,7 @@ src/
 ├── settings.py      # Mod key, terminal, colors, fonts, layout theme
 ├── modules/         # groups · hooks · keys · layouts · mouse · screens · widgets
 ├── widgets/         # Custom widgets (PhoneMirrorWidget)
-└── utils/           # colors · network · system helpers
+└── utils/           # colors · network · startup · system helpers
 pyproject.toml       # Project metadata + dependency declarations (source of truth)
 .env.example         # Template for runtime configuration
 requirements*.txt    # Generated pip-tools lock files

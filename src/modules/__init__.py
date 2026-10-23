@@ -5,8 +5,8 @@ This package contains the core modules for Qtile configuration.
 """
 
 # Import key components to make them available at the module level
+from . import hooks  # noqa: F401  registers @hook.subscribe.startup_once
 from .groups import init_groups
-from .hooks import init_hooks
 from .keys import init_keys
 from .layouts import init_layouts
 from .mouse import init_mouse
@@ -20,7 +20,6 @@ __all__ = [
     "generate_screens_module",
     "init_screens",
     "init_mouse",
-    "init_hooks",
     "init_widgets_screen1",
     "init_widgets_screen2",
     "init_widgets_screen3",
