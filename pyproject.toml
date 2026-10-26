@@ -1,31 +1,28 @@
-[build-system]
-requires = ["setuptools>=65.0"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "qtile-config"
-version = "0.36.0"
+# Mirrors the pinned Qtile version (the README banner uses the same number).
+version = "0.37.1"
 description = "Custom Qtile tiling window manager configuration"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "qtile",
-    "cairocffi",
-    "xcffib",
-    "aiohttp",
-    "psutil",
-    "dbus-fast",
-    "python-dotenv",
+    "qtile==0.37.1",  # the WM; exact pin, config and tests rely on libqtile internals
+    "cairocffi",      # qtile core dependency (bar drawing)
+    "xcffib",         # qtile core dependency (X11 backend)
+    "aiohttp",        # qtile widgets extra: gen_poll_url (CryptoTicker)
+    "psutil",         # qtile widgets extra: Memory/Net/Sensors
+    "dbus-fast",      # qtile optional-core: notification server / D-Bus
+    "python-dotenv",  # src/settings.py loads .env
 ]
 
-[project.optional-dependencies]
-dev = [
-    "ruff",
-    "mypy",
-    "pip-tools",
-    "pytest",
-    "pytest-asyncio",
-]
+[dependency-groups]
+dev = ["ruff", "mypy", "pytest", "pytest-asyncio"]
+
+[tool.uv]
+package = false                             # deps only: no build, no editable install
+python-preference = "only-system"           # venv must use distro /usr/bin/python3.12
+environments = ["sys_platform == 'linux'"]  # X11-only config
+required-version = ">=0.13"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
