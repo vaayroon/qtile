@@ -16,14 +16,21 @@ A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11
 - **Powerline status bar** — system updates, crypto ticker, CPU/GPU temps, memory, network, clock, and a system tray.
 - **Phone mirroring widget** — start/stop scrcpy, reconnect ADB, and control phone volume straight from the bar.
 - **`.env`-driven** — runtime behavior (monitor ordering, phone mirror) is configured through environment variables, not hardcoded.
-- **Reproducible deps** — locked with `pip-tools`; linted and type-checked with `ruff` and `mypy`.
+- **Reproducible deps** — managed and locked with [uv](https://docs.astral.sh/uv/) (`uv.lock`, exact installs); linted and type-checked with `ruff` and `mypy`.
 
 ---
 
 ## Requirements
 
 - An **X11** session (this config targets the X backend, not Wayland).
-- **Python 3.12+**.
+- **Python 3.12+** from your distro (`/usr/bin/python3.12`). uv is configured to use the system interpreter and never downloads one, because the venv backs your login session.
+- **[uv](https://docs.astral.sh/uv/)** — manages the virtual environment and dependencies. `install.sh` requires it but never installs it for you:
+
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+
+  Other installation methods are listed in the [uv docs](https://docs.astral.sh/uv/getting-started/installation/).
 - A **Nerd Font** installed — the bar uses `CaskaydiaCove Nerd Font`. Grab it from [nerdfonts.com](https://www.nerdfonts.com/).
 - A display manager that reads `/usr/share/xsessions/` (LightDM, GDM, SDDM, etc.).
 
@@ -39,30 +46,30 @@ cd ~/.config/qtile
 ./install.sh
 ```
 
-`install.sh` creates the virtual environment, installs dependencies, sets up
-`.env` from the template, and registers the X session entry (the X session step
-prompts for `sudo`). Then **log out and pick "Qtile (venv)"** from your display
-manager.
+`install.sh` syncs the virtual environment from `uv.lock`, sets up `.env` from
+the template, and registers the X session entry (the X session step prompts for
+`sudo`). Then **log out and pick "Qtile (venv)"** from your display manager.
 
 Useful flags:
 
 | Flag | Effect |
 |---|---|
-| `--dev` | Also install dev dependencies (`ruff`, `mypy`, `pip-tools`). |
+| `--dev` | Also install the dev tools (`ruff`, `mypy`, `pytest`, `pytest-asyncio`). Without it they are removed. |
 | `--force` | Recreate the virtual environment from scratch. |
 | `--skip-xsession` | Don't touch `/usr/share/xsessions` (no `sudo`). |
 
-> The script is re-runnable: an existing `.venv` and `.env` are left untouched
-> unless you pass `--force`.
+> The script is re-runnable. `.env` is never overwritten, and `.venv` is
+> converged **exactly** to `uv.lock` on every run: missing packages are installed
+> and anything not in the lock (including dev tools, unless `--dev`) is removed.
+> Pass `--force` to rebuild the venv from scratch.
 
 ### Manual setup
 
 Prefer to do it by hand? The steps the script performs:
 
 ```bash
-python3.12 -m venv .venv                     # 1. virtual environment
-.venv/bin/pip install -r requirements.txt    # 2. runtime dependencies
-cp .env.example .env && $EDITOR .env         # 3. configure
+uv sync --locked --no-dev                    # 1. .venv + runtime dependencies from uv.lock
+cp .env.example .env && $EDITOR .env         # 2. configure
 ```
 
 Then register the session by creating `/usr/share/xsessions/qtile-venv.desktop`:
@@ -90,6 +97,36 @@ sudo apt install xserver-xephyr
 Xephyr -br -ac -noreset -screen 1280x720 :1 &
 DISPLAY=:1 .venv/bin/qtile start -c src/config.py
 ```
+
+### Upgrading from a pip-based install
+
+If your clone's `.venv` was created by an older `install.sh` (pip and
+the old requirements files), migrate it once. The session entry does not change, because
+it still launches `.venv/bin/qtile`. Do it from a TTY, not from inside the Qtile
+session:
+
+1. Install uv and confirm it works: `uv --version`.
+2. Log out of the Qtile session and switch to a TTY (for example `Ctrl+Alt+F3`).
+3. Update the clone:
+
+   ```bash
+   cd ~/.config/qtile
+   git switch main && git pull --ff-only
+   ```
+
+4. Keep the old environment as a backup and build the new one:
+
+   ```bash
+   mv .venv .venv.pip
+   ./install.sh --skip-xsession
+   ```
+
+5. Check it: `.venv/bin/qtile --version` should print `0.37.1`, then run
+   `CHECK_ONLY=1 ./test-xephyr.sh` and log back in.
+6. Once everything is stable, delete the backup: `rm -rf .venv.pip`.
+
+**Rollback:** from a TTY, run `rm -rf .venv && mv .venv.pip .venv`. Reverting the
+repository is optional, because the old environment keeps working on its own.
 
 ---
 
@@ -251,22 +288,42 @@ The sections above cover Qtile itself. To reproduce the rest of the desktop (aud
 ## Development
 
 Dependencies are declared in **`pyproject.toml`** (the single source of truth)
-and locked to exact versions with [`pip-tools`](https://github.com/jazzband/pip-tools).
-The `requirements*.txt` files are **generated lock files** — never edit them by
-hand.
+and locked to exact versions in **`uv.lock`**, which is generated: never edit it
+by hand and always commit it together with the `pyproject.toml` change that
+caused it. The dev tools (`ruff`, `mypy`, `pytest`, `pytest-asyncio`) live in the
+`dev` dependency group.
 
 ```bash
-.venv/bin/pip install -r requirements-dev.txt   # ruff, mypy, pip-tools
+uv sync --locked                 # runtime + dev tools, exactly as locked
 
-# Re-compile the lock files after editing dependencies in pyproject.toml
-pip-compile pyproject.toml -o requirements.txt
-pip-compile --extra dev pyproject.toml -o requirements-dev.txt
+# Lint, type-check, test
+uv run ruff check src tests
+uv run mypy src
+uv run pytest
 
-# Lint, format, type-check
-ruff check src/
-ruff format src/
-mypy src/
+# Format
+uv run ruff format src
 ```
+
+### Upgrading dependencies
+
+Upgrades are manual and one package at a time, so each bump can be checked on its
+own:
+
+```bash
+uv lock --upgrade-package <pkg>   # bump one package inside its allowed range
+uv sync                           # apply the new lock to .venv
+uv lock --check                   # verify uv.lock still matches pyproject.toml
+```
+
+Run the lint, type-check and test commands above before committing the new
+`uv.lock`.
+
+Qtile itself is pinned exactly (`qtile==X.Y.Z`), because the config and the tests
+rely on libqtile internals. To upgrade it, change the pin in `pyproject.toml`,
+`project.version` (it mirrors the pin) and the version in the README banner
+together, then run `uv lock --upgrade-package qtile` and `uv sync`. A contract
+test fails if those four places disagree.
 
 ---
 
@@ -280,9 +337,10 @@ src/
 ├── widgets/         # Custom widgets (PhoneMirrorWidget)
 └── utils/           # colors · network · startup · system helpers
 pyproject.toml       # Project metadata + dependency declarations (source of truth)
+uv.lock              # Generated uv lock file (exact versions of every package)
+.python-version      # Python minor version uv uses (3.12)
 .env.example         # Template for runtime configuration
-requirements*.txt    # Generated pip-tools lock files
-install.sh           # Bootstrap script (venv, deps, .env, X session)
+install.sh           # Bootstrap script (uv sync, .env, X session)
 docs/setup/          # Per-distro full desktop setup guides
 .screenshots/        # README assets
 ```
