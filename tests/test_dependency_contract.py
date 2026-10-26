@@ -114,3 +114,11 @@ def test_installed_qtile_matches_the_pin() -> None:
 
 def test_readme_banner_states_the_qtile_version() -> None:
     assert f"Qtile {_qtile_pin()}" in README.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "legacy", ["requirements.txt", "requirements-dev.txt", "outdated.txt"]
+)
+def test_legacy_pip_tools_files_are_gone(legacy: str) -> None:
+    assert (ROOT / "uv.lock").is_file()  # the lock replaces them
+    assert not (ROOT / legacy).exists()
