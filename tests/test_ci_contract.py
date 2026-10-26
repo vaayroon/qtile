@@ -16,6 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 HOOKS = ROOT / ".pre-commit-config.yaml"
+DEPENDABOT = ROOT / ".github" / "dependabot.yml"
 PYPROJECT = ROOT / "pyproject.toml"
 PYTHON_VERSION = ROOT / ".python-version"
 
@@ -285,3 +286,60 @@ def test_the_lock_hook_only_runs_when_the_lock_inputs_change() -> None:
 def test_there_is_no_pytest_hook() -> None:
     # The suite runs in CI and on demand; a hook would slow every commit down.
     assert "pytest" not in _text(HOOKS)
+
+
+# --- Dependabot keeps the lock and the action pins fresh --------------------------
+
+
+def _ecosystems(text: str) -> dict[str, str]:
+    """Return the text of every ``updates`` entry, keyed by its ecosystem."""
+    ids = re.findall(r'(?m)^  - package-ecosystem: "([\w-]+)"', text)
+    chunks = re.split(r"(?m)^(?=  - package-ecosystem: )", text)[1:]
+    return dict(zip(ids, chunks, strict=True))
+
+
+def test_ecosystem_scan_splits_updates_by_ecosystem() -> None:
+    text = 'version: 2\nupdates:\n  - package-ecosystem: "uv"\n    x: 1\n'
+    text += '  - package-ecosystem: "github-actions"\n'
+
+    assert _ecosystems(text) == {
+        "uv": '  - package-ecosystem: "uv"\n    x: 1\n',
+        "github-actions": '  - package-ecosystem: "github-actions"\n',
+    }
+
+
+def test_dependabot_watches_the_lock_and_the_actions() -> None:
+    assert list(_ecosystems(_text(DEPENDABOT))) == ["uv", "github-actions"]
+
+
+def test_every_ecosystem_is_weekly_grouped_and_has_a_cooldown() -> None:
+    ecosystems = _ecosystems(_text(DEPENDABOT))
+
+    assert ecosystems
+    for name, entry in ecosystems.items():
+        assert 'directory: "/"' in entry, name
+        assert 'interval: "weekly"' in entry, name
+        assert "    groups:" in entry, name
+        assert "    cooldown:" in entry, name
+
+
+def test_dependabot_leaves_the_qtile_pin_to_manual_bumps() -> None:
+    # qtile is pinned exactly and bumped by hand with the version and banner.
+    uv = _ecosystems(_text(DEPENDABOT))["uv"]
+
+    assert re.search(r'(?m)^    ignore:\n      - dependency-name: "qtile"', uv)
+
+
+def test_dependabot_uses_options_each_ecosystem_supports() -> None:
+    uv = _ecosystems(_text(DEPENDABOT))["uv"]
+    actions = _ecosystems(_text(DEPENDABOT))["github-actions"]
+
+    assert "dependency-type" not in uv  # groups by dependency-type: not for uv
+    assert "semver-" not in actions  # cooldown: only default-days for actions
+
+
+def test_dependabot_commit_prefixes_fit_the_50_character_limit() -> None:
+    prefixes = re.findall(r'(?m)^\s*prefix: "([^"]+)"', _text(DEPENDABOT))
+
+    assert len(prefixes) == 2
+    assert all(len(prefix) <= 50 for prefix in prefixes)
