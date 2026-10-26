@@ -238,6 +238,16 @@ Other optional integrations referenced in keybindings: `nautilus`, `pavucontrol`
 
 ---
 
+## Full desktop setup
+
+The sections above cover Qtile itself. To reproduce the rest of the desktop (audio, systray, notifications, themes, display manager, shell and terminal), follow the guide for your distro:
+
+| Distro | Guide | Status |
+|--------|-------|--------|
+| Kali Linux | [docs/setup/kali.md](docs/setup/kali.md) | Legacy (2022), may be outdated |
+
+---
+
 ## Development
 
 Dependencies are declared in **`pyproject.toml`** (the single source of truth)
@@ -273,6 +283,7 @@ pyproject.toml       # Project metadata + dependency declarations (source of tru
 .env.example         # Template for runtime configuration
 requirements*.txt    # Generated pip-tools lock files
 install.sh           # Bootstrap script (venv, deps, .env, X session)
+docs/setup/          # Per-distro full desktop setup guides
 .screenshots/        # README assets
 ```
 

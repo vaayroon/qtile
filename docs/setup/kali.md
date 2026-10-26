@@ -1,5 +1,9 @@
-# Set up Qtile and Settings
-My own modified tiling window manage
+# Kali desktop setup (legacy)
+
+> **Legacy guide (December 2022).** Written for Kali Linux and an older version of
+> this config. Package names, paths and versions may be outdated. For the current
+> Qtile install, follow the [README](../../README.md#quick-start). An adapted
+> Ubuntu / generic Linux guide will replace this one.
 
 # Table of Contents
 - [Kali Installation](#kali-installation)
@@ -84,7 +88,7 @@ Keywords=wm;tiling
 ```
 Select windows manager and login:
 
-![Qtile](https://github.com/vaayroon/qtile/blob/main/.screenshots/select_manager.png)
+![Qtile](../../.screenshots/select_manager.png)
 
 ## Optional widget tools
 
