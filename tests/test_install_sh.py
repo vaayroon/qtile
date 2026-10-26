@@ -243,9 +243,7 @@ def test_venv_home_may_be_the_resolved_dir_of_a_symlinked_interpreter(
     _write_executable(real_dir / "python3.12", f"#!{BASH}\nexit 0\n")
     link = sandbox.fakebin / "python-brew"
     link.symlink_to(real_dir / "python3.12")
-    result = sandbox.run(
-        env_extra={"PYTHON": str(link), "FAKE_UV_HOME": str(real_dir)}
-    )
+    result = sandbox.run(env_extra={"PYTHON": str(link), "FAKE_UV_HOME": str(real_dir)})
     assert result.returncode == 0, result.stderr
 
 
@@ -441,9 +439,10 @@ def test_xsession_entry_uses_sudo_when_the_directory_is_not_writable(
         "tee",
         str(sandbox.xsession_file),
     ]
-    assert f"Exec={sandbox.venv}/bin/qtile start" in (
-        sandbox.log / "sudo.stdin"
-    ).read_text()
+    assert (
+        f"Exec={sandbox.venv}/bin/qtile start"
+        in (sandbox.log / "sudo.stdin").read_text()
+    )
 
 
 def test_skip_xsession_writes_no_session_entry_and_never_calls_sudo(
