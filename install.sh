@@ -2,11 +2,15 @@
 #
 # install.sh — Bootstrap this Qtile configuration.
 #
-# Creates the virtual environment, installs runtime dependencies, sets up the
-# .env file, and registers an X session entry so your display manager can
-# launch Qtile from this repo's venv.
+# Syncs the virtual environment from uv.lock (it installs exactly what the lock
+# pins and prunes unlocked packages, except the seed tools uv leaves in place),
+# sets up the .env file, and registers an X session entry so your display
+# manager can launch Qtile from this repo's venv.
 #
-# Re-runnable: existing venv and .env are preserved unless --force is passed.
+# Requires uv (https://docs.astral.sh/uv/). It is never installed from here.
+# Re-runnable: .env is preserved and the venv is converged to uv.lock on every
+# run. --force rebuilds the venv: the old one is moved to .venv.bak first and
+# restored if the new sync fails, so you are never left without a venv.
 
 set -euo pipefail
 
@@ -17,9 +21,17 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${REPO_DIR}/.venv"
 CONFIG_PY="${REPO_DIR}/src/config.py"
 QTILE_BIN="${VENV_DIR}/bin/qtile"
-XSESSION_FILE="/usr/share/xsessions/qtile-venv.desktop"
+BACKUP_DIR="${VENV_DIR}.bak"
+# QTILE_XSESSION_FILE only exists so the tests can write the session entry to a
+# temp dir; real users never need to set it.
+XSESSION_FILE="${QTILE_XSESSION_FILE:-/usr/share/xsessions/qtile-venv.desktop}"
 
-PYTHON="${PYTHON:-python3.12}"
+# The login session runs from this venv, so it must be built on the distro
+# interpreter. uv's python-preference = "only-system" still accepts ANY non-uv
+# Python found on PATH (Homebrew, pyenv shims...), so name the interpreter
+# explicitly instead of relying on PATH.
+DEFAULT_PYTHON="/usr/bin/python3.12"
+PYTHON="${PYTHON:-$DEFAULT_PYTHON}"
 
 # --- Options ------------------------------------------------------------------
 INSTALL_DEV=false
@@ -31,13 +43,14 @@ usage() {
 Usage: ./install.sh [options]
 
 Options:
-  --dev            Also install development dependencies (ruff, mypy, pip-tools)
-  --force          Recreate the virtual environment from scratch
+  --dev            Also install dev tools (ruff, mypy, pytest); without it they are removed
+  --force          Recreate the virtual environment (the old one is kept as .venv.bak
+                   during the sync and restored if it fails)
   --skip-xsession  Do not write the /usr/share/xsessions entry (needs sudo)
   -h, --help       Show this help
 
 Environment:
-  PYTHON           Python interpreter to use (default: python3.12)
+  PYTHON           Python interpreter uv uses for the venv (default: ${DEFAULT_PYTHON})
 EOF
 }
 
@@ -57,39 +70,90 @@ log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 
+BACKUP_MADE=false
+
+# Abort the venv step. When --force moved the old venv aside, put it back first
+# so a failed sync never leaves the login session without a working venv.
+rollback_and_die() {
+    local msg="$1"
+    if [[ "$BACKUP_MADE" == true ]]; then
+        rm -rf "$VENV_DIR"
+        mv "$BACKUP_DIR" "$VENV_DIR"
+        BACKUP_MADE=false
+        msg+=$'\nThe previous virtual environment was restored.'
+    fi
+    die "$msg"
+}
+
+# Fail unless the venv was built from the interpreter we asked for: pyvenv.cfg
+# records the directory of the interpreter as "home = <dir>". A symlinked
+# interpreter (Homebrew, pyenv) may be recorded as its resolved directory.
+verify_venv_interpreter() {
+    local cfg="${VENV_DIR}/pyvenv.cfg" line home="" python_path
+    [[ -f "$cfg" ]] || rollback_and_die "uv sync finished but ${cfg} is missing."
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^home[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+            home="${BASH_REMATCH[1]}"
+            break
+        fi
+    done < "$cfg"
+    python_path="$(command -v "$PYTHON")"
+    if [[ "$home" != "$(dirname "$python_path")" \
+        && "$home" != "$(dirname "$(readlink -f "$python_path")")" ]]; then
+        rollback_and_die "${cfg} says the venv was built from '${home}', not from ${PYTHON} (${python_path}). Fix PYTHON= or your PATH, then re-run with --force."
+    fi
+}
+
 # --- Preconditions ------------------------------------------------------------
+command -v uv >/dev/null 2>&1 \
+    || die "uv not found. Install it, open a new shell, then re-run ./install.sh:
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+Other methods: https://docs.astral.sh/uv/getting-started/installation/"
+
 command -v "$PYTHON" >/dev/null 2>&1 \
     || die "$PYTHON not found. Install Python 3.12+ or set PYTHON=<interpreter>."
 
-[[ -f "${REPO_DIR}/requirements.txt" ]] \
-    || die "requirements.txt not found in ${REPO_DIR}."
+[[ -f "${REPO_DIR}/uv.lock" ]] \
+    || die "uv.lock not found in ${REPO_DIR}. Restore it with: git checkout -- uv.lock"
 
-# --- 1. Virtual environment ---------------------------------------------------
+# --- 1. Virtual environment and dependencies ----------------------------------
+# uv sync is exact for the lock: it installs what uv.lock pins and prunes other
+# packages (dev tools included, unless --dev is passed). It leaves the seed
+# tools of the venv (pip, setuptools) alone.
+#
+# --force moves the old venv aside instead of deleting it. Do NOT sync into a
+# temp dir and rename it afterwards: venv scripts embed absolute shebangs.
 if [[ "$FORCE" == true && -d "$VENV_DIR" ]]; then
-    log "Removing existing virtual environment (--force)"
-    rm -rf "$VENV_DIR"
+    [[ ! -e "$BACKUP_DIR" ]] \
+        || die "${BACKUP_DIR} already exists (left over from an interrupted --force?). Inspect or remove it, then re-run."
+    log "Moving the existing virtual environment to ${BACKUP_DIR} (--force)"
+    mv "$VENV_DIR" "$BACKUP_DIR"
+    BACKUP_MADE=true
+    trap 'rollback_and_die "Interrupted."' INT TERM
 fi
 
-if [[ -d "$VENV_DIR" ]]; then
-    log "Virtual environment already exists at ${VENV_DIR}"
-else
-    log "Creating virtual environment with ${PYTHON}"
-    "$PYTHON" -m venv "$VENV_DIR"
-fi
-
-# --- 2. Dependencies ----------------------------------------------------------
-log "Upgrading pip"
-"${VENV_DIR}/bin/pip" install --quiet --upgrade pip
-
-log "Installing runtime dependencies"
-"${VENV_DIR}/bin/pip" install --quiet -r "${REPO_DIR}/requirements.txt"
-
+sync_args=(sync --locked)
 if [[ "$INSTALL_DEV" == true ]]; then
-    log "Installing development dependencies"
-    "${VENV_DIR}/bin/pip" install --quiet -r "${REPO_DIR}/requirements-dev.txt"
+    log "Syncing ${VENV_DIR} from uv.lock (runtime + dev)"
+else
+    sync_args+=(--no-dev)
+    log "Syncing ${VENV_DIR} from uv.lock (runtime only)"
+fi
+sync_args+=(--project "$REPO_DIR" --python "$PYTHON")
+if ! UV_PROJECT_ENVIRONMENT="$VENV_DIR" uv "${sync_args[@]}"; then
+    rollback_and_die "uv sync failed; .env and the session entries were not touched."
 fi
 
-# --- 3. Environment file ------------------------------------------------------
+[[ -x "$QTILE_BIN" ]] || rollback_and_die "uv sync finished but ${QTILE_BIN} is missing."
+verify_venv_interpreter
+
+if [[ "$BACKUP_MADE" == true ]]; then
+    trap - INT TERM
+    rm -rf "$BACKUP_DIR"
+    BACKUP_MADE=false
+fi
+
+# --- 2. Environment file ------------------------------------------------------
 if [[ -f "${REPO_DIR}/.env" ]]; then
     log ".env already exists — leaving it untouched"
 else
@@ -98,7 +162,7 @@ else
     warn "Edit .env to set your monitor order and phone mirror paths."
 fi
 
-# --- 4. X session entry -------------------------------------------------------
+# --- 3. X session entry -------------------------------------------------------
 if [[ "$SKIP_XSESSION" == true ]]; then
     log "Skipping X session entry (--skip-xsession)"
 else
@@ -126,7 +190,7 @@ EOF
     fi
 fi
 
-# --- 5. Rofi launcher entry ---------------------------------------------------
+# --- 4. Rofi launcher entry ---------------------------------------------------
 # Write a .desktop file so the scratchpad terminal can be toggled from
 # `rofi -show drun` (in addition to the Super+masculine (º) keybind).
 SCRATCHPAD_TOGGLE="${REPO_DIR}/src/assets/scratchpad/scratchpad-toggle.sh"

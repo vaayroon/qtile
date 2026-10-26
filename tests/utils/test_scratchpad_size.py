@@ -274,6 +274,7 @@ def _toggler(window, name: str = "term", geometry: Geometry = TERM) -> SimpleNam
         y=geometry.y,
         width=geometry.width,
         height=geometry.height,
+        geometry=_as_tuple(geometry),  # qtile >= 0.37: what show() reads
         border_width=2,
         window=window,
     )
@@ -422,6 +423,26 @@ def test_place_failure_keeps_new_fractions_and_logs(
     assert any(r.exc_info for r in caplog.records)
 
 
+def test_cycle_keeps_geometry_in_sync_with_fractions() -> None:
+    win = FakeWindow()
+    dd = _toggler(win)
+    q = _qtile(win, dd)
+    cycle_focused_dropdown(q, "grow", TERM_DEFAULTS)
+    assert dd.geometry == pytest.approx((0.125, 0.05, 0.75, 0.8))
+    cycle_focused_dropdown(q, "shrink", TERM_DEFAULTS)  # back to default
+    assert dd.geometry == pytest.approx(_as_tuple(TERM))
+
+
+def test_place_failure_still_updates_geometry(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    win = FakeWindow(fail_place=True)
+    dd = _toggler(win)
+    with caplog.at_level("ERROR", logger="libqtile"):
+        cycle_focused_dropdown(_qtile(win, dd), "grow", TERM_DEFAULTS)
+    assert dd.geometry == pytest.approx((0.125, 0.05, 0.75, 0.8))
+
+
 def test_provider_failure_is_caught(caplog: pytest.LogCaptureFixture) -> None:
     win = FakeWindow()
     dd = _toggler(win)
@@ -511,10 +532,41 @@ def test_contract_toggler_attributes(libqtile_scratchpad) -> None:
     assigned = _assigned_attrs(ls.DropDownToggler, "__init__") | _assigned_attrs(
         ls.WindowVisibilityToggler, "__init__"
     )
-    expected = {"name", "x", "y", "width", "height", "border_width", "window", "shown"}
+    expected = {
+        "name",
+        "x",
+        "y",
+        "width",
+        "height",
+        "geometry",  # show() reads this tuple, not x/y/width/height
+        "border_width",
+        "window",
+        "shown",
+    }
     assert expected <= assigned
     assert isinstance(ls.WindowVisibilityToggler.visible, property)
     assert "dropdowns" in _assigned_attrs(ls.ScratchPad, "__init__")
+
+
+def _real_toggler(libqtile_scratchpad, window, geometry: Geometry, name: str = "term"):
+    """A real DropDownToggler without running __init__ (needs a live qtile)."""
+    real = object.__new__(libqtile_scratchpad.DropDownToggler)
+    real.__dict__.update(
+        name=name,
+        window=window,
+        shown=False,
+        _hooked=False,
+        on_focus_lost_hide=False,
+        warp_pointer=False,
+        scratchpad_name="scratchpad",
+        border_width=3,
+        x=geometry.x,
+        y=geometry.y,
+        width=geometry.width,
+        height=geometry.height,
+        geometry=_as_tuple(geometry),
+    )
+    return real
 
 
 def test_contract_formula_parity_with_real_show(libqtile_scratchpad) -> None:
@@ -531,20 +583,7 @@ def test_contract_formula_parity_with_real_show(libqtile_scratchpad) -> None:
         bring_to_front=lambda: None,
         qtile=SimpleNamespace(current_screen=screen),
     )
-    real = object.__new__(libqtile_scratchpad.DropDownToggler)
-    real.__dict__.update(
-        window=real_win,
-        shown=False,
-        on_focus_lost_hide=False,
-        warp_pointer=False,
-        scratchpad_name="scratchpad",
-        border_width=3,
-        x=medium.x,
-        y=medium.y,
-        width=medium.width,
-        height=medium.height,
-    )
-    real.show()
+    _real_toggler(libqtile_scratchpad, real_win, medium).show()
 
     # What our glue passes when growing the calc default to the same preset.
     win = FakeWindow()
@@ -557,3 +596,117 @@ def test_contract_formula_parity_with_real_show(libqtile_scratchpad) -> None:
 
     assert len(real_calls) == len(win.placed) == 1
     assert win.placed[0] == real_calls[0]
+
+
+def test_failed_place_converges_on_next_real_show(libqtile_scratchpad) -> None:
+    # The glue's promise: even if place() fails, the next show() uses the new
+    # size. libqtile >= 0.37 builds that size from toggler.geometry only.
+    screen = SimpleNamespace(dx=0, dy=0, dwidth=1000, dheight=800)
+    win = FakeWindow(fail_place=True)
+    win.group = None
+    win.togroup = lambda *_a, **_k: None
+    win.bring_to_front = lambda: None
+    win.qtile = SimpleNamespace(current_screen=screen)
+    dd = _real_toggler(libqtile_scratchpad, win, TERM)
+    dd.border_width = 2
+
+    cycle_focused_dropdown(_qtile(win, dd, screen=screen), "grow", TERM_DEFAULTS)
+    assert win.placed == []  # the failed place() left the window untouched
+
+    win._fail_place = False
+    dd.show()
+    ((args, _kwargs),) = win.placed
+    assert args[:4] == pytest.approx((125, 40, 746, 636), abs=1)  # medium preset
+
+
+class LiveWindow:
+    """A window with live geometry, enough for the real hide()/show() cycle.
+
+    ``place()`` moves the window (like the X11 backend does) unless it is set
+    to fail; ``togroup()`` moves it between a visible group (on a screen) and
+    the scratchpad group (on no screen).
+    """
+
+    def __init__(self, screen, geometry: Geometry, border_width: int) -> None:
+        self.screen = screen
+        self.bordercolor = "#abc"
+        self.fail_place = False
+        self.placed: list[tuple] = []
+        self._scratchpad = SimpleNamespace(name="scratchpad", screen=None)
+        self._visible = SimpleNamespace(name="1", screen=screen)
+        self.qtile = SimpleNamespace(current_screen=screen, current_group=self._visible)
+        self.group = self._visible
+        self.x, self.y, self.width, self.height = compute_placement(
+            geometry, screen, border_width
+        )
+
+    def place(self, x, y, width, height, *_args, **_kwargs) -> None:
+        if self.fail_place:
+            raise RuntimeError("boom")
+        self.placed.append((x, y, width, height))
+        self.x, self.y, self.width, self.height = x, y, width, height
+
+    def togroup(self, name=None, **_kwargs) -> None:
+        self.group = self._scratchpad if name == "scratchpad" else self._visible
+
+    def bring_to_front(self) -> None:
+        pass
+
+
+def _shown_dropdown(libqtile_scratchpad, screen, geometry: Geometry = TERM):
+    """A real DropDownToggler currently visible on `screen` at `geometry`."""
+    win = LiveWindow(screen, geometry, border_width=2)
+    dd = _real_toggler(libqtile_scratchpad, win, geometry)
+    dd.border_width = 2
+    dd.shown = True
+    return win, dd
+
+
+@pytest.mark.parametrize(
+    ("direction", "label"), [("grow", "medium"), ("shrink", "small")]
+)
+@pytest.mark.parametrize(
+    "screen",
+    [
+        SimpleNamespace(dx=0, dy=0, dwidth=1000, dheight=800),
+        SimpleNamespace(dx=1920, dy=40, dwidth=1600, dheight=900),
+    ],
+)
+def test_size_survives_a_real_hide_and_show(
+    libqtile_scratchpad, screen, direction, label
+) -> None:
+    # hide() re-reads the geometry from the live window (the dropdown is on a
+    # screen), so what the next show() uses is what place() actually applied.
+    win, dd = _shown_dropdown(libqtile_scratchpad, screen)
+    q = _qtile(win, dd, screen=screen)
+    cycle_focused_dropdown(q, direction, TERM_DEFAULTS)
+    preset = _by_label(derive_presets(TERM))[label]
+    expected = compute_placement(preset, screen, 2)
+    assert win.placed == [expected]
+    assert expected != compute_placement(TERM, screen, 2)  # it really changed size
+
+    dd.hide()
+    assert win.group.name == "scratchpad"  # hidden for real
+    dd.show()
+    assert win.group.name == "1"
+    assert len(win.placed) == 2
+    assert win.placed[-1] == pytest.approx(expected, abs=1)  # int() truncation
+
+
+def test_hide_resyncs_geometry_from_the_window_so_a_failed_place_is_not_kept(
+    libqtile_scratchpad,
+) -> None:
+    # The glue stores the new size before place(); but while the dropdown is
+    # visible, libqtile's hide() overwrites it with the live window, which a
+    # failed place() left at the old size. So there is no "converges on the next
+    # show()" guarantee once a hide() happens in between.
+    screen = SimpleNamespace(dx=0, dy=0, dwidth=1000, dheight=800)
+    win, dd = _shown_dropdown(libqtile_scratchpad, screen)
+    win.fail_place = True
+    cycle_focused_dropdown(_qtile(win, dd, screen=screen), "grow", TERM_DEFAULTS)
+    assert dd.geometry == pytest.approx((0.125, 0.05, 0.75, 0.8))  # medium, stored
+
+    win.fail_place = False
+    dd.hide()
+    dd.show()
+    assert win.placed == [compute_placement(TERM, screen, 2)]  # still the default
