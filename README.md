@@ -123,12 +123,16 @@ session:
    ./install.sh --skip-xsession
    ```
 
-5. Check it: `.venv/bin/qtile --version` should print `0.37.1`, then run
-   `CHECK_ONLY=1 ./test-xephyr.sh` and log back in.
+5. Check it: `.venv/bin/qtile --version` should print `0.37.1`, then validate the
+   config with `.venv/bin/qtile check -c src/config.py` (it needs no X server)
+   and log back in.
 6. Once everything is stable, delete the backup: `rm -rf .venv.pip`.
 
-**Rollback:** from a TTY, run `rm -rf .venv && mv .venv.pip .venv`. Reverting the
-repository is optional, because the old environment keeps working on its own.
+**Rollback:** the backup only works under its original name, because the scripts
+inside a venv embed absolute paths: `.venv.pip/bin/qtile` points at
+`.venv/bin/python`, i.e. at the new environment. From a TTY, run
+`rm -rf .venv && mv .venv.pip .venv`. The repository does not need to be reverted
+for the old environment to start.
 
 ---
 
@@ -297,15 +301,24 @@ caused it. The dev tools (`ruff`, `mypy`, `pytest`, `pytest-asyncio`) live in th
 
 ```bash
 uv sync --locked                 # runtime + dev tools, exactly as locked
+                                 # (plain `uv sync` installs the dev group too)
 
 # Lint, type-check, test
-uv run ruff check src tests
-uv run mypy src
-uv run pytest
+uv run --locked ruff check src tests
+uv run --locked mypy src
+uv run --locked pytest
 
-# Format
-uv run ruff format src
+# Format the files you changed
+uv run --locked ruff format <files>
 ```
+
+> `--locked` makes uv fail instead of silently re-locking when `uv.lock` is out
+> of date with `pyproject.toml`.
+>
+> `ruff format --check .` currently reports `src/utils/scratchpads.py` and
+> `tests/utils/test_scratchpads.py`. Both predate the uv migration and are
+> reformatted separately, so format only the files you touch rather than the
+> whole tree.
 
 ### Upgrading dependencies
 
@@ -314,7 +327,7 @@ own:
 
 ```bash
 uv lock --upgrade-package <pkg>   # bump one package inside its allowed range
-uv sync                           # apply the new lock to .venv
+uv sync --locked                  # apply the new lock to .venv
 uv lock --check                   # verify uv.lock still matches pyproject.toml
 ```
 
@@ -324,8 +337,9 @@ Run the lint, type-check and test commands above before committing the new
 Qtile itself is pinned exactly (`qtile==X.Y.Z`), because the config and the tests
 rely on libqtile internals. To upgrade it, change the pin in `pyproject.toml`,
 `project.version` (it mirrors the pin) and the version in the README banner
-together, then run `uv lock --upgrade-package qtile` and `uv sync`. A contract
-test fails if those four places disagree.
+together, then run `uv lock --upgrade-package qtile` and `uv sync --locked`. The
+contract tests fail if the pin, `project.version`, the README banner and
+`uv.lock` disagree.
 
 ---
 
