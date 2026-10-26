@@ -1,0 +1,50 @@
+# Scratchpad app registry (floating dropdown apps).
+#
+# Each `[[scratchpad]]` table declares one dropdown app. Only `name` and
+# `command` are required; every other field falls back to a documented
+# default (see `src/utils/scratchpads.py::ScratchpadApp`).
+#
+# The `{repo}` token in `command` expands to this config's `src/` directory,
+# so shipped assets (like the kitty config below) can be referenced without
+# hardcoding a machine-specific absolute path.
+#
+# Add your own personal overrides in `scratchpads.local.toml` (gitignored)
+# instead of editing this file — see the README for the override workflow.
+#
+# Optional size-preset overrides (fractions, 0 < v <= 1), per entry:
+#   medium_width = 0.8    medium_height = 0.8
+#   small_width  = 0.3    small_height  = 0.4
+# Any subset is allowed; omitted values keep their derived size. Presets
+# stay centered on the entry's default geometry. An invalid value is
+# ignored with a warning (the entry still loads).
+#
+# NOTE: an entry in scratchpads.local.toml REPLACES the base entry with the
+# same name in full, so repeat any preset overrides there.
+
+[[scratchpad]]
+name = "term"
+command = "kitty --class scratchpad-term --config {repo}/assets/scratchpad/kitty.conf"
+match_wm_class = "scratchpad-term"
+
+[[scratchpad]]
+name = "files"
+command = "nautilus --new-window"
+match_wm_class = "org.gnome.Nautilus"
+key = "n"
+
+[[scratchpad]]
+name = "private"
+command = "brave-browser-stable --new-window --incognito"
+match_wm_class = "brave-browser"
+profile_dir = "~/.local/share/qtile/scratchpad/brave-private"
+key = "b"
+
+[[scratchpad]]
+name = "calc"
+command = "gnome-calculator"
+match_wm_class = "gnome-calculator"
+x = 0.375
+y = 0.2
+width = 0.25
+height = 0.5
+key = "c"

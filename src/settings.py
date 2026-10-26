@@ -1,22 +1,31 @@
 import os
+from pathlib import Path
+from typing import Any
+
 from dotenv import dotenv_values
 
 # Mod key settings
 mod = "mod4"  # Sets mod key to SUPER/WINDOWS
 myTerm = "/usr/bin/qterminal"
-myConfig = "/home/k3v1n/.config/qtile/config.py"
 
-# Environment variables from .env file
-config = dotenv_values()
+# Scratchpad (floating dropdown) apps are declared in `scratchpads.toml` /
+# `scratchpads.local.toml` and loaded via `utils.scratchpads.load_scratchpads()`
+# — see `modules/groups.py`. Nothing scratchpad-specific lives here anymore.
+
+# Environment variables from .env file.
+# Resolve the path relative to this file (repo root) so the config loads
+# regardless of the working directory Qtile is launched from.
+ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+config = dotenv_values(ENV_FILE)
 for key, value in config.items():
-    os.environ[f'{key}'] = f'{value}'
+    os.environ[f"{key}"] = f"{value}"
 
 # Layout theme settings
-layout_theme = {
+layout_theme: dict[str, Any] = {
     "border_width": 2,
     "margin": 6,
-    "border_focus": "117af0",
-    "border_normal": "1D2330"
+    "border_focus": "#117af0",
+    "border_normal": "#1D2330",
 }
 
 # Color schemes
@@ -27,7 +36,7 @@ colors = [
     ["#80b2ea", "#80b2ea"],  # border line color for current tab
     ["#6441a5", "#6441a5"],  # border line color for other tab and odd widgets
     ["#668bd7", "#668bd7"],  # color for the even widgets
-    ["#117af0", "#117af0"]   # window name
+    ["#117af0", "#117af0"],  # window name
 ]
 
 colors2 = [
@@ -37,14 +46,15 @@ colors2 = [
     ["#11f08e", "#11f08e"],  # border line color for current tab
     ["#11dff0", "#11dff0"],  # border line color for other tab and odd widgets
     ["#11c1f0", "#11c1f0"],  # color for the even widgets
-    ["#117af0", "#117af0"]   # window name
+    ["#117af0", "#117af0"],  # window name
 ]
 
 # Widget defaults
-widget_defaults = dict(
-    font="CaskaydiaCove Nerd Font",
-    fontsize=12,
-    padding=0,
-    background=colors[2]
-)
+widget_defaults = {
+    "font": "CaskaydiaCove Nerd Font",
+    "fontsize": 12,
+    "padding": 0,
+    "background": colors[2],
+}
+
 extension_defaults = widget_defaults.copy()
