@@ -1,5 +1,7 @@
 # Qtile — Personal Tiling Window Manager Config
 
+[![CI](https://github.com/vaayroon/qtile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vaayroon/qtile/actions/workflows/ci.yml)
+
 A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11: multi-monitor aware, Nerd Font powerline bar, media/brightness keys, and a custom widget to mirror and control an Android phone over wireless ADB + scrcpy.
 
 > Built and tested on Ubuntu 24.04.4 LTS with Python 3.12 and Qtile 0.37.1.
@@ -16,7 +18,7 @@ A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11
 - **Powerline status bar** — system updates, crypto ticker, CPU/GPU temps, memory, network, clock, and a system tray.
 - **Phone mirroring widget** — start/stop scrcpy, reconnect ADB, and control phone volume straight from the bar.
 - **`.env`-driven** — runtime behavior (monitor ordering, phone mirror) is configured through environment variables, not hardcoded.
-- **Reproducible deps** — managed and locked with [uv](https://docs.astral.sh/uv/) (`uv.lock`, exact installs); linted and type-checked with `ruff` and `mypy`.
+- **Reproducible deps** — managed and locked with [uv](https://docs.astral.sh/uv/) (`uv.lock`, exact installs); linted, formatted and type-checked with `ruff` and `mypy`, gated by GitHub Actions CI and local pre-commit hooks.
 
 ---
 
@@ -54,7 +56,7 @@ Useful flags:
 
 | Flag | Effect |
 |---|---|
-| `--dev` | Also install the dev tools (`ruff`, `mypy`, `pytest`, `pytest-asyncio`). Without it they are removed. |
+| `--dev` | Also install the dev tools (`ruff`, `mypy`, `pytest`, `pytest-asyncio`, `pre-commit`). Without it they are removed. |
 | `--force` | Recreate the virtual environment. The old one is moved to `.venv.bak` while the new one is synced, restored if the sync fails, and deleted once it succeeds. |
 | `--skip-xsession` | Don't touch `/usr/share/xsessions` (no `sudo`). |
 
@@ -301,29 +303,34 @@ The sections above cover Qtile itself. To reproduce the rest of the desktop (aud
 Dependencies are declared in **`pyproject.toml`** (the single source of truth)
 and locked to exact versions in **`uv.lock`**, which is generated: never edit it
 by hand and always commit it together with the `pyproject.toml` change that
-caused it. The dev tools (`ruff`, `mypy`, `pytest`, `pytest-asyncio`) live in the
-`dev` dependency group.
+caused it. The dev tools (`ruff`, `mypy`, `pytest`, `pytest-asyncio`,
+`pre-commit`) live in the `dev` dependency group.
 
 ```bash
 uv sync --locked                 # runtime + dev tools, exactly as locked
                                  # (plain `uv sync` installs the dev group too)
 
-# Lint, type-check, test
-uv run --locked ruff check src tests
-uv run --locked mypy src
+# The checks CI runs
+uv run --locked ruff check .
+uv run --locked ruff format --check .
+uv run --locked mypy src tools
 uv run --locked pytest
 
-# Format the files you changed
-uv run --locked ruff format <files>
+# Apply the formatter
+uv run --locked ruff format .
+
+# Git hooks: install once per clone (ruff and the lock check on commit, mypy on push)
+uv run --locked pre-commit install
+uv run --locked pre-commit run --all-files                        # on demand
+uv run --locked pre-commit run --all-files --hook-stage pre-push
 ```
 
 > `--locked` makes uv fail instead of silently re-locking when `uv.lock` is out
 > of date with `pyproject.toml`.
 >
-> `ruff format --check .` currently reports `src/utils/scratchpads.py` and
-> `tests/utils/test_scratchpads.py`. Both predate the uv migration and are
-> reformatted separately, so format only the files you touch rather than the
-> whole tree.
+> The hooks are local and run `uv run --locked ...`, so ruff and mypy come from
+> `uv.lock` exactly as in CI. They call `uv`, so it must be on the `PATH` of the
+> shell that runs `git`.
 
 ### Upgrading dependencies
 
@@ -336,8 +343,8 @@ uv sync --locked                  # apply the new lock to .venv
 uv lock --check                   # verify uv.lock still matches pyproject.toml
 ```
 
-Run the lint, type-check and test commands above before committing the new
-`uv.lock`.
+Run the checks above before committing the new `uv.lock`. Dependabot also
+proposes upgrades, see [Continuous integration](#continuous-integration).
 
 Qtile itself is pinned exactly (`qtile==X.Y.Z`), because the config and the tests
 rely on libqtile internals. To upgrade it, change the pin in `pyproject.toml`,
@@ -345,6 +352,46 @@ rely on libqtile internals. To upgrade it, change the pin in `pyproject.toml`,
 together, then run `uv lock --upgrade-package qtile` and `uv sync --locked`. The
 contract tests fail if the pin, `project.version`, the README banner and
 `uv.lock` disagree.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request to `main` and on every
+push to `main`. It is a single job named `checks` on `ubuntu-24.04` with the
+distro Python 3.12 (no download) and uv 0.13.5, and it runs the commands above
+in this order: `uv lock --check`, `uv sync --locked`, `ruff check .`,
+`ruff format --check .`, `mypy src tools` and `pytest -rs`. Then
+`tools/check_junit.py` reads pytest's JUnit report and fails when any test is
+skipped or fewer tests passed than `MIN_TESTS`, so a deleted or silently skipped
+test cannot go unnoticed even though pytest exits 0.
+
+- **`MIN_TESTS`** (in `ci.yml`) is the floor of passed tests. The commit that
+  adds tests raises it to the new passed count (the gate prints the number to
+  use); lowering it needs a commit message explaining which tests were removed.
+- **Actions are pinned** to commit SHAs with a `# vX.Y.Z` comment. Dependabot
+  updates both together.
+- **uv in CI** is pinned in the `setup-uv` step (`version: "0.13.5"`). Dependabot
+  does not touch it: bump it by hand when you upgrade the local uv.
+- **Dependabot** (`.github/dependabot.yml`) opens weekly grouped pull requests for
+  `uv.lock` (minor and patch together, majors alone) and for the actions, after
+  a cooldown. `qtile` is ignored: bump it as described above.
+
+#### Branch protection
+
+The CI check is required on `main` after the first green run. This is a manual
+step on GitHub (Settings > Branches > `main` > Require status checks > `checks`),
+or with the API:
+
+```bash
+gh api --method PUT repos/vaayroon/qtile/branches/main/protection --input - <<'EOF'
+{"required_status_checks":{"strict":true,"checks":[{"context":"checks","app_id":15368}]},
+ "enforce_admins":true,"required_pull_request_reviews":null,"restrictions":null}
+EOF
+```
+
+`app_id` 15368 is the GitHub Actions app. With `enforce_admins` the owner cannot
+bypass the check either; a hotfix then needs the protection lifted temporarily.
+Renaming the `checks` job in `ci.yml` leaves every pull request waiting for a
+check that never reports, which is why a test pins the name.
 
 ---
 
@@ -357,6 +404,9 @@ src/
 ├── modules/         # groups · hooks · keys · layouts · mouse · screens · widgets
 ├── widgets/         # Custom widgets (PhoneMirrorWidget)
 └── utils/           # colors · network · startup · system helpers
+.github/             # CI workflow (workflows/ci.yml) and Dependabot config
+tools/               # check_junit.py: the CI gate on test count and skips
+.pre-commit-config.yaml  # Local hooks (ruff, uv lock --check, mypy)
 pyproject.toml       # Project metadata + dependency declarations (source of truth)
 uv.lock              # Generated uv lock file (exact versions of every package)
 .python-version      # Python minor version uv uses (3.12)

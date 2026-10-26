@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 HOOKS = ROOT / ".pre-commit-config.yaml"
 DEPENDABOT = ROOT / ".github" / "dependabot.yml"
+README = ROOT / "README.md"
 PYPROJECT = ROOT / "pyproject.toml"
 PYTHON_VERSION = ROOT / ".python-version"
 
@@ -343,3 +344,57 @@ def test_dependabot_commit_prefixes_fit_the_50_character_limit() -> None:
 
     assert len(prefixes) == 2
     assert all(len(prefix) <= 50 for prefix in prefixes)
+
+
+# --- The README documents what CI and the hooks actually run ----------------------
+
+
+def test_readme_commands_never_run_uv_unlocked() -> None:
+    assert _unlocked_uv_commands(_text(README)) == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "uv run --locked ruff check .",
+        "uv run --locked ruff format --check .",
+        "uv run --locked mypy src tools",
+    ],
+)
+def test_readme_documents_each_check_ci_runs(command: str) -> None:
+    # What a contributor runs locally must be what the CI job runs.
+    assert command in _commands(_text(CI_WORKFLOW))
+    assert command in _text(README)
+
+
+def test_readme_documents_installing_both_hooks() -> None:
+    assert "uv run --locked pre-commit install" in _text(README)
+    assert "uv run --locked pre-commit run --all-files" in _text(README)
+
+
+def test_readme_no_longer_carries_the_format_caveat() -> None:
+    readme = _text(README)
+
+    assert "format only the files you touch" not in readme
+    assert "reformatted separately" not in readme
+
+
+def test_readme_names_the_required_check_after_the_job() -> None:
+    # Branch protection matches the job name, so the README must give that name.
+    job = re.search(r"(?m)^    name: (\S+)", _text(CI_WORKFLOW))
+    section = _text(README).split("### Continuous integration", 1)[-1]
+
+    assert job
+    assert f"`{job.group(1)}`" in section
+    assert "required" in section
+
+
+def test_readme_states_the_uv_version_ci_installs() -> None:
+    version = re.search(r'(?m)^\s*version: "([\d.]+)"', _text(CI_WORKFLOW))
+
+    assert version
+    assert version.group(1) in _text(README).split("### Continuous integration")[-1]
+
+
+def test_readme_badge_points_at_the_workflow_file() -> None:
+    assert f"actions/workflows/{CI_WORKFLOW.name}/badge.svg" in _text(README)
