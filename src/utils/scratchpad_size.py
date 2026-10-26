@@ -188,11 +188,19 @@ def cycle_focused_dropdown(
 
     `defaults` returns the registry entries (name, x, y, width, height) the
     dropdowns were built from. The new fractions are stored on the toggler
-    BEFORE placing, so a failing place() still converges on the next show().
-    Qtile >= 0.37 builds that size from ``toggler.geometry`` (a tuple) and
-    ignores ``x/y/width/height``, so both are kept in sync.
-    Never raises and never touches the window's floating state. The chosen
-    size intentionally persists across hide/show until the config is reloaded.
+    BEFORE placing: ``x/y/width/height`` (what this module reads back) and, for
+    Qtile >= 0.37, ``geometry`` (the tuple its ``show()`` builds the size from).
+    Never raises and never touches the window's floating state.
+
+    What is guaranteed (checked against libqtile 0.37.1, whose ``hide()``
+    refreshes ``geometry`` from the live window when the dropdown is on a
+    screen):
+
+    - After a successful place() the size persists across hide/show until the
+      config is reloaded: ``show()`` reuses what place() actually applied.
+    - After a FAILED place() the stored size only reaches the next ``show()`` if
+      no ``hide()`` runs in between. ``hide()`` overwrites it with the live
+      window, which a failed place() left at its old size.
     """
     try:
         found = find_focused_dropdown(qtile)

@@ -548,15 +548,14 @@ def test_contract_toggler_attributes(libqtile_scratchpad) -> None:
     assert "dropdowns" in _assigned_attrs(ls.ScratchPad, "__init__")
 
 
-def _real_toggler(
-    libqtile_scratchpad, window, geometry: Geometry, name: str = "term"
-):
+def _real_toggler(libqtile_scratchpad, window, geometry: Geometry, name: str = "term"):
     """A real DropDownToggler without running __init__ (needs a live qtile)."""
     real = object.__new__(libqtile_scratchpad.DropDownToggler)
     real.__dict__.update(
         name=name,
         window=window,
         shown=False,
+        _hooked=False,
         on_focus_lost_hide=False,
         warp_pointer=False,
         scratchpad_name="scratchpad",
@@ -618,3 +617,96 @@ def test_failed_place_converges_on_next_real_show(libqtile_scratchpad) -> None:
     dd.show()
     ((args, _kwargs),) = win.placed
     assert args[:4] == pytest.approx((125, 40, 746, 636), abs=1)  # medium preset
+
+
+class LiveWindow:
+    """A window with live geometry, enough for the real hide()/show() cycle.
+
+    ``place()`` moves the window (like the X11 backend does) unless it is set
+    to fail; ``togroup()`` moves it between a visible group (on a screen) and
+    the scratchpad group (on no screen).
+    """
+
+    def __init__(self, screen, geometry: Geometry, border_width: int) -> None:
+        self.screen = screen
+        self.bordercolor = "#abc"
+        self.fail_place = False
+        self.placed: list[tuple] = []
+        self._scratchpad = SimpleNamespace(name="scratchpad", screen=None)
+        self._visible = SimpleNamespace(name="1", screen=screen)
+        self.qtile = SimpleNamespace(current_screen=screen, current_group=self._visible)
+        self.group = self._visible
+        self.x, self.y, self.width, self.height = compute_placement(
+            geometry, screen, border_width
+        )
+
+    def place(self, x, y, width, height, *_args, **_kwargs) -> None:
+        if self.fail_place:
+            raise RuntimeError("boom")
+        self.placed.append((x, y, width, height))
+        self.x, self.y, self.width, self.height = x, y, width, height
+
+    def togroup(self, name=None, **_kwargs) -> None:
+        self.group = self._scratchpad if name == "scratchpad" else self._visible
+
+    def bring_to_front(self) -> None:
+        pass
+
+
+def _shown_dropdown(libqtile_scratchpad, screen, geometry: Geometry = TERM):
+    """A real DropDownToggler currently visible on `screen` at `geometry`."""
+    win = LiveWindow(screen, geometry, border_width=2)
+    dd = _real_toggler(libqtile_scratchpad, win, geometry)
+    dd.border_width = 2
+    dd.shown = True
+    return win, dd
+
+
+@pytest.mark.parametrize(
+    ("direction", "label"), [("grow", "medium"), ("shrink", "small")]
+)
+@pytest.mark.parametrize(
+    "screen",
+    [
+        SimpleNamespace(dx=0, dy=0, dwidth=1000, dheight=800),
+        SimpleNamespace(dx=1920, dy=40, dwidth=1600, dheight=900),
+    ],
+)
+def test_size_survives_a_real_hide_and_show(
+    libqtile_scratchpad, screen, direction, label
+) -> None:
+    # hide() re-reads the geometry from the live window (the dropdown is on a
+    # screen), so what the next show() uses is what place() actually applied.
+    win, dd = _shown_dropdown(libqtile_scratchpad, screen)
+    q = _qtile(win, dd, screen=screen)
+    cycle_focused_dropdown(q, direction, TERM_DEFAULTS)
+    preset = _by_label(derive_presets(TERM))[label]
+    expected = compute_placement(preset, screen, 2)
+    assert win.placed == [expected]
+    assert expected != compute_placement(TERM, screen, 2)  # it really changed size
+
+    dd.hide()
+    assert win.group.name == "scratchpad"  # hidden for real
+    dd.show()
+    assert win.group.name == "1"
+    assert len(win.placed) == 2
+    assert win.placed[-1] == pytest.approx(expected, abs=1)  # int() truncation
+
+
+def test_hide_resyncs_geometry_from_the_window_so_a_failed_place_is_not_kept(
+    libqtile_scratchpad,
+) -> None:
+    # The glue stores the new size before place(); but while the dropdown is
+    # visible, libqtile's hide() overwrites it with the live window, which a
+    # failed place() left at the old size. So there is no "converges on the next
+    # show()" guarantee once a hide() happens in between.
+    screen = SimpleNamespace(dx=0, dy=0, dwidth=1000, dheight=800)
+    win, dd = _shown_dropdown(libqtile_scratchpad, screen)
+    win.fail_place = True
+    cycle_focused_dropdown(_qtile(win, dd, screen=screen), "grow", TERM_DEFAULTS)
+    assert dd.geometry == pytest.approx((0.125, 0.05, 0.75, 0.8))  # medium, stored
+
+    win.fail_place = False
+    dd.hide()
+    dd.show()
+    assert win.placed == [compute_placement(TERM, screen, 2)]  # still the default
