@@ -8,12 +8,15 @@ branch protection no longer matches, a CI interpreter that drifts from
 """
 
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+HOOKS = ROOT / ".pre-commit-config.yaml"
+PYPROJECT = ROOT / "pyproject.toml"
 PYTHON_VERSION = ROOT / ".python-version"
 
 UV_RUN_OR_SYNC = re.compile(r"\buv\s+(?:run|sync)\b")
@@ -193,3 +196,92 @@ def test_the_checks_run_in_order_and_the_floor_is_defined_once() -> None:
     assert len(floors) == 1 and int(floors[0]) > 0
     commands = iter(_commands(text))
     assert all(wanted in commands for wanted in expected), _commands(text)
+
+
+# --- Local hooks use the same locked tools as CI ---------------------------------
+
+
+def _hooks(text: str) -> dict[str, str]:
+    """Return the text of every hook, keyed by its ``id``."""
+    ids = re.findall(r"(?m)^      - id: (\S+)", text)
+    chunks = re.split(r"(?m)^(?=      - id: )", text)[1:]
+    return dict(zip(ids, chunks, strict=True))
+
+
+def _pre_commit_floor() -> str:
+    """Return ``X`` of the ``pre-commit>=X`` requirement of the dev group."""
+    with PYPROJECT.open("rb") as fh:
+        dev = tomllib.load(fh)["dependency-groups"]["dev"]
+    floors = [
+        m.group(1) for d in dev if (m := re.fullmatch(r"pre-commit>=([\d.]+)", d))
+    ]
+    assert len(floors) == 1, "pin pre-commit as 'pre-commit>=X' in the dev group"
+    return floors[0]
+
+
+def test_hook_scan_splits_hooks_by_id() -> None:
+    text = (
+        "repos:\n  - repo: local\n    hooks:\n"
+        "      - id: a\n        x: 1\n      - id: b\n"
+    )
+
+    assert _hooks(text) == {
+        "a": "      - id: a\n        x: 1\n",
+        "b": "      - id: b\n",
+    }
+
+
+def test_hooks_are_all_local_and_unsupported_language() -> None:
+    text = _text(HOOKS)
+    hooks = _hooks(text)
+
+    assert re.findall(r"(?m)^\s*-?\s*repo:\s*(\S+)", text) == ["local"]
+    assert hooks, "no hooks found"
+    # `unsupported` runs the entry from the active environment, so every tool
+    # comes from uv.lock and there is no second set of pinned versions.
+    assert all("language: unsupported" in hook for hook in hooks.values())
+
+
+def test_hooks_never_run_uv_unlocked() -> None:
+    assert _unlocked_uv_commands(_text(HOOKS)) == []
+
+
+def test_hooks_minimum_version_is_the_pre_commit_floor_of_the_dev_group() -> None:
+    # `language: unsupported` needs pre-commit >= 4.4.0 in the lock too.
+    declared = re.search(r'(?m)^minimum_pre_commit_version:\s*"([\d.]+)"', _text(HOOKS))
+
+    assert declared and declared.group(1) == _pre_commit_floor()
+
+
+def test_both_hook_types_are_installed_by_pre_commit_install() -> None:
+    assert re.search(
+        r"(?m)^default_install_hook_types:\s*\[pre-commit, pre-push\]$", _text(HOOKS)
+    )
+
+
+def test_only_mypy_runs_on_pre_push() -> None:
+    text = _text(HOOKS)
+    on_push = [i for i, hook in _hooks(text).items() if "pre-push" in hook]
+
+    assert re.search(r"(?m)^default_stages:\s*\[pre-commit\]$", text)
+    assert on_push == ["mypy"]
+    assert "stages: [pre-push]" in _hooks(text)["mypy"]
+
+
+def test_the_lock_hook_only_runs_when_the_lock_inputs_change() -> None:
+    hook = _hooks(_text(HOOKS))["uv-lock-check"]
+    files = re.search(r"(?m)^\s*files:\s*(\S+)$", hook)
+
+    assert "entry: uv lock --check" in hook
+    assert "pass_filenames: false" in hook
+    assert files
+    pattern = re.compile(files.group(1))
+    assert pattern.search("pyproject.toml") and pattern.search("uv.lock")
+    assert not pattern.search("src/pyproject.toml")
+    assert not pattern.search("pyproject.toml.bak")
+    assert not pattern.search("src/config.py")
+
+
+def test_there_is_no_pytest_hook() -> None:
+    # The suite runs in CI and on demand; a hook would slow every commit down.
+    assert "pytest" not in _text(HOOKS)

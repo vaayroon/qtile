@@ -1,0 +1,32 @@
+# Local hooks only: every tool comes from uv.lock through `uv run --locked`,
+# so hooks, CI and Dependabot share one version source.
+minimum_pre_commit_version: "4.4.0"  # `language: unsupported`
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --locked ruff check --force-exclude
+        language: unsupported
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --locked ruff format --force-exclude
+        language: unsupported
+        types_or: [python, pyi]
+      - id: uv-lock-check
+        name: uv lock --check
+        entry: uv lock --check
+        language: unsupported
+        files: ^(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+      - id: mypy
+        name: mypy
+        entry: uv run --locked mypy src tools
+        language: unsupported
+        types_or: [python, pyi]
+        pass_filenames: false
+        stages: [pre-push]
