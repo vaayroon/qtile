@@ -126,6 +126,11 @@ session:
 5. Check it: `.venv/bin/qtile --version` should print `0.37.1`, then validate the
    config with `.venv/bin/qtile check -c src/config.py` (it needs no X server)
    and log back in.
+   A runtime-only venv has no `mypy`/`stubtest`, so `qtile check` prints
+   `Missing dependencies. Skipping type checking.` and does not print
+   `Your config can be loaded by Qtile.` That is expected: the config was still
+   loaded and validated. Success is exit code 0 (`echo $?`); errors print
+   `Errors found in config`. Type checking runs in a `--dev` venv.
 6. Once everything is stable, delete the backup: `rm -rf .venv.pip`.
 
 **Rollback:** the backup only works under its original name, because the scripts
