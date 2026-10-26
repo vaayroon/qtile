@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: checks  # required status check on main; tests/test_ci_contract.py pins it
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      UV_PYTHON: /usr/bin/python3.12  # distro interpreter, as install.sh
+      UV_PYTHON_DOWNLOADS: never
+      MIN_TESTS: "314"  # passed-test floor; bump it in the commit that adds tests
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.5"
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+
+      - name: Install the shared libraries libqtile loads at import time
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
+            libglib2.0-0t64 libfontconfig1 libxcb1
+
+      - name: uv.lock matches pyproject.toml
+        run: uv lock --check
+
+      - name: Sync the venv from uv.lock
+        run: uv sync --locked
+
+      - name: The venv uses the distro interpreter
+        run: grep -qx 'home = /usr/bin' .venv/pyvenv.cfg || { cat .venv/pyvenv.cfg; exit 1; }
+
+      - name: Lint
+        run: uv run --locked ruff check .
+
+      - name: Format
+        run: uv run --locked ruff format --check .
+
+      - name: Type-check
+        run: uv run --locked mypy src tools
+
+      - name: Test
+        run: uv run --locked pytest -rs --junitxml="$RUNNER_TEMP/pytest.xml"
+
+      - name: Test floor and zero skips
+        run: uv run --locked python tools/check_junit.py "$RUNNER_TEMP/pytest.xml" --min-tests "$MIN_TESTS"
