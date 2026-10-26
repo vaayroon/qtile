@@ -21,7 +21,12 @@ CONFIG_PY="${REPO_DIR}/src/config.py"
 QTILE_BIN="${VENV_DIR}/bin/qtile"
 XSESSION_FILE="/usr/share/xsessions/qtile-venv.desktop"
 
-PYTHON="${PYTHON:-python3.12}"
+# The login session runs from this venv, so it must be built on the distro
+# interpreter. uv's python-preference = "only-system" still accepts ANY non-uv
+# Python found on PATH (Homebrew, pyenv shims...), so name the interpreter
+# explicitly instead of relying on PATH.
+DEFAULT_PYTHON="/usr/bin/python3.12"
+PYTHON="${PYTHON:-$DEFAULT_PYTHON}"
 
 # --- Options ------------------------------------------------------------------
 INSTALL_DEV=false
@@ -39,7 +44,7 @@ Options:
   -h, --help       Show this help
 
 Environment:
-  PYTHON           Python interpreter uv uses for the venv (default: python3.12)
+  PYTHON           Python interpreter uv uses for the venv (default: ${DEFAULT_PYTHON})
 EOF
 }
 
@@ -58,6 +63,25 @@ done
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
+
+# Fail unless the venv was built from the interpreter we asked for: pyvenv.cfg
+# records the directory of the interpreter as "home = <dir>". A symlinked
+# interpreter (Homebrew, pyenv) may be recorded as its resolved directory.
+verify_venv_interpreter() {
+    local cfg="${VENV_DIR}/pyvenv.cfg" line home="" python_path
+    [[ -f "$cfg" ]] || die "uv sync finished but ${cfg} is missing."
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^home[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+            home="${BASH_REMATCH[1]}"
+            break
+        fi
+    done < "$cfg"
+    python_path="$(command -v "$PYTHON")"
+    if [[ "$home" != "$(dirname "$python_path")" \
+        && "$home" != "$(dirname "$(readlink -f "$python_path")")" ]]; then
+        die "${cfg} says the venv was built from '${home}', not from ${PYTHON} (${python_path}). Fix PYTHON= or your PATH, then re-run with --force."
+    fi
+}
 
 # --- Preconditions ------------------------------------------------------------
 command -v uv >/dev/null 2>&1 \
@@ -90,6 +114,7 @@ sync_args+=(--project "$REPO_DIR" --python "$PYTHON")
 UV_PROJECT_ENVIRONMENT="$VENV_DIR" uv "${sync_args[@]}"
 
 [[ -x "$QTILE_BIN" ]] || die "uv sync finished but ${QTILE_BIN} is missing."
+verify_venv_interpreter
 
 # --- 2. Environment file ------------------------------------------------------
 if [[ -f "${REPO_DIR}/.env" ]]; then

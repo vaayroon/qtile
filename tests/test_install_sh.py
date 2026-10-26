@@ -20,15 +20,26 @@ BASH = "/bin/bash"
 UV_INSTALL_CMD = "curl -LsSf https://astral.sh/uv/install.sh | sh"
 
 # External tools install.sh needs besides bash builtins (--skip-xsession path).
-TOOLS = ("dirname", "cat", "rm", "cp", "mkdir", "chmod")
+TOOLS = ("dirname", "cat", "rm", "cp", "mkdir", "chmod", "readlink")
 
+# Fake uv: records its call and fabricates a venv the way a real sync would,
+# including the pyvenv.cfg ``home`` of the interpreter it was told to use
+# (FAKE_UV_HOME overrides it to emulate "uv picked another interpreter").
 FAKE_UV = f"""#!{BASH}
 printf '%s\\n' "$*" >> "$FAKEBIN_LOG/uv.args"
 printf '%s\\n' "$UV_PROJECT_ENVIRONMENT" >> "$FAKEBIN_LOG/uv.env"
+python=""
+while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "--python" ]]; then python="$2"; fi
+    shift
+done
 if [[ -n "$UV_PROJECT_ENVIRONMENT" ]]; then
     mkdir -p "$UV_PROJECT_ENVIRONMENT/bin"
     printf '#!{BASH}\\n' > "$UV_PROJECT_ENVIRONMENT/bin/qtile"
     chmod +x "$UV_PROJECT_ENVIRONMENT/bin/qtile"
+    python="$(command -v "$python")"
+    printf 'home = %s\\n' "${{FAKE_UV_HOME:-$(dirname "$python")}}" \\
+        > "$UV_PROJECT_ENVIRONMENT/pyvenv.cfg"
 fi
 """
 
@@ -52,13 +63,19 @@ class Sandbox:
     log: Path
 
     def run(
-        self, *args: str, env_extra: dict[str, str] | None = None
+        self,
+        *args: str,
+        env_extra: dict[str, str] | None = None,
+        default_python: bool = False,
     ) -> subprocess.CompletedProcess[str]:
+        """Run install.sh; PYTHON points at a fake unless default_python is set."""
         env = {
             "PATH": str(self.fakebin),
             "HOME": str(self.home),
             "FAKEBIN_LOG": str(self.log),
         }
+        if not default_python:
+            env["PYTHON"] = str(self.fakebin / "python3.12")
         env.update(env_extra or {})
         return subprocess.run(
             [BASH, str(self.repo / "install.sh"), "--skip-xsession", *args],
@@ -77,6 +94,10 @@ class Sandbox:
     def uv_env(self) -> list[str]:
         path = self.log / "uv.env"
         return path.read_text().splitlines() if path.exists() else []
+
+    @property
+    def python(self) -> Path:
+        return self.fakebin / "python3.12"
 
     @property
     def venv(self) -> Path:
@@ -142,6 +163,47 @@ def test_missing_uv_lock_fails_naming_the_file(sandbox: Sandbox) -> None:
     assert sandbox.uv_calls() == []
 
 
+SYSTEM_PYTHON = Path("/usr/bin/python3.12")
+
+
+@pytest.mark.skipif(not SYSTEM_PYTHON.exists(), reason="needs /usr/bin/python3.12")
+def test_default_interpreter_is_the_system_python_not_whatever_is_on_path(
+    sandbox: Sandbox,
+) -> None:
+    # fakebin/python3.12 plays the Homebrew/pyenv Python that sits early on PATH.
+    result = sandbox.run(default_python=True)
+    assert result.returncode == 0, result.stderr
+    assert sandbox.uv_calls() == [
+        f"sync --locked --no-dev --project {sandbox.repo} --python {SYSTEM_PYTHON}"
+    ]
+
+
+def test_sync_that_used_another_interpreter_fails_before_writing_anything(
+    sandbox: Sandbox,
+) -> None:
+    result = sandbox.run(env_extra={"FAKE_UV_HOME": "/home/linuxbrew/.linuxbrew/bin"})
+    assert result.returncode != 0
+    assert "pyvenv.cfg" in result.stderr
+    assert "/home/linuxbrew/.linuxbrew/bin" in result.stderr
+    assert str(sandbox.fakebin) in result.stderr  # the interpreter it expected
+    assert not (sandbox.repo / ".env").exists()
+    assert not (sandbox.home / ".local").exists()
+
+
+def test_venv_home_may_be_the_resolved_dir_of_a_symlinked_interpreter(
+    sandbox: Sandbox,
+) -> None:
+    real_dir = sandbox.root / "cellar"
+    real_dir.mkdir()
+    _write_executable(real_dir / "python3.12", f"#!{BASH}\nexit 0\n")
+    link = sandbox.fakebin / "python-brew"
+    link.symlink_to(real_dir / "python3.12")
+    result = sandbox.run(
+        env_extra={"PYTHON": str(link), "FAKE_UV_HOME": str(real_dir)}
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_missing_python_interpreter_fails(sandbox: Sandbox) -> None:
     result = sandbox.run(env_extra={"PYTHON": "python-does-not-exist"})
     assert result.returncode != 0
@@ -156,7 +218,7 @@ def test_default_run_syncs_runtime_only_from_the_lock(sandbox: Sandbox) -> None:
     result = sandbox.run()
     assert result.returncode == 0, result.stderr
     assert sandbox.uv_calls() == [
-        f"sync --locked --no-dev --project {sandbox.repo} --python python3.12"
+        f"sync --locked --no-dev --project {sandbox.repo} --python {sandbox.python}"
     ]
     assert sandbox.uv_env() == [str(sandbox.venv)]
     assert (sandbox.venv / "bin" / "qtile").exists()
@@ -167,7 +229,7 @@ def test_dev_flag_drops_no_dev(sandbox: Sandbox) -> None:
     result = sandbox.run("--dev")
     assert result.returncode == 0, result.stderr
     assert sandbox.uv_calls() == [
-        f"sync --locked --project {sandbox.repo} --python python3.12"
+        f"sync --locked --project {sandbox.repo} --python {sandbox.python}"
     ]
 
 

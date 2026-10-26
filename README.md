@@ -23,7 +23,7 @@ A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11
 ## Requirements
 
 - An **X11** session (this config targets the X backend, not Wayland).
-- **Python 3.12+** from your distro (`/usr/bin/python3.12`). uv is configured to use the system interpreter and never downloads one, because the venv backs your login session.
+- **Python 3.12+** from your distro (`/usr/bin/python3.12`). The venv backs your login session, so `install.sh` builds it on that exact interpreter (override with `PYTHON=/path/to/python3.12 ./install.sh`) and fails if `.venv/pyvenv.cfg` says otherwise; uv never downloads a Python. Merely having a Homebrew or pyenv Python earlier on your `PATH` does not change this.
 - **[uv](https://docs.astral.sh/uv/)** — manages the virtual environment and dependencies. `install.sh` requires it but never installs it for you:
 
   ```bash
