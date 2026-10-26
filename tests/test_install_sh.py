@@ -20,7 +20,7 @@ BASH = "/bin/bash"
 UV_INSTALL_CMD = "curl -LsSf https://astral.sh/uv/install.sh | sh"
 
 # External tools install.sh needs besides bash builtins (--skip-xsession path).
-TOOLS = ("dirname", "cat", "rm", "cp", "mkdir", "chmod", "readlink")
+TOOLS = ("dirname", "cat", "rm", "mv", "cp", "mkdir", "chmod", "readlink")
 
 # Fake uv: records its call and fabricates a venv the way a real sync would,
 # including the pyvenv.cfg ``home`` of the interpreter it was told to use
@@ -28,6 +28,20 @@ TOOLS = ("dirname", "cat", "rm", "cp", "mkdir", "chmod", "readlink")
 FAKE_UV = f"""#!{BASH}
 printf '%s\\n' "$*" >> "$FAKEBIN_LOG/uv.args"
 printf '%s\\n' "$UV_PROJECT_ENVIRONMENT" >> "$FAKEBIN_LOG/uv.env"
+if [[ -e "$UV_PROJECT_ENVIRONMENT" ]]; then venv=present; else venv=absent; fi
+if [[ -d "$UV_PROJECT_ENVIRONMENT.bak" ]]; then bak=present; else bak=absent; fi
+printf 'venv=%s backup=%s\\n' "$venv" "$bak" >> "$FAKEBIN_LOG/uv.state"
+if [[ -n "${{FAKE_UV_TERM:-}}" ]]; then  # emulate Ctrl-C/kill during the sync
+    mkdir -p "$UV_PROJECT_ENVIRONMENT"
+    : > "$UV_PROJECT_ENVIRONMENT/half-synced"
+    kill -TERM "$PPID"
+    exit 0
+fi
+if [[ -n "${{FAKE_UV_FAIL:-}}" ]]; then
+    mkdir -p "$UV_PROJECT_ENVIRONMENT"
+    : > "$UV_PROJECT_ENVIRONMENT/half-synced"
+    exit 1
+fi
 python=""
 while [[ $# -gt 0 ]]; do
     if [[ "$1" == "--python" ]]; then python="$2"; fi
@@ -41,6 +55,12 @@ if [[ -n "$UV_PROJECT_ENVIRONMENT" ]]; then
     printf 'home = %s\\n' "${{FAKE_UV_HOME:-$(dirname "$python")}}" \\
         > "$UV_PROJECT_ENVIRONMENT/pyvenv.cfg"
 fi
+"""
+
+# Fake sudo: records the call and what was piped to it, never touches anything.
+FAKE_SUDO = f"""#!{BASH}
+printf '%s\\n' "$*" >> "$FAKEBIN_LOG/sudo.args"
+cat > "$FAKEBIN_LOG/sudo.stdin"
 """
 
 FAKE_CURL = f"""#!{BASH}
@@ -67,18 +87,26 @@ class Sandbox:
         *args: str,
         env_extra: dict[str, str] | None = None,
         default_python: bool = False,
+        xsession: bool = False,
     ) -> subprocess.CompletedProcess[str]:
-        """Run install.sh; PYTHON points at a fake unless default_python is set."""
+        """Run install.sh in the sandbox.
+
+        PYTHON points at a fake unless default_python is set. The X session
+        entry is skipped unless xsession is set, in which case it is written
+        to ``self.xsession_file`` (a temp path, so no sudo is involved).
+        """
         env = {
             "PATH": str(self.fakebin),
             "HOME": str(self.home),
             "FAKEBIN_LOG": str(self.log),
+            "QTILE_XSESSION_FILE": str(self.xsession_file),
         }
         if not default_python:
             env["PYTHON"] = str(self.fakebin / "python3.12")
         env.update(env_extra or {})
+        flags = [] if xsession else ["--skip-xsession"]
         return subprocess.run(
-            [BASH, str(self.repo / "install.sh"), "--skip-xsession", *args],
+            [BASH, str(self.repo / "install.sh"), *flags, *args],
             env=env,
             capture_output=True,
             text=True,
@@ -94,6 +122,22 @@ class Sandbox:
     def uv_env(self) -> list[str]:
         path = self.log / "uv.env"
         return path.read_text().splitlines() if path.exists() else []
+
+    def uv_states(self) -> list[str]:
+        path = self.log / "uv.state"
+        return path.read_text().splitlines() if path.exists() else []
+
+    @property
+    def xsession_file(self) -> Path:
+        return self.root / "xsessions" / "qtile-venv.desktop"
+
+    @property
+    def backup(self) -> Path:
+        return self.repo / ".venv.bak"
+
+    @property
+    def sudo_called(self) -> bool:
+        return (self.log / "sudo.args").exists()
 
     @property
     def python(self) -> Path:
@@ -114,7 +158,7 @@ def sandbox(tmp_path: Path) -> Sandbox:
     fakebin = tmp_path / "fakebin"
     home = tmp_path / "home"
     log = tmp_path / "log"
-    for directory in (repo, fakebin, home, log):
+    for directory in (repo, fakebin, home, log, tmp_path / "xsessions"):
         directory.mkdir()
 
     shutil.copy(INSTALL_SH, repo / "install.sh")
@@ -131,6 +175,7 @@ def sandbox(tmp_path: Path) -> Sandbox:
     _write_executable(fakebin / "python3.12", f"#!{BASH}\nexit 0\n")
     _write_executable(fakebin / "uv", FAKE_UV)
     _write_executable(fakebin / "curl", FAKE_CURL)  # must never be called
+    _write_executable(fakebin / "sudo", FAKE_SUDO)
 
     return Sandbox(tmp_path, repo, home, fakebin, log)
 
@@ -240,13 +285,98 @@ def test_python_env_var_selects_the_interpreter(sandbox: Sandbox) -> None:
     assert "--python python3.13" in sandbox.uv_calls()[0]
 
 
-def test_force_removes_the_existing_venv_before_syncing(sandbox: Sandbox) -> None:
+def test_force_moves_the_venv_aside_then_drops_the_backup_on_success(
+    sandbox: Sandbox,
+) -> None:
     sandbox.venv.mkdir()
     (sandbox.venv / "stale-marker").write_text("old")
     result = sandbox.run("--force")
     assert result.returncode == 0, result.stderr
+    # uv saw no venv (it builds a new one) and the old one safe next to it.
+    assert sandbox.uv_states() == ["venv=absent backup=present"]
     assert not (sandbox.venv / "stale-marker").exists()
+    assert (sandbox.venv / "bin" / "qtile").exists()
+    assert not sandbox.backup.exists()
+
+
+def test_force_without_an_existing_venv_just_syncs(sandbox: Sandbox) -> None:
+    result = sandbox.run("--force")
+    assert result.returncode == 0, result.stderr
+    assert sandbox.uv_states() == ["venv=absent backup=absent"]
+    assert not sandbox.backup.exists()
+
+
+def _old_venv(sandbox: Sandbox) -> None:
+    sandbox.venv.mkdir()
+    (sandbox.venv / "stale-marker").write_text("old")
+
+
+def _assert_old_venv_restored(sandbox: Sandbox) -> None:
+    assert (sandbox.venv / "stale-marker").read_text() == "old"
+    assert not (sandbox.venv / "half-synced").exists()
+    assert not sandbox.backup.exists()
+
+
+def test_force_restores_the_old_venv_when_uv_sync_fails(sandbox: Sandbox) -> None:
+    _old_venv(sandbox)
+    result = sandbox.run("--force", env_extra={"FAKE_UV_FAIL": "1"})
+    assert result.returncode != 0
+    assert "restored" in result.stderr
+    _assert_old_venv_restored(sandbox)
+    assert not (sandbox.repo / ".env").exists()
+
+
+def test_force_restores_the_old_venv_when_interrupted_mid_sync(
+    sandbox: Sandbox,
+) -> None:
+    _old_venv(sandbox)
+    result = sandbox.run("--force", env_extra={"FAKE_UV_TERM": "1"})
+    assert result.returncode != 0
+    assert "Interrupted" in result.stderr
+    _assert_old_venv_restored(sandbox)
+
+
+def test_force_restores_the_old_venv_when_sync_leaves_no_qtile(
+    sandbox: Sandbox,
+) -> None:
+    _old_venv(sandbox)
+    _write_executable(sandbox.fakebin / "uv", f"#!{BASH}\nexit 0\n")
+    result = sandbox.run("--force")
+    assert result.returncode != 0
+    _assert_old_venv_restored(sandbox)
+
+
+def test_force_restores_the_old_venv_when_the_interpreter_is_wrong(
+    sandbox: Sandbox,
+) -> None:
+    _old_venv(sandbox)
+    result = sandbox.run("--force", env_extra={"FAKE_UV_HOME": "/elsewhere/bin"})
+    assert result.returncode != 0
+    assert "pyvenv.cfg" in result.stderr
+    _assert_old_venv_restored(sandbox)
+
+
+def test_force_refuses_to_overwrite_an_existing_backup(sandbox: Sandbox) -> None:
+    _old_venv(sandbox)
+    sandbox.backup.mkdir()
+    (sandbox.backup / "precious").write_text("mine")
+    result = sandbox.run("--force")
+    assert result.returncode != 0
+    assert ".venv.bak" in result.stderr
+    assert (sandbox.venv / "stale-marker").read_text() == "old"
+    assert (sandbox.backup / "precious").read_text() == "mine"
+    assert sandbox.uv_calls() == []
+
+
+def test_failed_sync_without_force_exits_before_writing_anything(
+    sandbox: Sandbox,
+) -> None:
+    result = sandbox.run(xsession=True, env_extra={"FAKE_UV_FAIL": "1"})
+    assert result.returncode != 0
     assert len(sandbox.uv_calls()) == 1
+    assert not (sandbox.repo / ".env").exists()
+    assert not sandbox.xsession_file.exists()
+    assert not (sandbox.home / ".local").exists()
 
 
 def test_rerun_without_force_keeps_the_venv_and_resyncs(sandbox: Sandbox) -> None:
@@ -281,6 +411,50 @@ def test_existing_env_file_is_left_untouched(sandbox: Sandbox) -> None:
     assert (sandbox.repo / ".env").read_text() == "MONITOR_ORDER=mine\n"
 
 
+def test_xsession_entry_launches_the_venv_binary_from_the_repo(
+    sandbox: Sandbox,
+) -> None:
+    result = sandbox.run(xsession=True)
+    assert result.returncode == 0, result.stderr
+    assert sandbox.xsession_file.read_text().splitlines() == [
+        "[Desktop Entry]",
+        "Name=Qtile (venv)",
+        "Comment=Qtile Session",
+        "Type=Application",
+        "Keywords=wm;tiling",
+        f"Path={sandbox.repo}",
+        f"Exec={sandbox.venv}/bin/qtile start -c {sandbox.repo}/src/config.py",
+    ]
+    assert not sandbox.sudo_called  # the directory is writable
+
+
+def test_xsession_entry_uses_sudo_when_the_directory_is_not_writable(
+    sandbox: Sandbox,
+) -> None:
+    sandbox.xsession_file.parent.chmod(0o555)
+    try:
+        result = sandbox.run(xsession=True)
+    finally:
+        sandbox.xsession_file.parent.chmod(0o755)
+    assert result.returncode == 0, result.stderr
+    assert (sandbox.log / "sudo.args").read_text().split() == [
+        "tee",
+        str(sandbox.xsession_file),
+    ]
+    assert f"Exec={sandbox.venv}/bin/qtile start" in (
+        sandbox.log / "sudo.stdin"
+    ).read_text()
+
+
+def test_skip_xsession_writes_no_session_entry_and_never_calls_sudo(
+    sandbox: Sandbox,
+) -> None:
+    result = sandbox.run()
+    assert result.returncode == 0, result.stderr
+    assert not sandbox.xsession_file.exists()
+    assert not sandbox.sudo_called
+
+
 def test_rofi_scratchpad_entry_is_still_written(sandbox: Sandbox) -> None:
     result = sandbox.run()
     assert result.returncode == 0, result.stderr
@@ -299,21 +473,34 @@ def test_unknown_flag_is_rejected_before_touching_anything(sandbox: Sandbox) -> 
 # --- Script text --------------------------------------------------------------
 
 
-def test_xsession_entry_launches_the_venv_binary_never_uv() -> None:
-    lines = INSTALL_SH.read_text().splitlines()
-    session_execs = [line for line in lines if line.startswith("Exec=${QTILE_BIN}")]
-    assert session_execs == ["Exec=${QTILE_BIN} start -c ${CONFIG_PY}"]
-    assert 'QTILE_BIN="${VENV_DIR}/bin/qtile"' in lines
-    assert 'VENV_DIR="${REPO_DIR}/.venv"' in lines
-    assert not [line for line in lines if line.startswith("Exec=") and "uv" in line]
+def _leading_comment_block(script: str) -> str:
+    lines = script.splitlines()[1:]  # skip the shebang
+    block = []
+    for line in lines:
+        if not line.startswith("#"):
+            break
+        block.append(line)
+    return "\n".join(block)
 
 
-def test_usage_and_header_talk_about_uv_not_pip(sandbox: Sandbox) -> None:
-    script = INSTALL_SH.read_text()
-    header = "\n".join(script.splitlines()[:12])
-    assert "uv" in header
-    assert "pip" not in script.lower().replace("pipefail", "")
+def test_header_documents_the_uv_lock_sync_and_the_backup() -> None:
+    header = _leading_comment_block(INSTALL_SH.read_text())
+    assert "uv.lock" in header
+    assert ".venv.bak" in header
 
+
+@pytest.mark.parametrize("legacy", ["pip install", "pip-sync", "pip-compile"])
+def test_script_has_no_pip_tooling_left(legacy: str) -> None:
+    assert legacy not in INSTALL_SH.read_text()
+
+
+def test_script_does_not_reference_the_removed_requirements_files() -> None:
+    assert "requirements" not in INSTALL_SH.read_text()
+
+
+def test_usage_documents_uv_force_backup_and_the_default_interpreter(
+    sandbox: Sandbox,
+) -> None:
     result = subprocess.run(
         [BASH, str(sandbox.repo / "install.sh"), "--help"],
         env={"PATH": str(sandbox.fakebin), "HOME": str(sandbox.home)},
@@ -324,4 +511,6 @@ def test_usage_and_header_talk_about_uv_not_pip(sandbox: Sandbox) -> None:
     )
     assert result.returncode == 0
     assert "uv" in result.stdout
+    assert "--force" in result.stdout and ".venv.bak" in result.stdout
+    assert f"default: {SYSTEM_PYTHON}" in result.stdout
     assert "pip" not in result.stdout.lower()

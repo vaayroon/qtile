@@ -55,13 +55,15 @@ Useful flags:
 | Flag | Effect |
 |---|---|
 | `--dev` | Also install the dev tools (`ruff`, `mypy`, `pytest`, `pytest-asyncio`). Without it they are removed. |
-| `--force` | Recreate the virtual environment from scratch. |
+| `--force` | Recreate the virtual environment. The old one is moved to `.venv.bak` while the new one is synced, restored if the sync fails, and deleted once it succeeds. |
 | `--skip-xsession` | Don't touch `/usr/share/xsessions` (no `sudo`). |
 
 > The script is re-runnable. `.env` is never overwritten, and `.venv` is
-> converged **exactly** to `uv.lock` on every run: missing packages are installed
-> and anything not in the lock (including dev tools, unless `--dev`) is removed.
-> Pass `--force` to rebuild the venv from scratch.
+> converged to `uv.lock` on every run: missing packages are installed and
+> unlocked ones are pruned (dev tools included, unless `--dev`). uv leaves the
+> venv's seed packages (such as `pip`) alone, so they may still be present.
+> Use `--force` to rebuild the venv from scratch. If the sync fails, the script
+> exits non-zero before writing `.env` or any session entry.
 
 ### Manual setup
 
