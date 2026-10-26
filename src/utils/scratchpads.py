@@ -218,9 +218,7 @@ def _parse_toml_file(path: Path, source: str) -> list[_RawEntry]:
         return []
 
     if not isinstance(data, dict):
-        logger.warning(
-            "scratchpad registry: %s root is not a table, skipping", source
-        )
+        logger.warning("scratchpad registry: %s root is not a table, skipping", source)
         return []
 
     raw_entries = data.get("scratchpad", [])
@@ -245,9 +243,7 @@ def _parse_toml_file(path: Path, source: str) -> list[_RawEntry]:
     return entries
 
 
-def _read_registry_file(
-    path: Path | None, *, required: bool
-) -> list[_RawEntry]:
+def _read_registry_file(path: Path | None, *, required: bool) -> list[_RawEntry]:
     """Discover stage: catches a missing file, a directory, or an unreadable
     path. `required` controls whether a missing file is worth a warning
     (the base file should always exist; the local override file is
@@ -381,8 +377,7 @@ def _optional_key(raw_entry: dict[str, Any], identity: str) -> str | None:
     value = raw_entry["key"]
     if not isinstance(value, str):
         logger.warning(
-            "scratchpad registry: entry %s field 'key' expected a string, "
-            "got %r",
+            "scratchpad registry: entry %s field 'key' expected a string, got %r",
             identity,
             value,
         )
@@ -434,17 +429,14 @@ def _coerce_geometry(
         numeric_value = math.inf
     if math.isnan(numeric_value) or math.isinf(numeric_value):
         logger.warning(
-            "scratchpad registry: entry %s field %r has a non-finite value "
-            "%r",
+            "scratchpad registry: entry %s field %r has a non-finite value %r",
             identity,
             field,
             numeric_value,
         )
         raise _SkipEntry
 
-    below_range = (
-        numeric_value <= minimum if exclusive_min else numeric_value < minimum
-    )
+    below_range = numeric_value <= minimum if exclusive_min else numeric_value < minimum
     if below_range or numeric_value > maximum:
         logger.warning(
             "scratchpad registry: entry %s field %r out of range: %r",
@@ -521,8 +513,7 @@ def _coerce_bool(
     value = raw_entry[field]
     if not isinstance(value, bool):
         logger.warning(
-            "scratchpad registry: entry %s field %r expected a boolean, got "
-            "%r",
+            "scratchpad registry: entry %s field %r expected a boolean, got %r",
             identity,
             field,
             value,
@@ -598,8 +589,7 @@ def _build_entry(
         for field in raw_entry:
             if field not in _KNOWN_FIELDS:
                 logger.warning(
-                    "scratchpad registry: entry %s has unknown field %r, "
-                    "ignoring",
+                    "scratchpad registry: entry %s has unknown field %r, ignoring",
                     identity,
                     field,
                 )
