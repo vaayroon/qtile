@@ -43,7 +43,7 @@ usage() {
 Usage: ./install.sh [options]
 
 Options:
-  --dev            Also install dev tools (ruff, mypy, pytest); without it they are removed
+  --dev            Also install dev tools (ruff, mypy, pytest, pre-commit); without it they are removed
   --force          Recreate the virtual environment (the old one is kept as .venv.bak
                    during the sync and restored if it fails)
   --skip-xsession  Do not write the /usr/share/xsessions entry (needs sudo)
