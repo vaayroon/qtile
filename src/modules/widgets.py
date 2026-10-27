@@ -87,7 +87,7 @@ def init_widgets_list(*, include_systray: bool) -> list[Any]:
             background=colors2[3],
             mouse_callbacks={
                 "Button1": lambda: qtile.spawn(
-                    myTerm + " -e ~/go/bin/cointop -name cointop -title virtual-shell"
+                    myTerm + " -e cointop -name cointop -title virtual-shell"
                 )
             },
             padding=5,
