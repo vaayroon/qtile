@@ -329,8 +329,15 @@ uv run --locked pre-commit run --all-files --hook-stage pre-push
 > of date with `pyproject.toml`.
 >
 > The hooks are local and run `uv run --locked ...`, so ruff and mypy come from
-> `uv.lock` exactly as in CI. They call `uv`, so it must be on the `PATH` of the
-> shell that runs `git`.
+> `uv.lock` exactly as in CI. A few things to know:
+>
+> - The hooks call `uv`, so it must be on the `PATH` of whatever runs `git` (a
+>   GUI client or an IDE often has a shorter `PATH` than your shell).
+> - `./install.sh` without `--dev` removes the dev tools from `.venv`, `pre-commit`
+>   included, so the installed git hooks then fail. Run `./install.sh --dev` and
+>   `uv run --locked pre-commit install` again to restore them.
+> - The `uv lock --check` hook needs network access or a warm uv cache, because
+>   it resolves the dependencies to prove the lock is current.
 
 ### Upgrading dependencies
 
@@ -381,21 +388,70 @@ though pytest exits 0.
 
 #### Branch protection
 
-The CI check is required on `main` after the first green run. This is a manual
-step on GitHub (Settings > Branches > `main` > Require status checks > `checks`),
-or with the API:
+The owner enables this by hand, once, **after this workflow is merged and the
+`checks` job has run on `main`** (GitHub only lets you require a check it has
+already seen). Nothing in the repository applies it.
+
+The target protection of `main` is: the `checks` check is required (from the
+GitHub Actions app, id 15368), the branch must be up to date before merging
+(`strict`), the rules also apply to admins (`enforce_admins`), and there is no
+required pull request review.
+
+> **This is a full replacement, not a patch.** `PUT .../protection` overwrites
+> everything `main` has today: 1 approving review, code-owner review, approval of
+> the last push and `enforce_admins` off. Running it **removes the review
+> requirements**. That is intended: the repository has a single owner, who cannot
+> approve their own pull requests (and the old rule was already being bypassed
+> through admin merges), so the review rule protected nothing. A required CI check
+> that also binds the owner does.
 
 ```bash
 gh api --method PUT repos/vaayroon/qtile/branches/main/protection --input - <<'EOF'
-{"required_status_checks":{"strict":true,"checks":[{"context":"checks","app_id":15368}]},
- "enforce_admins":true,"required_pull_request_reviews":null,"restrictions":null}
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": [],
+    "checks": [{"context": "checks", "app_id": 15368}]
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": null,
+  "restrictions": null
+}
 EOF
 ```
 
-`app_id` 15368 is the GitHub Actions app. With `enforce_admins` the owner cannot
-bypass the check either; a hotfix then needs the protection lifted temporarily.
-Renaming the `checks` job in `ci.yml` leaves every pull request waiting for a
-check that never reports, which is why a test pins the name.
+`contexts` stays empty because the API schema requires the key; the check itself
+goes in `checks`. Confirm the app id before running it
+(`gh api /apps/github-actions --jq .id`) and read the result back afterwards:
+
+```bash
+gh api repos/vaayroon/qtile/branches/main/protection
+```
+
+From the UI, the equivalent is Settings > Branches > the `main` rule: tick
+*Require status checks to pass before merging* and *Require branches to be up to
+date before merging*, add `checks`, untick *Require a pull request before
+merging* (this is what drops the reviews) and tick *Do not allow bypassing the
+above settings*.
+
+With `enforce_admins` the owner cannot bypass the check either; a hotfix then
+needs the protection lifted temporarily. Renaming the `checks` job in `ci.yml`
+leaves every pull request waiting for a check that never reports, which is why a
+test pins the name.
+
+#### Recommended repository settings
+
+Also manual, also optional, and not applied by anything in the repository:
+
+- **Settings > Actions > General > Workflow permissions**: set the default to
+  *Read repository contents and packages permissions*. `ci.yml` already asks for
+  `contents: read`, this makes it the default for any future workflow.
+- **Settings > Actions > General**: tick *Require actions to be pinned to a
+  full-length commit SHA*. Every action here already is, and Dependabot keeps the
+  pins fresh.
+- **Settings > Advanced Security** (*Code security* in older UIs): enable *Dependabot alerts* (and, if you want,
+  security updates). The version updates in `.github/dependabot.yml` work without
+  them; alerts are what flag a vulnerable pinned dependency.
 
 ---
 

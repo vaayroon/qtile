@@ -8,6 +8,7 @@ protection no longer matches, a CI interpreter that drifts from
 deliberately do not restate workflow values.
 """
 
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -258,3 +259,21 @@ def test_readme_names_the_variable_that_holds_the_expected_test_count() -> None:
 
     assert variable
     assert f"`{variable.group(1)}`" in section
+
+
+def test_readme_protection_payload_requires_the_job_name_and_is_valid() -> None:
+    # The documented PUT replaces the whole protection of `main`: it must be
+    # valid JSON, carry the `contexts` key the API schema lists as required,
+    # and require the check by the name the workflow job reports.
+    job = re.search(r"(?m)^    name: (\S+)", _text(CI_WORKFLOW))
+    command = re.search(
+        r"gh api --method PUT \S+/branches/main/protection --input - <<'EOF'\n"
+        r"(.*?)\nEOF\n",
+        _text(README),
+        re.DOTALL,
+    )
+
+    assert job and command, "the README no longer documents the protection command"
+    checks = json.loads(command.group(1))["required_status_checks"]
+    assert checks["contexts"] == []
+    assert [c["context"] for c in checks["checks"]] == [job.group(1)]
