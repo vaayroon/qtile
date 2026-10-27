@@ -17,7 +17,9 @@ mod = "mod4"  # Sets mod key to SUPER/WINDOWS
 ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 config = dotenv_values(ENV_FILE)
 for key, value in config.items():
-    os.environ[f"{key}"] = f"{value}"
+    # A bare `KEY` line has no value (None); exporting it would set the string "None".
+    if value is not None:
+        os.environ[key] = value
 
 # Terminal emulator. Defined after the .env load so QTILE_TERMINAL can override
 # it; an empty value falls back to the default.

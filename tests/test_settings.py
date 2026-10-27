@@ -53,3 +53,10 @@ def test_terminal_from_dotenv_file(load_settings, monkeypatch):
     settings = load_settings({"QTILE_TERMINAL": "/usr/bin/alacritty"})
 
     assert settings.myTerm == "/usr/bin/alacritty"
+
+
+def test_terminal_defaults_for_bare_dotenv_key(load_settings, monkeypatch):
+    # A `QTILE_TERMINAL` line without `=` parses to None and must not export "None".
+    monkeypatch.delenv("QTILE_TERMINAL", raising=False)
+
+    assert load_settings({"QTILE_TERMINAL": None}).myTerm == DEFAULT_TERMINAL
