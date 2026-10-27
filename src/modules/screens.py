@@ -72,10 +72,10 @@ def generate_screens_module(outputs: list[Output]) -> list[Screen]:
 
     monitor_count = _screen_count_from_outputs(outputs)
     if monitor_count == 0:
-        # A count of 0 still yields one screen via _build_screens_for_count.
         monitor_count, source = effective_monitor_count()
         logger.info(
-            "Fallback active monitor count: %d (source=%s)",
+            "Fallback active monitor count: %d (source=%s); building at least one "
+            "screen",
             monitor_count,
             source,
         )
