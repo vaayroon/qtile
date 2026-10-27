@@ -189,7 +189,7 @@ The script is started in the background; a missing or non-executable script only
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `QTILE_TERMINAL` | `/usr/bin/qterminal` | Terminal emulator used by keybindings and bar widgets (empty = default). |
+| `QTILE_TERMINAL` | `/usr/bin/qterminal` | Terminal emulator spawned by the bar widgets' click actions and the `Ctrl + Shift + e` bind (empty = default). `mod + Return` always opens `kitty`. |
 
 ### Appearance
 
