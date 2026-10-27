@@ -28,7 +28,6 @@ layouts: list[Any] = [
         section_top=10,
         panel_width=320,
     ),
-    # layout.Floating(**layout_theme)
     layout.Floating(
         border_width=layout_theme["border_width"],
         margin=layout_theme["margin"],

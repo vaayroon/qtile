@@ -89,8 +89,9 @@ Exec=/home/YOUR_USER/.config/qtile/.venv/bin/qtile start -c /home/YOUR_USER/.con
 ```
 
 > ⚠️ Replace `YOUR_USER` with your username. `Exec` and `Path` must be absolute —
-> the display manager does not expand `~`. `Path` sets the working directory so
-> `.env` is loaded; without it your configuration is silently ignored.
+> the display manager does not expand `~`. `Path` sets the session's working
+> directory (the display manager would otherwise use `$HOME`); `.env` is resolved
+> from the config's own location, so it is loaded either way.
 
 ### Try it without logging out
 
@@ -184,9 +185,15 @@ Runtime behavior is controlled through `.env` (loaded by `python-dotenv` at star
 
 The script is started in the background; a missing or non-executable script only logs a warning. Its output is written to `$XDG_DATA_HOME/qtile/autostart.log` (default `~/.local/share/qtile/autostart.log`) and truncated each session.
 
+### Terminal
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `QTILE_TERMINAL` | `/usr/bin/qterminal` | Terminal emulator spawned by the bar widgets' click actions and the `Ctrl + Shift + e` bind (empty = default). `mod + Return` always opens `kitty`. |
+
 ### Appearance
 
-Colors, borders, fonts, and the terminal are defined in [`src/settings.py`](src/settings.py):
+Colors, borders, and fonts are defined in [`src/settings.py`](src/settings.py):
 
 - **Mod key**: `Super` (Windows key).
 - **Borders**: 2px, focused `#117af0`, normal `#1D2330`, 6px gaps.
@@ -623,7 +630,7 @@ src/
 ├── modules/         # groups · hooks · keys · layouts · mouse · screens · widgets
 ├── widgets/         # Custom widgets (PhoneMirrorWidget)
 ├── assets/          # scratchpad/ — kitty.conf and the rofi/script toggle script
-└── utils/           # colors · network · scratchpads · scratchpad_size · startup · system helpers
+└── utils/           # network · scratchpads · scratchpad_size · startup · system helpers
 scratchpads.toml     # Scratchpad registry (personal overrides go in scratchpads.local.toml, gitignored)
 .github/             # CI workflow (workflows/ci.yml) and Dependabot config
 tools/               # check_junit.py: the CI gate on test count and skips

@@ -2,10 +2,6 @@
 
 ##### Autostart applications #####
 
-#picom &
-#nitrogen --restore &
-#urxvtd -q -o -f &
-
 ##### Set up the environment for gnome-keyring-daemon #####
 
 /usr/bin/dbus-update-activation-environment --all &

@@ -168,9 +168,9 @@ if [[ "$SKIP_XSESSION" == true ]]; then
 else
     log "Registering X session entry at ${XSESSION_FILE}"
 
-    # Path= sets the working directory so settings.py's dotenv_values() finds
-    # .env, which it loads relative to the CWD (the display manager would
-    # otherwise launch from $HOME and silently skip your configuration).
+    # Path= sets a sane working directory for the session (the display manager
+    # would otherwise launch from $HOME). settings.py resolves .env from its own
+    # location, so the working directory does not affect configuration loading.
     desktop_entry="$(cat <<EOF
 [Desktop Entry]
 Name=Qtile (venv)
@@ -220,5 +220,4 @@ echo "  1. Review your settings:  \$EDITOR ${REPO_DIR}/.env"
 echo "  2. Log out and pick 'Qtile (venv)' from your display manager."
 echo
 echo "Or test it now without logging out (requires xserver-xephyr):"
-echo "  Xephyr -br -ac -noreset -screen 1280x720 :1 &"
-echo "  DISPLAY=:1 ${QTILE_BIN} start -c ${CONFIG_PY}"
+echo "  ${REPO_DIR}/test-xephyr.sh"

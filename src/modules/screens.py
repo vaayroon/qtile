@@ -1,5 +1,3 @@
-import re
-import subprocess
 from collections.abc import Callable
 from typing import Any
 
@@ -13,9 +11,6 @@ from .widgets import init_widgets_screen1, init_widgets_screen2, init_widgets_sc
 
 BAR_SIZE = 20
 BAR_OPACITY = 1.0
-_ACTIVE_OUTPUT_RE = re.compile(
-    r"^(?P<port>\S+)\s+connected(?:\s+primary)?\s+(?P<mode>\d+x\d+\+\d+\+\d+)\b"
-)
 
 
 def _build_screen(widget_factory: Callable[[], list[Any]]) -> Screen:
@@ -25,45 +20,6 @@ def _build_screen(widget_factory: Callable[[], list[Any]]) -> Screen:
             opacity=BAR_OPACITY,
             size=BAR_SIZE,
         )
-    )
-
-
-def _detect_active_monitor_count() -> tuple[int, str]:
-    # Preferred source: xrandr reports only currently active monitors.
-    try:
-        list_output = subprocess.check_output(
-            ["xrandr", "--listactivemonitors"],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        )
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        list_output = ""
-
-    for raw_line in list_output.splitlines():
-        if raw_line.startswith("Monitors:"):
-            _, _, value = raw_line.partition(":")
-            try:
-                return max(0, int(value.strip())), "xrandr --listactivemonitors"
-            except ValueError:
-                break
-
-    # Secondary source: active outputs have current geometry in xrandr --query.
-    try:
-        query_output = subprocess.check_output(
-            ["xrandr", "--query"],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        )
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return 0, "no-xrandr-fallback"
-
-    return (
-        sum(
-            1
-            for raw_line in query_output.splitlines()
-            if _ACTIVE_OUTPUT_RE.match(raw_line)
-        ),
-        "xrandr --query",
     )
 
 
@@ -117,12 +73,9 @@ def generate_screens_module(outputs: list[Output]) -> list[Screen]:
     monitor_count = _screen_count_from_outputs(outputs)
     if monitor_count == 0:
         monitor_count, source = effective_monitor_count()
-        if monitor_count == 0:
-            # Final fallback for sessions where xrandr --props cannot be read.
-            monitor_count, source = _detect_active_monitor_count()
-
         logger.info(
-            "Fallback active monitor count: %d (source=%s)",
+            "Fallback active monitor count: %d (source=%s); building at least one "
+            "screen",
             monitor_count,
             source,
         )

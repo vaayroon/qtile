@@ -17,7 +17,6 @@ layouts = init_layouts()
 mouse = init_mouse()
 
 screens = init_screens()
-# generate_screens_module: Callable[[list[Output]], list[Screen]] = build_screens
 
 # Default widget settings
 widget_defaults = widget_defaults
