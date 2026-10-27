@@ -185,9 +185,15 @@ Runtime behavior is controlled through `.env` (loaded by `python-dotenv` at star
 
 The script is started in the background; a missing or non-executable script only logs a warning. Its output is written to `$XDG_DATA_HOME/qtile/autostart.log` (default `~/.local/share/qtile/autostart.log`) and truncated each session.
 
+### Terminal
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `QTILE_TERMINAL` | `/usr/bin/qterminal` | Terminal emulator used by keybindings and bar widgets (empty = default). |
+
 ### Appearance
 
-Colors, borders, fonts, and the terminal are defined in [`src/settings.py`](src/settings.py):
+Colors, borders, and fonts are defined in [`src/settings.py`](src/settings.py):
 
 - **Mod key**: `Super` (Windows key).
 - **Borders**: 2px, focused `#117af0`, normal `#1D2330`, 6px gaps.

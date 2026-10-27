@@ -6,7 +6,6 @@ from dotenv import dotenv_values
 
 # Mod key settings
 mod = "mod4"  # Sets mod key to SUPER/WINDOWS
-myTerm = "/usr/bin/qterminal"
 
 # Scratchpad (floating dropdown) apps are declared in `scratchpads.toml` /
 # `scratchpads.local.toml` and loaded via `utils.scratchpads.load_scratchpads()`
@@ -19,6 +18,10 @@ ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 config = dotenv_values(ENV_FILE)
 for key, value in config.items():
     os.environ[f"{key}"] = f"{value}"
+
+# Terminal emulator. Defined after the .env load so QTILE_TERMINAL can override
+# it; an empty value falls back to the default.
+myTerm = os.environ.get("QTILE_TERMINAL") or "/usr/bin/qterminal"
 
 # Layout theme settings
 layout_theme: dict[str, Any] = {
