@@ -94,13 +94,21 @@ Exec=/home/YOUR_USER/.config/qtile/.venv/bin/qtile start -c /home/YOUR_USER/.con
 
 ### Try it without logging out
 
-Test the config in a nested X server with [Xephyr](https://wiki.archlinux.org/title/Xephyr):
+Run `./test-xephyr.sh` to test the config in a nested X server ([Xephyr](https://wiki.archlinux.org/title/Xephyr)). It validates the config with `qtile check` first, so a typo never costs you a black screen, then starts Xephyr and Qtile inside it.
 
 ```bash
-sudo apt install xserver-xephyr
-Xephyr -br -ac -noreset -screen 1280x720 :1 &
-DISPLAY=:1 .venv/bin/qtile start -c src/config.py
+sudo apt install xserver-xephyr        # one-time prerequisite
+./test-xephyr.sh                       # display :2, 1920x720
+./test-xephyr.sh :3 2560x1080          # custom display and resolution
+CHECK_ONLY=1 ./test-xephyr.sh          # validate only, do not launch
 ```
+
+| Argument | Default | Purpose |
+|---|---|---|
+| `$1` | `:2` | X display number for Xephyr. |
+| `$2` | `1920x720` | Xephyr screen resolution. |
+
+The script needs `.venv/bin/qtile` (run `./install.sh` first) and stops Xephyr when it exits.
 
 ### Upgrading from a pip-based install
 
@@ -232,6 +240,17 @@ Colors, borders, fonts, and the terminal are defined in [`src/settings.py`](src/
 | `Menu` | App launcher (`rofi`) |
 | `mod + Alt + <key>` | Quick-launch apps (browser, files, editor, Spotify, screenshots…) |
 
+### Scratchpad keys
+
+| Keys | Action |
+|---|---|
+| `mod + º` | Toggle the dropdown terminal (`term`; the key below `Esc` on a Spanish layout) |
+| `mod + s`, then `n` / `b` / `c` | Toggle Files / Private browser / Calculator |
+| `XF86Calculator` | Toggle the calculator |
+| `mod + Ctrl + l` / `mod + Ctrl + h` | Grow / shrink the focused scratchpad (cycles [size presets](#size-presets)) |
+
+> The `mod + s` sub-keys come from `scratchpads.toml`. See [Scratchpads](#scratchpads) to add your own.
+
 ### Media, audio & brightness
 
 | Keys | Action |
@@ -242,6 +261,110 @@ Colors, borders, fonts, and the terminal are defined in [`src/settings.py`](src/
 | `Ctrl + Alt + l` | Lock screen (`i3lock`) |
 
 > The full, authoritative list lives in [`src/modules/keys.py`](src/modules/keys.py).
+
+---
+
+## Scratchpads
+
+Scratchpads are floating dropdown apps (a quake-style terminal, a calculator…) toggled with a key. They are declared in [`scratchpads.toml`](scratchpads.toml), one `[[scratchpad]]` table per app. Edit that file or, better, keep your changes in [`scratchpads.local.toml`](#personal-overrides), then reload with `mod + Shift + r`.
+
+| Name | App | Toggle |
+|---|---|---|
+| `term` | `kitty` with [`src/assets/scratchpad/kitty.conf`](src/assets/scratchpad/kitty.conf) | `mod + º` |
+| `files` | `nautilus` | `mod + s`, `n` |
+| `private` | Brave in incognito, with its own profile directory | `mod + s`, `b` |
+| `calc` | `gnome-calculator` | `mod + s`, `c` (or `XF86Calculator`) |
+
+### Add a scratchpad
+
+Append a table with at least `name` and `command`. Add `key` to get a `mod + s` sub-key:
+
+```toml
+[[scratchpad]]
+name = "notes"
+command = "gnome-text-editor --new-window"
+match_wm_class = "org.gnome.TextEditor"
+key = "t"
+```
+
+`match_wm_class` is optional. It is the window class Qtile uses to identify the app's window; find it with `xprop WM_CLASS` (click the app's window).
+
+| Field | Default | Notes |
+|---|---|---|
+| `name` | required | Unique identifier, used by `dropdown_toggle` (see [Toggle from rofi or a script](#toggle-from-rofi-or-a-script)). |
+| `command` | required | Command line to start the app. `{repo}` expands to this config's `src/` directory. |
+| `key` | _(empty)_ | Sub-key after `mod + s`. Without it the app has no chord entry. Blank, whitespace or `Escape` skips the whole entry. |
+| `x`, `y` | `0.25`, `0.15` | Top-left corner, as a fraction of the screen (`0` to `1`). |
+| `width`, `height` | `0.5`, `0.6` | Size, as a fraction of the screen (`0 < v <= 1`). |
+| `opacity` | `1.0` | Window opacity (`0` to `1`). |
+| `on_focus_lost_hide` | `true` | Hide the dropdown when it loses focus. |
+| `warp_pointer` | `true` | Move the pointer to the dropdown when it appears. |
+| `match_wm_class` | _(empty)_ | Window class Qtile uses to identify the app's window. |
+| `match_title_regex` | _(empty)_ | Regex on the window title, to tell apart windows of one class. Must compile, and needs `match_wm_class` or `profile_dir`. |
+| `profile_dir` | _(empty)_ | Separate profile for a Chromium-family browser (`~` is expanded). Qtile appends `--user-data-dir=<dir>` to `command`, so `command` must not contain it, and `match_wm_class` is required. The class to match becomes `"<match_wm_class> (<dir>)"`. |
+| `medium_width`, `medium_height`, `small_width`, `small_height` | _(derived)_ | Override the [size presets](#size-presets) (`0 < v <= 1`). An invalid value is ignored with a warning and the entry still loads. |
+| `label`, `icon`, `desktop_entry` | n/a | Reserved: accepted and validated, but currently unused. |
+
+A wrong type or an out-of-range value skips that entry with a warning in `qtile.log`; an unknown field is ignored with a warning. See [Troubleshooting](#troubleshooting).
+
+### Personal overrides
+
+Put machine-specific changes in `scratchpads.local.toml`, next to `scratchpads.toml`. It is gitignored, optional, and read from the repository location, not from the current directory.
+
+```toml
+# scratchpads.local.toml
+
+# Same name as a shipped entry: replaces it completely.
+[[scratchpad]]
+name = "calc"
+command = "gnome-calculator"
+match_wm_class = "gnome-calculator"
+key = "k"
+width = 0.3
+
+# New name: appended after the shipped entries.
+[[scratchpad]]
+name = "notes"
+command = "gnome-text-editor --new-window"
+match_wm_class = "org.gnome.TextEditor"
+key = "t"
+
+# enabled = false: removes the shipped entry.
+[[scratchpad]]
+name = "private"
+enabled = false
+```
+
+- A local entry with the same `name` **replaces** the base entry in full and keeps its position. Nothing is inherited, so repeat every field you still need (including `medium_*` and `small_*`).
+- A local entry with a new `name` is appended.
+- `enabled = false` (a real boolean) in the local file removes the base entry of that name. In `scratchpads.toml` it has no effect.
+- Within one file, a repeated `name` keeps the first and logs a warning.
+- A missing local file is silent. A malformed one logs a warning and contributes no entries; the base file still loads.
+- If no valid entry remains, a built-in `kitty` `term` is used. The loader never raises.
+- Changes apply on config reload (`mod + Shift + r`).
+
+### Size presets
+
+`mod + Ctrl + l` grows and `mod + Ctrl + h` shrinks the **focused** scratchpad through a fixed cycle that wraps around:
+
+| Preset | Size |
+|---|---|
+| `full` | Whole screen |
+| `medium` | Halfway between the default and full (derived), or `medium_*` |
+| `default` | The entry's own `x`, `y`, `width`, `height` |
+| `small` | About 60% of the default, at least 5% (derived), or `small_*` |
+
+Grow moves toward `full`, shrink toward `small`. Presets stay centered on the default's center and are clamped to the screen. Presets that coincide with an earlier one are dropped. The size is kept per dropdown across hide and show, resets on config reload, and is never written to disk. The keys do nothing when the focused window is not a dropdown.
+
+### Toggle from rofi or a script
+
+Any entry can be toggled from outside Qtile through its IPC interface:
+
+```bash
+.venv/bin/qtile cmd-obj -o group scratchpad -f dropdown_toggle -a <name>
+```
+
+`./install.sh` also registers a "Scratchpad Terminal" entry in `~/.local/share/applications/qtile-scratchpad.desktop`, so `rofi -show drun` can toggle `term`. It runs [`src/assets/scratchpad/scratchpad-toggle.sh`](src/assets/scratchpad/scratchpad-toggle.sh), which uses the repository's `.venv/bin/qtile` and falls back to `qtile` on your `PATH`.
 
 ---
 
@@ -295,6 +418,30 @@ The sections above cover Qtile itself. To reproduce the rest of the desktop (aud
 | Distro | Guide | Status |
 |--------|-------|--------|
 | Kali Linux | [docs/setup/kali.md](docs/setup/kali.md) | Legacy (2022), may be outdated |
+
+---
+
+## Troubleshooting
+
+Start with the logs, then validate the config.
+
+| Log | Path | Notes |
+|---|---|---|
+| Qtile | `~/.local/share/qtile/qtile.log` | `$XDG_DATA_HOME/qtile/qtile.log`. Scratchpad messages are prefixed `scratchpad registry:` (loading) and `scratchpad size:` (size keys). |
+| Autostart | `~/.local/share/qtile/autostart.log` | Output of the autostart script; truncated each session. |
+
+Validate the config without an X server: `.venv/bin/qtile check -c src/config.py` (what to expect is explained in [Upgrading from a pip-based install](#upgrading-from-a-pip-based-install), step 5).
+
+| Symptom | Look for in `qtile.log` | Fix |
+|---|---|---|
+| `mod + s` chord does nothing | `scratchpad registry: chord leader mod4+s is already bound` | Another binding uses `mod + s`: free it in [`src/modules/keys.py`](src/modules/keys.py). The chord is also absent when no entry has a `key`. |
+| A scratchpad is missing or not loading | `scratchpad registry: entry ... missing required field`, `... expected a ..., got`, `... out of range`, `... skipping` | The entry was skipped. Fix the field the message names (see the [field table](#add-a-scratchpad)). Unknown fields only warn. |
+| An entry from the local file does not apply | `scratchpad registry: duplicate entry name=... in ..., keeping first occurrence`, or `... has invalid TOML` | Remove the repeated `name`, or fix the TOML syntax. A file with invalid TOML contributes no entries. |
+| The app has no `mod + s` sub-key | `scratchpad registry: dropping chord key ... (reserved or already used by another entry)` | Pick a different `key`. The scratchpad still exists and can be [toggled from a script](#toggle-from-rofi-or-a-script). |
+| Only a plain terminal scratchpad exists | `scratchpad registry: no valid entries found, falling back to the built-in terminal` | Every entry failed validation. Read the warnings above that line. |
+| `mod + Ctrl + l` / `mod + Ctrl + h` do nothing | Nothing at the default log level | The focused window must be a scratchpad. Focus one first. Start Qtile with `-l DEBUG` to see `scratchpad size: focused window is not a dropdown`. |
+| Autostart apps did not start | `startup: autostart: script not found` or `script not executable` | Run `chmod +x autostart.sh`, or check `QTILE_AUTOSTART_PATH`. If the script ran, read `autostart.log`. |
+| `Can't grab <Key (['mod4'], masculine)> (unknown keysym: ba)` at startup | The line itself | Harmless. The Spanish layout is applied after Qtile starts; when the keymap changes, Qtile re-grabs every key, so `mod + º` works. |
 
 ---
 
@@ -475,7 +622,9 @@ src/
 ├── settings.py      # Mod key, terminal, colors, fonts, layout theme
 ├── modules/         # groups · hooks · keys · layouts · mouse · screens · widgets
 ├── widgets/         # Custom widgets (PhoneMirrorWidget)
-└── utils/           # colors · network · startup · system helpers
+├── assets/          # scratchpad/ — kitty.conf and the rofi/script toggle script
+└── utils/           # colors · network · scratchpads · scratchpad_size · startup · system helpers
+scratchpads.toml     # Scratchpad registry (personal overrides go in scratchpads.local.toml, gitignored)
 .github/             # CI workflow (workflows/ci.yml) and Dependabot config
 tools/               # check_junit.py: the CI gate on test count and skips
 .pre-commit-config.yaml  # Local hooks (ruff, uv lock --check, mypy)
@@ -484,6 +633,7 @@ uv.lock              # Generated uv lock file (exact versions of every package)
 .python-version      # Python minor version uv uses (3.12)
 .env.example         # Template for runtime configuration
 install.sh           # Bootstrap script (uv sync, .env, X session)
+test-xephyr.sh       # Validate the config and run it in a nested Xephyr window
 docs/setup/          # Per-distro full desktop setup guides
 .screenshots/        # README assets
 ```
