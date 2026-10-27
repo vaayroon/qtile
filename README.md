@@ -361,12 +361,16 @@ distro Python 3.12 (no download) and uv 0.13.5, and it runs the commands above
 in this order: `uv lock --check`, `uv sync --locked`, `ruff check .`,
 `ruff format --check .`, `mypy src tools` and `pytest -rs`. Then
 `tools/check_junit.py` reads pytest's JUnit report and fails when any test is
-skipped or fewer tests passed than `MIN_TESTS`, so a deleted or silently skipped
-test cannot go unnoticed even though pytest exits 0.
+skipped, xfailed or xpassed, or when the number of passed tests is not exactly
+`EXPECTED_TESTS`, so a deleted or silently skipped test cannot go unnoticed even
+though pytest exits 0.
 
-- **`MIN_TESTS`** (in `ci.yml`) is the floor of passed tests. The commit that
-  adds tests raises it to the new passed count (the gate prints the number to
-  use); lowering it needs a commit message explaining which tests were removed.
+- **`EXPECTED_TESTS`** (in `ci.yml`) is the exact number of tests that must
+  pass, not a floor. The commit that adds or removes tests sets it to the new
+  count in the same commit (the gate prints the number to use); a difference in
+  either direction fails CI, and removing tests needs a commit message saying
+  which ones. `xfail_strict` is on in `pyproject.toml`, so an unexpected pass
+  fails instead of passing unnoticed.
 - **Actions are pinned** to commit SHAs with a `# vX.Y.Z` comment. Dependabot
   updates both together.
 - **uv in CI** is pinned in the `setup-uv` step (`version: "0.13.5"`). Dependabot

@@ -21,7 +21,7 @@ jobs:
     env:
       UV_PYTHON: /usr/bin/python3.12  # distro interpreter, as install.sh
       UV_PYTHON_DOWNLOADS: never
-      MIN_TESTS: "316"  # passed-test floor; bump it in the commit that adds tests
+      EXPECTED_TESTS: "328"  # exact passed count; update it in the commit that adds or removes tests
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,5 +65,5 @@ jobs:
       - name: Test
         run: uv run --locked pytest -rs --junitxml="$RUNNER_TEMP/pytest.xml"
 
-      - name: Test floor and zero skips
-        run: uv run --locked python tools/check_junit.py "$RUNNER_TEMP/pytest.xml" --min-tests "$MIN_TESTS"
+      - name: Exact test count and nothing skipped
+        run: uv run --locked python tools/check_junit.py "$RUNNER_TEMP/pytest.xml" --expected-tests "$EXPECTED_TESTS"

@@ -151,11 +151,11 @@ def test_the_token_is_read_only() -> None:
 
 def test_the_test_count_is_defined_once_and_passed_to_the_gate() -> None:
     text = _text(CI_WORKFLOW)
-    floors = re.findall(r'(?m)^\s*MIN_TESTS:\s*"(\d+)"', text)
+    counts = re.findall(r'(?m)^\s*EXPECTED_TESTS:\s*"(\d+)"', text)
 
-    assert len(floors) == 1 and int(floors[0]) > 0
+    assert len(counts) == 1 and int(counts[0]) > 0
     assert any(
-        "tools/check_junit.py" in command and '"$MIN_TESTS"' in command
+        "tools/check_junit.py" in command and '"$EXPECTED_TESTS"' in command
         for command in _commands(text)
     )
 
@@ -167,11 +167,11 @@ def _pre_commit_floor() -> str:
     """Return ``X`` of the ``pre-commit>=X`` requirement of the dev group."""
     with PYPROJECT.open("rb") as fh:
         dev = tomllib.load(fh)["dependency-groups"]["dev"]
-    floors = [
+    counts = [
         m.group(1) for d in dev if (m := re.fullmatch(r"pre-commit>=([\d.]+)", d))
     ]
-    assert len(floors) == 1, "pin pre-commit as 'pre-commit>=X' in the dev group"
-    return floors[0]
+    assert len(counts) == 1, "pin pre-commit as 'pre-commit>=X' in the dev group"
+    return counts[0]
 
 
 def test_hooks_never_run_uv_unlocked() -> None:
@@ -249,3 +249,12 @@ def test_readme_states_the_uv_version_ci_installs() -> None:
 
     assert version
     assert version.group(1) in _text(README).split("### Continuous integration")[-1]
+
+
+def test_readme_names_the_variable_that_holds_the_expected_test_count() -> None:
+    # Contributors are told to update it in the commit that changes the suite.
+    variable = re.search(r'(?m)^\s*([A-Z_]+):\s*"\d+"', _text(CI_WORKFLOW))
+    section = _text(README).split("### Continuous integration", 1)[-1]
+
+    assert variable
+    assert f"`{variable.group(1)}`" in section
