@@ -392,18 +392,22 @@ The owner enables this by hand, once, **after this workflow is merged and the
 `checks` job has run on `main`** (GitHub only lets you require a check it has
 already seen). Nothing in the repository applies it.
 
-The target protection of `main` is: the `checks` check is required (from the
-GitHub Actions app, id 15368), the branch must be up to date before merging
-(`strict`), the rules also apply to admins (`enforce_admins`), and there is no
-required pull request review.
+The target protection of `main` keeps the pull request flow ready for outside
+contributors and adds CI on top of it:
+
+- the `checks` check is required (from the GitHub Actions app, id 15368) and the
+  branch must be up to date before merging (`strict`);
+- a pull request needs 1 approving review, from a code owner, and the last push
+  must be approved by someone other than its author;
+- `enforce_admins` stays off, so the owner, who cannot approve their own pull
+  requests, merges them with *Merge without waiting for requirements to be met
+  (bypass rules)*.
 
 > **This is a full replacement, not a patch.** `PUT .../protection` overwrites
-> everything `main` has today: 1 approving review, code-owner review, approval of
-> the last push and `enforce_admins` off. Running it **removes the review
-> requirements**. That is intended: the repository has a single owner, who cannot
-> approve their own pull requests (and the old rule was already being bypassed
-> through admin merges), so the review rule protected nothing. A required CI check
-> that also binds the owner does.
+> every rule of `main`. The payload below restates the review rules `main`
+> already has, so running it only adds the required check. Anything set to its
+> default (force pushes, deletions, linear history, signatures, conversation
+> resolution) is reset to off; check the current rule first if you changed any.
 
 ```bash
 gh api --method PUT repos/vaayroon/qtile/branches/main/protection --input - <<'EOF'
@@ -413,8 +417,13 @@ gh api --method PUT repos/vaayroon/qtile/branches/main/protection --input - <<'E
     "contexts": [],
     "checks": [{"context": "checks", "app_id": 15368}]
   },
-  "enforce_admins": true,
-  "required_pull_request_reviews": null,
+  "enforce_admins": false,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 1,
+    "require_code_owner_reviews": true,
+    "require_last_push_approval": true,
+    "dismiss_stale_reviews": false
+  },
   "restrictions": null
 }
 EOF
@@ -428,16 +437,19 @@ goes in `checks`. Confirm the app id before running it
 gh api repos/vaayroon/qtile/branches/main/protection
 ```
 
-From the UI, the equivalent is Settings > Branches > the `main` rule: tick
+From the UI, the equivalent is Settings > Branches > the `main` rule: keep
+*Require a pull request before merging* and its review options as they are, tick
 *Require status checks to pass before merging* and *Require branches to be up to
-date before merging*, add `checks`, untick *Require a pull request before
-merging* (this is what drops the reviews) and tick *Do not allow bypassing the
-above settings*.
+date before merging*, add `checks`, and leave *Do not allow bypassing the above
+settings* unticked.
 
-With `enforce_admins` the owner cannot bypass the check either; a hotfix then
-needs the protection lifted temporarily. Renaming the `checks` job in `ci.yml`
-leaves every pull request waiting for a check that never reports, which is why a
-test pins the name.
+The bypass is a deliberate trade-off: it lets the owner merge alone and push a
+hotfix straight to `main`, but it also skips the `checks` gate, so wait for CI to
+go green before using it. If more people get write access, tick *Do not allow
+bypassing* (`enforce_admins: true`) so the rules bind everyone.
+
+Renaming the `checks` job in `ci.yml` leaves every pull request waiting for a
+check that never reports, which is why a test pins the name.
 
 #### Recommended repository settings
 
