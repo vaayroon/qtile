@@ -89,8 +89,9 @@ Exec=/home/YOUR_USER/.config/qtile/.venv/bin/qtile start -c /home/YOUR_USER/.con
 ```
 
 > ⚠️ Replace `YOUR_USER` with your username. `Exec` and `Path` must be absolute —
-> the display manager does not expand `~`. `Path` sets the working directory so
-> `.env` is loaded; without it your configuration is silently ignored.
+> the display manager does not expand `~`. `Path` sets the session's working
+> directory (the display manager would otherwise use `$HOME`); `.env` is resolved
+> from the config's own location, so it is loaded either way.
 
 ### Try it without logging out
 
