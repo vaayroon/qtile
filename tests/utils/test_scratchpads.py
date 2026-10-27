@@ -742,25 +742,23 @@ def test_dedupe_chord_keys_leaves_unkeyed_entries_untouched() -> None:
 _HOSTILE_TEXT_PAYLOADS = [
     pytest.param("", id="empty-file"),
     pytest.param("this is not [ valid toml at all", id="malformed-syntax"),
-    pytest.param(
-        "[scratchpad]\nname = \"x\"\ncommand = \"y\"\n", id="table-not-array"
-    ),
+    pytest.param('[scratchpad]\nname = "x"\ncommand = "y"\n', id="table-not-array"),
     pytest.param('scratchpad = ["a", "b"]\n', id="entries-as-bare-strings"),
     pytest.param('name = "unterminated\n', id="unterminated-string"),
     pytest.param(
-        "[[scratchpad]]\nname = \"n\"\ncommand = \"c\"\nopacity = inf\n",
+        '[[scratchpad]]\nname = "n"\ncommand = "c"\nopacity = inf\n',
         id="infinite-opacity",
     ),
     pytest.param(
-        "[[scratchpad]]\nname = \"n\"\ncommand = \"c\"\nwidth = nan\n",
+        '[[scratchpad]]\nname = "n"\ncommand = "c"\nwidth = nan\n',
         id="nan-width",
     ),
     pytest.param(
-        "[[scratchpad]]\nname = \"☕✨\"\ncommand = \"kitty\"\n",
+        '[[scratchpad]]\nname = "☕✨"\ncommand = "kitty"\n',
         id="non-ascii-name",
     ),
     pytest.param(
-        "top_level_key = \"no-scratchpad-table-here\"\n", id="no-scratchpad-key"
+        'top_level_key = "no-scratchpad-table-here"\n', id="no-scratchpad-key"
     ),
     pytest.param("a" * 5000 + " = 1\n", id="absurdly-long-key"),
 ]
