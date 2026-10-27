@@ -9,7 +9,7 @@
 # hardcoding a machine-specific absolute path.
 #
 # Add your own personal overrides in `scratchpads.local.toml` (gitignored)
-# instead of editing this file — see the README for the override workflow.
+# instead of editing this file — see README.md > Scratchpads > Personal overrides.
 #
 # Optional size-preset overrides (fractions, 0 < v <= 1), per entry:
 #   medium_width = 0.8    medium_height = 0.8
