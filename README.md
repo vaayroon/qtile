@@ -623,7 +623,7 @@ src/
 ├── modules/         # groups · hooks · keys · layouts · mouse · screens · widgets
 ├── widgets/         # Custom widgets (PhoneMirrorWidget)
 ├── assets/          # scratchpad/ — kitty.conf and the rofi/script toggle script
-└── utils/           # colors · network · scratchpads · scratchpad_size · startup · system helpers
+└── utils/           # network · scratchpads · scratchpad_size · startup · system helpers
 scratchpads.toml     # Scratchpad registry (personal overrides go in scratchpads.local.toml, gitignored)
 .github/             # CI workflow (workflows/ci.yml) and Dependabot config
 tools/               # check_junit.py: the CI gate on test count and skips
