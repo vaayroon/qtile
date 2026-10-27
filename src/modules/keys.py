@@ -129,25 +129,6 @@ keys = [
         lazy.layout.toggle_split(),
         desc="Toggle between split and unsplit sides of stack",
     ),
-    # Dmenu scripts launched with ALT + CTRL + KEY
-    Key(
-        ["mod1", "control"],
-        "e",
-        lazy.spawn("./.dmenu/edit-configs.sh"),
-        desc="Dmenu script for editing config files",
-    ),
-    Key(
-        ["mod1", "control"],
-        "m",
-        lazy.spawn("./.dmenu/sys-monitoring.sh"),
-        desc="Dmenu system monitor script",
-    ),
-    Key(
-        ["mod1", "control"],
-        "f",
-        lazy.spawn("./.dmenu/trading-finance.sh"),
-        desc="Dmenu trading programs script",
-    ),
     Key(["mod1", "control"], "p", lazy.spawn("passmenu"), desc="Passmenu"),
     Key(["mod1", "control"], "t", lazy.spawn("nautilus trash:///"), desc="Open Trash"),
     # My applications launched with SUPER + ALT + KEY
