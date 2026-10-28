@@ -801,6 +801,25 @@ def leader_is_free(
     return (frozenset(modifiers), key) not in taken
 
 
+def has_entry(entries: list[ScratchpadApp], name: str, binding: str) -> bool:
+    """Whether the registry holds an entry called `name`, for a hard-coded
+    top-level `binding` (e.g. `mod4+masculine`) that toggles it by name.
+
+    libqtile's `dropdown_toggle` silently does nothing for an unknown name,
+    so a local override that disables or renames the entry would leave the
+    key dead with nothing in the log. Logs a warning naming the binding when
+    the entry is missing, so the caller can skip it diagnosably."""
+    if any(entry.name == name for entry in entries):
+        return True
+    logger.warning(
+        "scratchpad registry: %s toggles entry %r, which is not in the "
+        "registry; binding skipped",
+        binding,
+        name,
+    )
+    return False
+
+
 def dedupe_chord_keys(entries: list[ScratchpadApp]) -> list[ScratchpadApp]:
     """Drop the chord submapping (`key`) of any entry whose `key` collides
     with an earlier entry's, or whose `key` is the reserved top-level term

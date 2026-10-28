@@ -10,6 +10,7 @@ from src.utils.scratchpads import (
     ScratchpadApp,
     build_scratchpad_chord,
     dedupe_chord_keys,
+    has_entry,
     leader_is_free,
     load_scratchpads,
     load_scratchpads_from,
@@ -694,6 +695,37 @@ def test_leader_is_free_mod_mod1_combo_does_not_collide() -> None:
     taken = {(frozenset(["mod4", "mod1"]), "s")}
 
     assert leader_is_free(taken, ["mod4"], "s") is True
+
+
+# ---------------------------------------------------------------------------
+# has_entry — guard for the hard-coded top-level dropdown bindings
+# ---------------------------------------------------------------------------
+
+
+def test_has_entry_is_true_and_silent_when_the_name_is_registered(caplog) -> None:
+    entries = [ScratchpadApp(name="files", command="nautilus"), BUILTIN_TERM]
+
+    with caplog.at_level(logging.WARNING):
+        assert has_entry(entries, "term", "mod4+masculine") is True
+
+    assert caplog.messages == []
+
+
+def test_has_entry_warns_naming_the_binding_when_the_name_is_missing(caplog) -> None:
+    # A local override that disables or renames `calc`.
+    entries = [BUILTIN_TERM, ScratchpadApp(name="calculator", command="galculator")]
+
+    with caplog.at_level(logging.WARNING):
+        assert has_entry(entries, "calc", "XF86Calculator") is False
+
+    assert any(
+        "XF86Calculator" in message and "'calc'" in message
+        for message in caplog.messages
+    )
+
+
+def test_has_entry_is_false_for_an_empty_registry() -> None:
+    assert has_entry([], "term", "mod4+masculine") is False
 
 
 # ---------------------------------------------------------------------------

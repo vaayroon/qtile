@@ -442,6 +442,7 @@ Validate the config without an X server: `.venv/bin/qtile check -c src/config.py
 | Symptom | Look for in `qtile.log` | Fix |
 |---|---|---|
 | `mod + s` chord does nothing | `scratchpad registry: chord leader mod4+s is already bound` | Another binding uses `mod + s`: free it in [`src/modules/keys.py`](src/modules/keys.py). The chord is also absent when no entry has a `key`. |
+| `mod + º` or `XF86Calculator` does nothing | `scratchpad registry: mod4+masculine toggles entry 'term', which is not in the registry; binding skipped` (or `XF86Calculator ... 'calc'`) | These two keys toggle `term` and `calc` by name. If your local file disables or renames the entry, the key is not bound. Keep the name, or toggle the new one with the `mod + s` chord. |
 | A scratchpad is missing or not loading | `scratchpad registry: entry ... missing required field`, `... expected a ..., got`, `... out of range`, `... skipping` | The entry was skipped. Fix the field the message names (see the [field table](#add-a-scratchpad)). Unknown fields only warn. |
 | An entry from the local file does not apply | `scratchpad registry: duplicate entry name=... in ..., keeping first occurrence`, or `... has invalid TOML` | Remove the repeated `name`, or fix the TOML syntax. A file with invalid TOML contributes no entries. |
 | The app has no `mod + s` sub-key | `scratchpad registry: dropping chord key ... (reserved or already used by another entry)` | Pick a different `key`. The scratchpad still exists and can be [toggled from a script](#toggle-from-rofi-or-a-script). |

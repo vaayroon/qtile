@@ -21,7 +21,7 @@ jobs:
     env:
       UV_PYTHON: /usr/bin/python3.12  # distro interpreter, as install.sh
       UV_PYTHON_DOWNLOADS: never
-      EXPECTED_TESTS: "449"  # exact passed count; update it in the commit that adds or removes tests
+      EXPECTED_TESTS: "454"  # exact passed count; update it in the commit that adds or removes tests
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

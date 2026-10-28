@@ -4,7 +4,17 @@ from libqtile.log_utils import logger
 
 from settings import mod, myTerm
 from utils.scratchpad_size import cycle_focused_dropdown
-from utils.scratchpads import build_scratchpad_chord, load_scratchpads
+from utils.scratchpads import build_scratchpad_chord, has_entry, load_scratchpads
+
+
+def _dropdown_key(modifiers: list[str], key: str, name: str, desc: str) -> list[Key]:
+    """A top-level key that toggles the scratchpad entry `name`, or no key
+    (and a warning) when a local override disabled or renamed that entry."""
+    if not has_entry(load_scratchpads(), name, "+".join([*modifiers, key])):
+        return []
+    toggle = lazy.group["scratchpad"].dropdown_toggle(name)
+    return [Key(modifiers, key, toggle, desc=desc)]
+
 
 keys = [
     # The essentials
@@ -21,11 +31,11 @@ keys = [
         lazy.spawn("dmenu_run -p 'Run: '"),
         desc="Dmenu Run Launcher",
     ),
-    Key(
+    *_dropdown_key(
         [mod],
         "masculine",
-        lazy.group["scratchpad"].dropdown_toggle("term"),
-        desc="Toggle floating dropdown terminal (key below Esc, es layout)",
+        "term",
+        "Toggle floating dropdown terminal (key below Esc, es layout)",
     ),
     Key(
         [mod, "control"],
@@ -199,12 +209,7 @@ keys = [
         desc="Decrease Brightness",
     ),
     # Extras
-    Key(
-        [],
-        "XF86Calculator",
-        lazy.group["scratchpad"].dropdown_toggle("calc"),
-        desc="Toggle calculator scratchpad",
-    ),
+    *_dropdown_key([], "XF86Calculator", "calc", "Toggle calculator scratchpad"),
     # Screen Shots
     Key(["shift", mod], "s", lazy.spawn("flameshot gui"), desc="Flameshot GUI"),
 ]
