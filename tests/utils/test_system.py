@@ -628,6 +628,17 @@ def test_build_dynamic_layout_command_primary_follows_env(monkeypatch):
     assert _primary_of(command) == "DP-2"
 
 
+def test_build_dynamic_layout_command_primary_falls_back_to_first_in_order():
+    # No env override and neither HDMI-0 nor DP-2 present: the first monitor in
+    # layout order must win, whatever the process hash seed does to set order.
+    monitors = [_mon("DP-3"), _mon("DP-1"), _mon("DP-0")]
+
+    command = _build_dynamic_layout_command(monitors)
+
+    assert command.count("--primary") == 1
+    assert _primary_of(command) == "DP-3"
+
+
 def test_build_dynamic_layout_command_fourth_monitor_is_turned_off():
     monitors = [_mon("DP-0"), _mon("HDMI-0"), _mon("DP-2"), _mon("DP-1")]
 

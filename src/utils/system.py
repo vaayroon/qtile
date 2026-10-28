@@ -259,7 +259,10 @@ def _build_dynamic_layout_command(
 
     selected = monitors[:3]
     selected_names = {monitor.name for monitor in selected}
-    primary = _primary_output_name(list(selected_names))
+    # Pass the names in layout order, not as a set: when no heuristic matches,
+    # _primary_output_name picks the first entry, and set order changes with the
+    # per-process hash seed, which made the primary differ between restarts.
+    primary = _primary_output_name([monitor.name for monitor in selected])
 
     command = ["xrandr"]
     x_position = 0
