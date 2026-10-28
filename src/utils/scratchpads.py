@@ -824,8 +824,10 @@ def dedupe_chord_keys(entries: list[ScratchpadApp]) -> list[ScratchpadApp]:
     """Drop the chord submapping (`key`) of any entry whose `key` collides
     with an earlier entry's, or whose `key` is the reserved top-level term
     binding (`masculine`). The first-processed entry with a given key wins;
-    losers keep their `DropDown` and `.desktop` entry (still reachable via
-    rofi/IPC) but lose their chord submapping."""
+    losers lose only their chord submapping: they keep their `DropDown`, so
+    IPC (`qtile cmd-obj ... dropdown_toggle -a <name>`) still toggles them,
+    and so does their rofi launcher when `desktop_entry` is true and
+    `tools/generate_scratchpad_desktops.py` has written it."""
     seen_keys: set[str] = set()
     result: list[ScratchpadApp] = []
     for entry in entries:
@@ -867,7 +869,9 @@ def build_scratchpad_chord[K, C](
     if not leader_is_free(taken, modifiers, leader):
         logger.error(
             "scratchpad registry: chord leader %s+%s is already bound; "
-            "scratchpad chord not created (entries remain reachable via rofi)",
+            "scratchpad chord not created (toggle entries from their rofi "
+            "launcher or with `qtile cmd-obj -o group scratchpad "
+            "-f dropdown_toggle -a <name>`)",
             "+".join(modifiers),
             leader,
         )

@@ -1051,6 +1051,20 @@ def test_chord_not_built_when_leader_is_taken(
     assert any("leader" in m for m in caplog.messages)
 
 
+def test_taken_leader_error_names_the_ipc_fallback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Not every entry has a rofi launcher (desktop_entry = false, or the
+    # launchers were not regenerated), so the error must name IPC too.
+    taken = {(frozenset(["mod4"]), "s")}
+
+    with caplog.at_level(logging.ERROR):
+        _build([_app("files", "n")], taken)
+
+    (message,) = [m for m in caplog.messages if "leader" in m]
+    assert "qtile cmd-obj -o group scratchpad -f dropdown_toggle -a <name>" in message
+
+
 def test_chord_built_when_only_near_miss_leaders_are_taken() -> None:
     taken = {(frozenset(["shift", "mod4"]), "s"), (frozenset(["mod4", "mod1"]), "s")}
 
