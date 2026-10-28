@@ -30,8 +30,10 @@ LEGACY_FILENAME = "qtile-scratchpad.desktop"
 _LEGACY_SIGNATURE = "scratchpad-toggle.sh"
 
 # A name becomes part of a filename and of the Exec line, so only names that
-# are safe in both are written. Anything else is skipped with a warning.
-_SAFE_NAME = re.compile(r"[A-Za-z0-9_.-]+")
+# are safe in both are written. Anything else is skipped with a warning. The
+# first character is alphanumeric so `qtile cmd-obj -a <name>` never reads
+# the name as an option.
+_SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,15 +102,19 @@ def _read(path: Path) -> str | None:
         return None
 
 
-def _is_ours(path: Path) -> bool:
-    text = _read(path)
-    return text is not None and MARKER in text.splitlines()
+def _has_marker(text: str | None) -> bool:
+    # split("\n"), not splitlines(): the spec only knows "\n", and splitlines
+    # would also split on form feeds or U+2028 in a foreign file.
+    return text is not None and MARKER in text.split("\n")
 
 
 def _write_atomically(path: Path, text: str) -> None:
     tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def sync_desktop_entries(
@@ -118,8 +124,9 @@ def sync_desktop_entries(
 
     - Writes `qtile-scratchpad-<name>.desktop` for each entry with
       `desktop_entry = true`, only when the content changed.
-    - Skips (with a warning) an entry whose name is not filename-safe, and an
-      existing file without the marker: it belongs to the user.
+    - Skips (with a warning) an entry whose name is not filename-safe, an
+      existing file without the marker (it belongs to the user), and a file
+      it cannot write or remove, so one failure never stops the rest.
     - Removes marked `qtile-scratchpad-*.desktop` files no entry wants any
       more (a removed, renamed or `desktop_entry = false` entry), and the
       legacy `qtile-scratchpad.desktop` when it runs `scratchpad-toggle.sh`.
@@ -135,7 +142,8 @@ def sync_desktop_entries(
         if filename is None:
             logger.warning(
                 "scratchpad desktop: entry name %r is not filename-safe "
-                "(letters, digits, '.', '_', '-'); no launcher written",
+                "(a letter or digit, then letters, digits, '.', '_', '-'); "
+                "no launcher written",
                 app.name,
             )
             report.skipped.append(app.name)
@@ -149,7 +157,7 @@ def sync_desktop_entries(
             if current == text:
                 report.unchanged.append(filename)
                 continue
-            if current is None or MARKER not in current.splitlines():
+            if not _has_marker(current):
                 logger.warning(
                     "scratchpad desktop: %s exists and was not written by "
                     "this config; leaving it alone",
@@ -157,18 +165,29 @@ def sync_desktop_entries(
                 )
                 report.skipped.append(filename)
                 continue
-        _write_atomically(path, text)
+        try:
+            _write_atomically(path, text)
+        except OSError as error:
+            logger.warning("scratchpad desktop: cannot write %s: %s", path, error)
+            report.skipped.append(filename)
+            continue
         report.written.append(filename)
 
-    for path in sorted(target_dir.glob(f"{FILENAME_PREFIX}*.desktop")):
-        if path.name not in wanted and path.is_file() and _is_ours(path):
-            path.unlink()
-            report.removed.append(path.name)
-
+    stale = [
+        path
+        for path in sorted(target_dir.glob(f"{FILENAME_PREFIX}*.desktop"))
+        if path.name not in wanted and path.is_file() and _has_marker(_read(path))
+    ]
     legacy = target_dir / LEGACY_FILENAME
     legacy_text = _read(legacy) if legacy.is_file() else None
     if legacy_text is not None and _LEGACY_SIGNATURE in legacy_text:
-        legacy.unlink()
-        report.removed.append(LEGACY_FILENAME)
+        stale.append(legacy)
+    for path in stale:
+        try:
+            path.unlink()
+        except OSError as error:
+            logger.warning("scratchpad desktop: cannot remove %s: %s", path, error)
+            continue
+        report.removed.append(path.name)
 
     return report

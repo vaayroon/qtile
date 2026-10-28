@@ -50,7 +50,8 @@ cd ~/.config/qtile
 
 `install.sh` syncs the virtual environment from `uv.lock`, sets up `.env` from
 the template, registers the X session entry (the X session step prompts for
-`sudo`), and writes a rofi launcher per [scratchpad](#toggle-from-rofi-or-a-script). Then **log out and pick "Qtile (venv)"** from your display manager.
+`sudo`), and writes a rofi launcher per
+[scratchpad](#toggle-from-rofi-or-a-script). Then **log out and pick "Qtile (venv)"** from your display manager.
 
 Useful flags:
 
@@ -381,7 +382,7 @@ Qtile never writes these files, so after changing either registry file, refresh 
 .venv/bin/python tools/generate_scratchpad_desktops.py
 ```
 
-It rewrites only launchers that changed, removes the ones it wrote for entries that are gone or set `desktop_entry = false` (and the old single `qtile-scratchpad.desktop`), and never touches a file it did not write. A `name` with characters other than letters, digits, `.`, `_` or `-` gets no launcher and a warning.
+It rewrites only launchers that changed, removes the ones it wrote for entries that are gone or set `desktop_entry = false` (and the old single `qtile-scratchpad.desktop`), and never touches a file it did not write. A `name` that does not start with a letter or digit, or has characters other than letters, digits, `.`, `_` or `-`, gets no launcher and a warning.
 
 ---
 

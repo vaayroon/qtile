@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 
 import pytest
@@ -32,7 +33,9 @@ def test_desktop_filename_for_safe_names(name: str) -> None:
     assert desktop_filename(name) == f"qtile-scratchpad-{name}.desktop"
 
 
-@pytest.mark.parametrize("name", ["../evil", "a/b", "two words", "café", "x;y", ""])
+@pytest.mark.parametrize(
+    "name", ["../evil", "a/b", "two words", "café", "x;y", "", "-h", ".hidden"]
+)
 def test_desktop_filename_rejects_unsafe_names(name: str) -> None:
     assert desktop_filename(name) is None
 
@@ -197,6 +200,39 @@ def test_sync_keeps_a_legacy_named_file_it_did_not_write(tmp_path: Path) -> None
     _sync([_app("term")], tmp_path)
 
     assert legacy.exists()
+
+
+def test_sync_carries_on_after_a_failed_write(
+    tmp_path: Path, monkeypatch, caplog
+) -> None:
+    real_replace = os.replace
+
+    def flaky_replace(src, dst):
+        if Path(dst).name == "qtile-scratchpad-term.desktop":
+            raise OSError("disk full")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", flaky_replace)
+
+    with caplog.at_level(logging.WARNING):
+        report = _sync([_app("term"), _app("files")], tmp_path)
+
+    assert report.skipped == ["qtile-scratchpad-term.desktop"]
+    assert report.written == ["qtile-scratchpad-files.desktop"]
+    # No temp file is left behind in the applications directory.
+    assert [p.name for p in tmp_path.iterdir()] == ["qtile-scratchpad-files.desktop"]
+    assert any("disk full" in m for m in caplog.messages)
+
+
+def test_sync_ignores_the_marker_after_a_non_newline_separator(
+    tmp_path: Path,
+) -> None:
+    foreign = tmp_path / "qtile-scratchpad-mine.desktop"
+    foreign.write_text(f"[Desktop Entry]\nName=Mine\x0c{MARKER}\n")
+
+    _sync([], tmp_path)
+
+    assert foreign.exists()
 
 
 def test_sync_creates_the_target_directory(tmp_path: Path) -> None:
