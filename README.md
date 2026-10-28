@@ -49,8 +49,8 @@ cd ~/.config/qtile
 ```
 
 `install.sh` syncs the virtual environment from `uv.lock`, sets up `.env` from
-the template, and registers the X session entry (the X session step prompts for
-`sudo`). Then **log out and pick "Qtile (venv)"** from your display manager.
+the template, registers the X session entry (the X session step prompts for
+`sudo`), and writes a rofi launcher per [scratchpad](#toggle-from-rofi-or-a-script). Then **log out and pick "Qtile (venv)"** from your display manager.
 
 Useful flags:
 
@@ -310,7 +310,9 @@ key = "t"
 | `match_title_regex` | _(empty)_ | Regex on the window title, to tell apart windows of one class. Must compile, and needs `match_wm_class` or `profile_dir`. |
 | `profile_dir` | _(empty)_ | Separate profile for a Chromium-family browser (`~` is expanded). Qtile appends `--user-data-dir=<dir>` to `command`, so `command` must not contain it, and `match_wm_class` is required. The class to match becomes `"<match_wm_class> (<dir>)"`. |
 | `medium_width`, `medium_height`, `small_width`, `small_height` | _(derived)_ | Override the [size presets](#size-presets) (`0 < v <= 1`). An invalid value is ignored with a warning and the entry still loads. |
-| `label`, `icon`, `desktop_entry` | n/a | Reserved: accepted and validated, but currently unused. |
+| `label` | `name` | Name of the entry's [rofi launcher](#toggle-from-rofi-or-a-script). |
+| `icon` | `utilities-terminal` | Icon name of the rofi launcher (as in a `.desktop` file's `Icon=`). |
+| `desktop_entry` | `true` | Write a rofi launcher for the entry. `false` writes none and removes one written before. |
 
 A wrong type or an out-of-range value skips that entry with a warning in `qtile.log`; an unknown field is ignored with a warning. See [Troubleshooting](#troubleshooting).
 
@@ -371,7 +373,15 @@ Any entry can be toggled from outside Qtile through its IPC interface:
 .venv/bin/qtile cmd-obj -o group scratchpad -f dropdown_toggle -a <name>
 ```
 
-`./install.sh` also registers a "Scratchpad Terminal" entry in `~/.local/share/applications/qtile-scratchpad.desktop`, so `rofi -show drun` can toggle `term`. It runs [`src/assets/scratchpad/scratchpad-toggle.sh`](src/assets/scratchpad/scratchpad-toggle.sh), which uses the repository's `.venv/bin/qtile` and falls back to `qtile` on your `PATH`.
+`./install.sh` also writes one rofi launcher per entry with `desktop_entry = true`, so `rofi -show drun` can toggle every scratchpad by its `label` (for example "Scratchpad Calculator"). Each one is `qtile-scratchpad-<name>.desktop` in `$XDG_DATA_HOME/applications` (default `~/.local/share/applications`) and runs [`src/assets/scratchpad/scratchpad-toggle.sh`](src/assets/scratchpad/scratchpad-toggle.sh) `<name>`, which uses the repository's `.venv/bin/qtile` and falls back to `qtile` on your `PATH`.
+
+Qtile never writes these files, so after changing either registry file, refresh them:
+
+```bash
+.venv/bin/python tools/generate_scratchpad_desktops.py
+```
+
+It rewrites only launchers that changed, removes the ones it wrote for entries that are gone or set `desktop_entry = false` (and the old single `qtile-scratchpad.desktop`), and never touches a file it did not write. A `name` with characters other than letters, digits, `.`, `_` or `-` gets no launcher and a warning.
 
 ---
 
@@ -631,16 +641,16 @@ src/
 ├── modules/         # groups · hooks · keys · layouts · mouse · screens · widgets
 ├── widgets/         # Custom widgets (PhoneMirrorWidget)
 ├── assets/          # scratchpad/ — kitty.conf and the rofi/script toggle script
-└── utils/           # network · scratchpads · scratchpad_size · startup · system helpers
+└── utils/           # desktop_entries · network · scratchpads · scratchpad_size · startup · system helpers
 scratchpads.toml     # Scratchpad registry (personal overrides go in scratchpads.local.toml, gitignored)
 .github/             # CI workflow (workflows/ci.yml) and Dependabot config
-tools/               # check_junit.py: the CI gate on test count and skips
+tools/               # check_junit.py (CI gate on test count and skips) · generate_scratchpad_desktops.py (rofi launchers)
 .pre-commit-config.yaml  # Local hooks (ruff, uv lock --check, mypy)
 pyproject.toml       # Project metadata + dependency declarations (source of truth)
 uv.lock              # Generated uv lock file (exact versions of every package)
 .python-version      # Python minor version uv uses (3.12)
 .env.example         # Template for runtime configuration
-install.sh           # Bootstrap script (uv sync, .env, X session)
+install.sh           # Bootstrap script (uv sync, .env, X session, rofi launchers)
 test-xephyr.sh       # Validate the config and run it in a nested Xephyr window
 docs/setup/          # Per-distro full desktop setup guides
 .screenshots/        # README assets

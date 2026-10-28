@@ -190,27 +190,18 @@ EOF
     fi
 fi
 
-# --- 4. Rofi launcher entry ---------------------------------------------------
-# Write a .desktop file so the scratchpad terminal can be toggled from
-# `rofi -show drun` (in addition to the Super+masculine (º) keybind).
+# --- 4. Rofi launcher entries -------------------------------------------------
+# One .desktop file per scratchpad entry with desktop_entry = true, so each can
+# be toggled from `rofi -show drun`. The generator also removes the launchers
+# it wrote for entries that are gone. A failure only warns: the window manager
+# works without them, and the command can be re-run on its own.
 SCRATCHPAD_TOGGLE="${REPO_DIR}/src/assets/scratchpad/scratchpad-toggle.sh"
-DESKTOP_DIR="${HOME}/.local/share/applications"
-SCRATCHPAD_DESKTOP="${DESKTOP_DIR}/qtile-scratchpad.desktop"
+DESKTOP_GENERATOR="${REPO_DIR}/tools/generate_scratchpad_desktops.py"
 
-log "Registering rofi launcher entry at ${SCRATCHPAD_DESKTOP}"
-mkdir -p "$DESKTOP_DIR"
+log "Registering rofi launcher entries for the scratchpads"
 chmod +x "$SCRATCHPAD_TOGGLE" 2>/dev/null || true
-cat > "$SCRATCHPAD_DESKTOP" <<EOF
-[Desktop Entry]
-Type=Application
-Name=Scratchpad Terminal
-Comment=Toggle the floating dropdown terminal
-Exec=${SCRATCHPAD_TOGGLE}
-Icon=utilities-terminal
-Terminal=false
-Categories=System;TerminalEmulator;
-Keywords=scratchpad;dropdown;quake;terminal;
-EOF
+"${VENV_DIR}/bin/python" "$DESKTOP_GENERATOR" \
+    || warn "Could not write the rofi launchers. Re-run: ${VENV_DIR}/bin/python ${DESKTOP_GENERATOR}"
 
 # --- Done ---------------------------------------------------------------------
 log "Done."

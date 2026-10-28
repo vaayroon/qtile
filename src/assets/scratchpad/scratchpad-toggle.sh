@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 #
-# Toggle the Qtile scratchpad dropdown terminal from outside Qtile (e.g. rofi).
+# Toggle a Qtile scratchpad dropdown from outside Qtile (e.g. rofi).
+#
+# Usage: scratchpad-toggle.sh [NAME]   (NAME defaults to "term")
 #
 # Qtile exposes an IPC command interface via `qtile cmd-obj`. This reaches the
-# running Qtile instance and toggles the "term" DropDown defined in the
-# "scratchpad" group — the exact same action as the Super+masculine (º) keybind.
+# running Qtile instance and toggles the NAME DropDown defined in the
+# "scratchpad" group, the same action as its keybind. The default keeps a
+# launcher written before NAME existed working.
 
 set -euo pipefail
 
@@ -22,4 +25,4 @@ if [[ ! -x "$QTILE" ]]; then
     }
 fi
 
-exec "$QTILE" cmd-obj -o group scratchpad -f dropdown_toggle -a term
+exec "$QTILE" cmd-obj -o group scratchpad -f dropdown_toggle -a "${1:-term}"
