@@ -412,14 +412,14 @@ def test_unknown_name_warns_and_noops(caplog: pytest.LogCaptureFixture) -> None:
     assert any(r.levelname == "WARNING" for r in caplog.records)
 
 
-def test_place_failure_keeps_new_fractions_and_logs(
+def test_place_failure_keeps_old_fractions_and_logs(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     win = FakeWindow(fail_place=True)
     dd = _toggler(win)
     with caplog.at_level("ERROR", logger="libqtile"):
         cycle_focused_dropdown(_qtile(win, dd), "grow", TERM_DEFAULTS)
-    assert (dd.x, dd.y, dd.width, dd.height) == pytest.approx((0.125, 0.05, 0.75, 0.8))
+    assert (dd.x, dd.y, dd.width, dd.height) == _as_tuple(TERM)
     assert any(r.exc_info for r in caplog.records)
 
 
@@ -433,14 +433,35 @@ def test_cycle_keeps_geometry_in_sync_with_fractions() -> None:
     assert dd.geometry == pytest.approx(_as_tuple(TERM))
 
 
-def test_place_failure_still_updates_geometry(
+def test_place_failure_keeps_old_geometry(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     win = FakeWindow(fail_place=True)
     dd = _toggler(win)
     with caplog.at_level("ERROR", logger="libqtile"):
         cycle_focused_dropdown(_qtile(win, dd), "grow", TERM_DEFAULTS)
-    assert dd.geometry == pytest.approx((0.125, 0.05, 0.75, 0.8))
+    assert dd.geometry == _as_tuple(TERM)
+
+
+@pytest.mark.parametrize(
+    ("direction", "label"), [("grow", "medium"), ("shrink", "small")]
+)
+def test_failed_place_then_cycle_lands_on_adjacent_preset(
+    caplog: pytest.LogCaptureFixture, direction, label
+) -> None:
+    # A failed place() must not count as a step: the next cycle starts from
+    # the size the window still has, so it reaches the adjacent preset.
+    win = FakeWindow(fail_place=True)
+    dd = _toggler(win)
+    q = _qtile(win, dd)
+    with caplog.at_level("ERROR", logger="libqtile"):
+        cycle_focused_dropdown(q, direction, TERM_DEFAULTS)
+    win._fail_place = False
+    cycle_focused_dropdown(q, direction, TERM_DEFAULTS)
+    preset = _by_label(derive_presets(TERM))[label]
+    assert (dd.x, dd.y, dd.width, dd.height) == pytest.approx(_as_tuple(preset))
+    ((args, _kwargs),) = win.placed
+    assert args[:4] == compute_placement(preset, q.current_screen, 2)
 
 
 def test_provider_failure_is_caught(caplog: pytest.LogCaptureFixture) -> None:
@@ -598,9 +619,9 @@ def test_contract_formula_parity_with_real_show(libqtile_scratchpad) -> None:
     assert win.placed[0] == real_calls[0]
 
 
-def test_failed_place_converges_on_next_real_show(libqtile_scratchpad) -> None:
-    # The glue's promise: even if place() fails, the next show() uses the new
-    # size. libqtile >= 0.37 builds that size from toggler.geometry only.
+def test_failed_place_next_real_show_keeps_old_size(libqtile_scratchpad) -> None:
+    # A failed place() stores nothing, so the next show() (libqtile >= 0.37
+    # builds the size from toggler.geometry only) keeps the size the window has.
     screen = SimpleNamespace(dx=0, dy=0, dwidth=1000, dheight=800)
     win = FakeWindow(fail_place=True)
     win.group = None
@@ -616,7 +637,7 @@ def test_failed_place_converges_on_next_real_show(libqtile_scratchpad) -> None:
     win._fail_place = False
     dd.show()
     ((args, _kwargs),) = win.placed
-    assert args[:4] == pytest.approx((125, 40, 746, 636), abs=1)  # medium preset
+    assert args[:4] == compute_placement(TERM, screen, 2)  # still the default
 
 
 class LiveWindow:
@@ -693,20 +714,41 @@ def test_size_survives_a_real_hide_and_show(
     assert win.placed[-1] == pytest.approx(expected, abs=1)  # int() truncation
 
 
-def test_hide_resyncs_geometry_from_the_window_so_a_failed_place_is_not_kept(
+def test_failed_place_keeps_old_size_across_a_real_hide_and_show(
     libqtile_scratchpad,
 ) -> None:
-    # The glue stores the new size before place(); but while the dropdown is
-    # visible, libqtile's hide() overwrites it with the live window, which a
-    # failed place() left at the old size. So there is no "converges on the next
-    # show()" guarantee once a hide() happens in between.
+    # A failed place() that raised before touching the window stores nothing,
+    # so the toggler agrees with the live window that hide() re-reads, and
+    # show() restores the old size.
     screen = SimpleNamespace(dx=0, dy=0, dwidth=1000, dheight=800)
     win, dd = _shown_dropdown(libqtile_scratchpad, screen)
     win.fail_place = True
     cycle_focused_dropdown(_qtile(win, dd, screen=screen), "grow", TERM_DEFAULTS)
-    assert dd.geometry == pytest.approx((0.125, 0.05, 0.75, 0.8))  # medium, stored
+    assert dd.geometry == _as_tuple(TERM)
 
     win.fail_place = False
     dd.hide()
     dd.show()
     assert win.placed == [compute_placement(TERM, screen, 2)]  # still the default
+
+
+@pytest.mark.parametrize(
+    ("direction", "label"), [("grow", "medium"), ("shrink", "small")]
+)
+def test_failed_place_then_real_hide_show_then_cycle_lands_on_adjacent_preset(
+    libqtile_scratchpad, direction, label
+) -> None:
+    # hide() rewrites only geometry, never x/y/width/height (what the glue reads
+    # back), so a failed place() must not have left the new preset there.
+    screen = SimpleNamespace(dx=0, dy=0, dwidth=1000, dheight=800)
+    win, dd = _shown_dropdown(libqtile_scratchpad, screen)
+    q = _qtile(win, dd, screen=screen)
+    win.fail_place = True
+    cycle_focused_dropdown(q, direction, TERM_DEFAULTS)
+
+    win.fail_place = False
+    dd.hide()
+    dd.show()
+    cycle_focused_dropdown(q, direction, TERM_DEFAULTS)
+    preset = _by_label(derive_presets(TERM))[label]
+    assert win.placed[-1] == compute_placement(preset, screen, 2)

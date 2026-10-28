@@ -187,10 +187,10 @@ def cycle_focused_dropdown(
     """Move the focused dropdown to its next size preset.
 
     `defaults` returns the registry entries (name, x, y, width, height) the
-    dropdowns were built from. The new fractions are stored on the toggler
-    BEFORE placing: ``x/y/width/height`` (what this module reads back) and, for
-    Qtile >= 0.37, ``geometry`` (the tuple its ``show()`` builds the size from).
-    Never raises and never touches the window's floating state.
+    dropdowns were built from. The new fractions are stored on the toggler only
+    AFTER place() succeeds: ``x/y/width/height`` (what this module reads back)
+    and, for Qtile >= 0.37, ``geometry`` (the tuple its ``show()`` builds the
+    size from). Never raises and never touches the window's floating state.
 
     What is guaranteed (checked against libqtile 0.37.1, whose ``hide()``
     refreshes ``geometry`` from the live window when the dropdown is on a
@@ -198,9 +198,12 @@ def cycle_focused_dropdown(
 
     - After a successful place() the size persists across hide/show until the
       config is reloaded: ``show()`` reuses what place() actually applied.
-    - After a FAILED place() the stored size only reaches the next ``show()`` if
-      no ``hide()`` runs in between. ``hide()`` overwrites it with the live
-      window, which a failed place() left at its old size.
+    - After a FAILED place() nothing is stored, so the next cycle steps from
+      the old preset and none is skipped. If place() raised before touching the
+      window (it still has the old size), hide/show keeps that size too. If it
+      raised after updating the window's own x/y/width/height (X11 sets them
+      before configuring), hide() re-reads the new size and the next cycle may
+      repeat the same preset once: a no-op key press, never a skip.
     """
     try:
         found = find_focused_dropdown(qtile)
@@ -222,11 +225,13 @@ def cycle_focused_dropdown(
         current = Geometry(dd.x, dd.y, dd.width, dd.height)
         target = presets[step(current_index(presets, current), len(presets), direction)]
         g = target.geometry
-        dd.x, dd.y, dd.width, dd.height = g.x, g.y, g.width, g.height
-        dd.geometry = (g.x, g.y, g.width, g.height)
         x, y, w, h = compute_placement(g, qtile.current_screen, dd.border_width)
         win = dd.window
         win.float_x, win.float_y = x, y
         win.place(x, y, w, h, dd.border_width, win.bordercolor, respect_hints=True)
+        # Only now: a failed place() must not leave a preset the window never
+        # reached, or the next cycle would step from it and skip one.
+        dd.x, dd.y, dd.width, dd.height = g.x, g.y, g.width, g.height
+        dd.geometry = (g.x, g.y, g.width, g.height)
     except Exception:
         logger.exception("scratchpad size: failed to cycle focused dropdown")
