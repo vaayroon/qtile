@@ -6,12 +6,17 @@ type NetworkDevice = tuple[str, str]
 
 
 def _run_ip_command(*args: str) -> str:
-    result = subprocess.run(
-        ["ip", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["ip", *args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        # No iproute2: widgets.py calls get_my_net_ip() at import time, so a
+        # missing binary must degrade to the sysfs lookup, not break the config.
+        return ""
     return result.stdout.strip()
 
 
