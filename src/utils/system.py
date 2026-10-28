@@ -357,12 +357,17 @@ def apply_best_effort_layout() -> tuple[bool, str]:
         if not command:
             continue
 
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            # No xrandr binary (or not executable): every command would fail
+            # the same way, so stop instead of walking the fallbacks.
+            return False, "xrandr-not-found"
         if result.returncode == 0:
             return True, " ".join(command)
 

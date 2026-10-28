@@ -705,6 +705,23 @@ def test_apply_best_effort_layout_dynamic_command_success(monkeypatch, two_monit
 
 
 @pytest.mark.usefixtures("two_monitors")
+def test_apply_best_effort_layout_without_xrandr_binary_reports_not_found(
+    monkeypatch,
+):
+    calls = []
+
+    def missing_binary(argv, **_kwargs):
+        calls.append(argv)
+        raise FileNotFoundError(2, "No such file or directory", "xrandr")
+
+    monkeypatch.setattr(system.subprocess, "run", missing_binary)
+
+    assert apply_best_effort_layout() == (False, "xrandr-not-found")
+    # Every fallback would fail the same way, so only one attempt is made.
+    assert len(calls) == 1
+
+
+@pytest.mark.usefixtures("two_monitors")
 def test_apply_best_effort_layout_falls_back_to_first_legacy(monkeypatch):
     calls = []
     monkeypatch.setattr(system.subprocess, "run", _fake_run([1, 0], calls))

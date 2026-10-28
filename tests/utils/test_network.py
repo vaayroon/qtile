@@ -71,6 +71,15 @@ def test_run_ip_command_builds_argv_and_strips_stdout(monkeypatch):
     ]
 
 
+def test_run_ip_command_without_ip_binary_returns_empty(monkeypatch):
+    def missing_binary(*_args, **_kwargs):
+        raise FileNotFoundError(2, "No such file or directory", "ip")
+
+    monkeypatch.setattr(network.subprocess, "run", missing_binary)
+
+    assert _run_ip_command("-j", "route", "show", "default") == ""
+
+
 # --- _default_route_device ---------------------------------------------------
 
 
@@ -245,6 +254,16 @@ def test_get_my_net_ip_without_default_route_uses_active_device(monkeypatch, sys
     _add_device(sysfs, "eth0", operstate="up")
 
     assert get_my_net_ip() == ("eth0", WIRED_ICON)
+
+
+def test_get_my_net_ip_without_ip_binary_falls_back_to_sysfs(monkeypatch, sysfs):
+    def missing_binary(*_args, **_kwargs):
+        raise FileNotFoundError(2, "No such file or directory", "ip")
+
+    monkeypatch.setattr(network.subprocess, "run", missing_binary)
+    _add_device(sysfs, "wlan0", operstate="up", wireless=True)
+
+    assert get_my_net_ip() == ("wlan0", WIRELESS_ICON)
 
 
 def test_get_my_net_ip_without_any_connection(monkeypatch, sysfs):
