@@ -368,8 +368,8 @@ def apply_best_effort_layout() -> tuple[bool, str]:
                 check=False,
             )
         except OSError:
-            # No xrandr binary (or not executable): every command would fail
-            # the same way, so stop instead of walking the fallbacks.
+            # No xrandr binary on PATH: every command would fail the same way,
+            # so stop instead of walking the fallbacks.
             return False, "xrandr-not-found"
         if result.returncode == 0:
             return True, " ".join(command)

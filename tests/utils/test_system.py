@@ -148,16 +148,26 @@ LAPTOP_AND_HDMI = _xrandr(
     "DP-1 disconnected (normal left inverted right x axis y axis)",
 )
 
-DISCONNECTED_WITH_EDID = _xrandr(
+# Real xrandr prints no EDID for a disconnected port, only connector properties.
+DISCONNECTED_WITH_PROPERTIES = _xrandr(
     "Screen 0: minimum 8 x 8, current 1920 x 1080, maximum 32767 x 32767",
     "DP-0 disconnected (normal left inverted right x axis y axis)",
-    "\tEDID: ",
-    *_edid_lines(SERIAL_A),
+    "\tlink-status: Good ",
+    "\tCONNECTOR_ID: 95 ",
     "\tnon-desktop: 0 ",
     "HDMI-0 connected primary 1920x1080+0+0 (normal left inverted right x axis"
     " y axis) 527mm x 296mm",
     "\tnon-desktop: 0 ",
     "   1920x1080     60.00*+  50.00  ",
+)
+
+# xrandr itself never prints this line; the parser accepts it as an explicit
+# serial property, so the branch is pinned here on its own.
+SERIAL_PROPERTY_ONLY = _xrandr(
+    "Screen 0: minimum 8 x 8, current 1920 x 1080, maximum 32767 x 32767",
+    "HDMI-0 connected 1920x1080+0+0 (normal left inverted right x axis y axis)",
+    "\tserial number: SN12345 ",
+    "\tnon-desktop: 0 ",
 )
 
 NO_GEOMETRY_AND_ZERO_SERIAL = _xrandr(
@@ -373,12 +383,17 @@ def test_detect_connected_monitors_decodes_edid_serial(monkeypatch):
     assert hdmi.serial == "10"
 
 
-def test_detect_connected_monitors_skips_disconnected_port_with_edid(monkeypatch):
-    monitors = _detect(monkeypatch, DISCONNECTED_WITH_EDID)
+def test_detect_connected_monitors_skips_disconnected_port(monkeypatch):
+    monitors = _detect(monkeypatch, DISCONNECTED_WITH_PROPERTIES)
 
     assert _names(monitors) == ["HDMI-0"]
-    # The EDID of the disconnected port must not leak into the next monitor.
     assert monitors[0].serial is None
+
+
+def test_detect_connected_monitors_reads_serial_property_line(monkeypatch):
+    (hdmi,) = _detect(monkeypatch, SERIAL_PROPERTY_ONLY)
+
+    assert hdmi.serial == "SN12345"
 
 
 def test_detect_connected_monitors_without_geometry_has_no_mode(monkeypatch):
@@ -396,8 +411,10 @@ def test_detect_connected_monitors_zero_serial_edid_is_none(monkeypatch):
     assert dp.serial is None
 
 
-def test_detect_connected_monitors_property_line_flushes_serial(monkeypatch):
-    # The "non-desktop" line after the EDID block is what commits the serial.
+def test_detect_connected_monitors_decodes_serial_before_more_properties(
+    monkeypatch,
+):
+    # Property lines follow the EDID block here; the serial must survive them.
     edp, _ = _detect(monkeypatch, LAPTOP_AND_HDMI)
 
     assert edp.serial == "67305985"
@@ -628,15 +645,18 @@ def test_build_dynamic_layout_command_primary_follows_env(monkeypatch):
     assert _primary_of(command) == "DP-2"
 
 
-def test_build_dynamic_layout_command_primary_falls_back_to_first_in_order():
+@pytest.mark.parametrize("first", ["DP-3", "DP-1", "DP-0"])
+def test_build_dynamic_layout_command_primary_falls_back_to_first_in_order(first):
     # No env override and neither HDMI-0 nor DP-2 present: the first monitor in
-    # layout order must win, whatever the process hash seed does to set order.
-    monitors = [_mon("DP-3"), _mon("DP-1"), _mon("DP-0")]
+    # layout order must win. Every rotation of the same three names runs in one
+    # process, so a set-ordered implementation can satisfy at most one of them.
+    names = ["DP-3", "DP-1", "DP-0"]
+    rotation = names[names.index(first) :] + names[: names.index(first)]
 
-    command = _build_dynamic_layout_command(monitors)
+    command = _build_dynamic_layout_command([_mon(name) for name in rotation])
 
     assert command.count("--primary") == 1
-    assert _primary_of(command) == "DP-3"
+    assert _primary_of(command) == first
 
 
 def test_build_dynamic_layout_command_fourth_monitor_is_turned_off():

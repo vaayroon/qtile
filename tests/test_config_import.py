@@ -36,8 +36,12 @@ print(len(config.screens))
 """
 
 
-def test_config_imports_headless_and_builds_one_screen():
+def test_config_imports_headless_and_builds_one_screen(tmp_path):
     env = os.environ.copy()
+    # widget.Prompt creates ~/.cache/qtile on import; keep that out of the
+    # developer's home.
+    env["HOME"] = str(tmp_path)
+    env["XDG_CACHE_HOME"] = str(tmp_path / "cache")
     for name in (
         "DISPLAY",
         "WAYLAND_DISPLAY",
