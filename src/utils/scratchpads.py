@@ -121,7 +121,7 @@ BUILTIN_TERM = ScratchpadApp(
     name="term",
     command=f"kitty --class scratchpad-term --config {_builtin_kitty_conf_path()}",
     key=None,
-    label="term",
+    label="Scratchpad Terminal",
     icon="utilities-terminal",
     x=0.25,
     y=0.15,
@@ -801,12 +801,33 @@ def leader_is_free(
     return (frozenset(modifiers), key) not in taken
 
 
+def has_entry(entries: list[ScratchpadApp], name: str, binding: str) -> bool:
+    """Whether the registry holds an entry called `name`, for a hard-coded
+    top-level `binding` (e.g. `mod4+masculine`) that toggles it by name.
+
+    libqtile's `dropdown_toggle` silently does nothing for an unknown name,
+    so a local override that disables or renames the entry would leave the
+    key dead with nothing in the log. Logs a warning naming the binding when
+    the entry is missing, so the caller can skip it diagnosably."""
+    if any(entry.name == name for entry in entries):
+        return True
+    logger.warning(
+        "scratchpad registry: %s toggles entry %r, which is not in the "
+        "registry; binding skipped",
+        binding,
+        name,
+    )
+    return False
+
+
 def dedupe_chord_keys(entries: list[ScratchpadApp]) -> list[ScratchpadApp]:
     """Drop the chord submapping (`key`) of any entry whose `key` collides
     with an earlier entry's, or whose `key` is the reserved top-level term
     binding (`masculine`). The first-processed entry with a given key wins;
-    losers keep their `DropDown` and `.desktop` entry (still reachable via
-    rofi/IPC) but lose their chord submapping."""
+    losers lose only their chord submapping: they keep their `DropDown`, so
+    IPC (`qtile cmd-obj ... dropdown_toggle -a <name>`) still toggles them,
+    and so does their rofi launcher when `desktop_entry` is true and
+    `tools/generate_scratchpad_desktops.py` has written it."""
     seen_keys: set[str] = set()
     result: list[ScratchpadApp] = []
     for entry in entries:
@@ -848,7 +869,9 @@ def build_scratchpad_chord[K, C](
     if not leader_is_free(taken, modifiers, leader):
         logger.error(
             "scratchpad registry: chord leader %s+%s is already bound; "
-            "scratchpad chord not created (entries remain reachable via rofi)",
+            "scratchpad chord not created (toggle entries from their rofi "
+            "launcher or with `qtile cmd-obj -o group scratchpad "
+            "-f dropdown_toggle -a <name>`)",
             "+".join(modifiers),
             leader,
         )

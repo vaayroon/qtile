@@ -8,6 +8,11 @@
 # so shipped assets (like the kitty config below) can be referenced without
 # hardcoding a machine-specific absolute path.
 #
+# `label` and `icon` are the name and icon of the entry's rofi launcher, and
+# `desktop_entry = false` gives it none. install.sh writes the launchers; after
+# editing this file or the local one, re-run
+# `.venv/bin/python tools/generate_scratchpad_desktops.py`.
+#
 # Add your own personal overrides in `scratchpads.local.toml` (gitignored)
 # instead of editing this file — see README.md > Scratchpads > Personal overrides.
 #
@@ -25,11 +30,15 @@
 name = "term"
 command = "kitty --class scratchpad-term --config {repo}/assets/scratchpad/kitty.conf"
 match_wm_class = "scratchpad-term"
+label = "Scratchpad Terminal"
+icon = "utilities-terminal"
 
 [[scratchpad]]
 name = "files"
 command = "nautilus --new-window"
 match_wm_class = "org.gnome.Nautilus"
+label = "Scratchpad Files"
+icon = "org.gnome.Nautilus"
 key = "n"
 
 [[scratchpad]]
@@ -37,12 +46,16 @@ name = "private"
 command = "brave-browser-stable --new-window --incognito"
 match_wm_class = "brave-browser"
 profile_dir = "~/.local/share/qtile/scratchpad/brave-private"
+label = "Scratchpad Private Browser"
+icon = "brave-browser"
 key = "b"
 
 [[scratchpad]]
 name = "calc"
 command = "gnome-calculator"
 match_wm_class = "gnome-calculator"
+label = "Scratchpad Calculator"
+icon = "org.gnome.Calculator"
 x = 0.375
 y = 0.2
 width = 0.25

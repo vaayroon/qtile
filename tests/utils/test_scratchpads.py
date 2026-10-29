@@ -10,6 +10,7 @@ from src.utils.scratchpads import (
     ScratchpadApp,
     build_scratchpad_chord,
     dedupe_chord_keys,
+    has_entry,
     leader_is_free,
     load_scratchpads,
     load_scratchpads_from,
@@ -697,6 +698,37 @@ def test_leader_is_free_mod_mod1_combo_does_not_collide() -> None:
 
 
 # ---------------------------------------------------------------------------
+# has_entry — guard for the hard-coded top-level dropdown bindings
+# ---------------------------------------------------------------------------
+
+
+def test_has_entry_is_true_and_silent_when_the_name_is_registered(caplog) -> None:
+    entries = [ScratchpadApp(name="files", command="nautilus"), BUILTIN_TERM]
+
+    with caplog.at_level(logging.WARNING):
+        assert has_entry(entries, "term", "mod4+masculine") is True
+
+    assert caplog.messages == []
+
+
+def test_has_entry_warns_naming_the_binding_when_the_name_is_missing(caplog) -> None:
+    # A local override that disables or renames `calc`.
+    entries = [BUILTIN_TERM, ScratchpadApp(name="calculator", command="galculator")]
+
+    with caplog.at_level(logging.WARNING):
+        assert has_entry(entries, "calc", "XF86Calculator") is False
+
+    assert any(
+        "XF86Calculator" in message and "'calc'" in message
+        for message in caplog.messages
+    )
+
+
+def test_has_entry_is_false_for_an_empty_registry() -> None:
+    assert has_entry([], "term", "mod4+masculine") is False
+
+
+# ---------------------------------------------------------------------------
 # 1.13 — dedupe_chord_keys
 # ---------------------------------------------------------------------------
 
@@ -1017,6 +1049,20 @@ def test_chord_not_built_when_leader_is_taken(
 
     assert chord is None
     assert any("leader" in m for m in caplog.messages)
+
+
+def test_taken_leader_error_names_the_ipc_fallback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Not every entry has a rofi launcher (desktop_entry = false, or the
+    # launchers were not regenerated), so the error must name IPC too.
+    taken = {(frozenset(["mod4"]), "s")}
+
+    with caplog.at_level(logging.ERROR):
+        _build([_app("files", "n")], taken)
+
+    (message,) = [m for m in caplog.messages if "leader" in m]
+    assert "qtile cmd-obj -o group scratchpad -f dropdown_toggle -a <name>" in message
 
 
 def test_chord_built_when_only_near_miss_leaders_are_taken() -> None:

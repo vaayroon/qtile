@@ -9,6 +9,7 @@ the temp dir. ``uv`` is a fake that records its arguments and fabricates
 import shutil
 import stat
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,6 +55,12 @@ if [[ -n "$UV_PROJECT_ENVIRONMENT" ]]; then
     python="$(command -v "$python")"
     printf 'home = %s\\n' "${{FAKE_UV_HOME:-$(dirname "$python")}}" \\
         > "$UV_PROJECT_ENVIRONMENT/pyvenv.cfg"
+    # FAKE_VENV_PYTHON: give the venv a python that is a real interpreter.
+    if [[ -n "${{FAKE_VENV_PYTHON:-}}" ]]; then
+        printf '#!{BASH}\\nexec "$FAKE_VENV_PYTHON" "$@"\\n' \\
+            > "$UV_PROJECT_ENVIRONMENT/bin/python"
+        chmod +x "$UV_PROJECT_ENVIRONMENT/bin/python"
+    fi
 fi
 """
 
@@ -454,11 +461,50 @@ def test_skip_xsession_writes_no_session_entry_and_never_calls_sudo(
     assert not sandbox.sudo_called
 
 
-def test_rofi_scratchpad_entry_is_still_written(sandbox: Sandbox) -> None:
+def _with_desktop_generator(sandbox: Sandbox) -> dict[str, str]:
+    """Copy the real generator, its modules and the shipped registry into the
+    sandbox; return the env that gives the fake venv a real python."""
+    shutil.copytree(
+        ROOT / "src" / "utils",
+        sandbox.repo / "src" / "utils",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    generator = Path("tools") / "generate_scratchpad_desktops.py"
+    (sandbox.repo / "tools").mkdir()
+    shutil.copy(ROOT / generator, sandbox.repo / generator)
+    shutil.copy(ROOT / "scratchpads.toml", sandbox.repo)
+    return {"FAKE_VENV_PYTHON": sys.executable}
+
+
+def test_rofi_launchers_are_written_for_every_shipped_scratchpad(
+    sandbox: Sandbox,
+) -> None:
+    applications = sandbox.home / ".local/share/applications"
+    applications.mkdir(parents=True)
+    legacy = applications / "qtile-scratchpad.desktop"
+    legacy.write_text("[Desktop Entry]\nExec=/old/scratchpad-toggle.sh\n")
+
+    result = sandbox.run(env_extra=_with_desktop_generator(sandbox))
+
+    assert result.returncode == 0, result.stderr
+    assert sorted(p.name for p in applications.iterdir()) == [
+        "qtile-scratchpad-calc.desktop",
+        "qtile-scratchpad-files.desktop",
+        "qtile-scratchpad-private.desktop",
+        "qtile-scratchpad-term.desktop",
+    ]
+    term = (applications / "qtile-scratchpad-term.desktop").read_text()
+    toggle = sandbox.repo / "src/assets/scratchpad/scratchpad-toggle.sh"
+    assert f'Exec="{toggle}" term' in term.splitlines()
+    assert "Name=Scratchpad Terminal" in term.splitlines()
+
+
+def test_rofi_launcher_failure_only_warns(sandbox: Sandbox) -> None:
+    # The default fake venv has no python, so the generator cannot run.
     result = sandbox.run()
     assert result.returncode == 0, result.stderr
-    entry = sandbox.home / ".local/share/applications/qtile-scratchpad.desktop"
-    assert "Name=Scratchpad Terminal" in entry.read_text()
+    assert "Could not write the rofi launchers" in result.stdout
+    assert "Done." in result.stdout
 
 
 def test_unknown_flag_is_rejected_before_touching_anything(sandbox: Sandbox) -> None:
