@@ -406,6 +406,36 @@ def test_detect_connected_monitors_reads_serial_property_line(monkeypatch):
     assert hdmi.serial == "SN12345"
 
 
+_HEADER = "DP-1 connected 1920x1080+0+0 (normal left inverted right x axis y axis)"
+_SERIAL_LINE = "\tserial number: SN12345 "
+_EDID_BLOCK = ("\tEDID: ", *_edid_lines(SERIAL_A))
+_PROPERTY = "\tnon-desktop: 0 "
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        (_SERIAL_LINE, *_EDID_BLOCK, _PROPERTY),
+        (_SERIAL_LINE, *_EDID_BLOCK),
+        (*_EDID_BLOCK, _SERIAL_LINE, _PROPERTY),
+        (*_EDID_BLOCK, _SERIAL_LINE),
+        (*_EDID_BLOCK, _PROPERTY, _SERIAL_LINE),
+    ],
+    ids=[
+        "serial-edid-property",
+        "serial-edid-end",
+        "edid-serial-property",
+        "edid-serial-end",
+        "edid-property-serial",
+    ],
+)
+def test_detect_connected_monitors_explicit_serial_beats_edid(monkeypatch, block):
+    # Which serial won used to depend on the line after the EDID block.
+    (monitor,) = _detect(monkeypatch, _xrandr(_HEADER, *block))
+
+    assert monitor.serial == "SN12345"
+
+
 def test_detect_connected_monitors_without_geometry_has_no_mode(monkeypatch):
     hdmi, _ = _detect(monkeypatch, NO_GEOMETRY_AND_ZERO_SERIAL)
 
