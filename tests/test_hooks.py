@@ -95,6 +95,7 @@ def hooks_module(monkeypatch, request):
             yield module
         finally:
             hook.unsubscribe.startup_once(module.start_once)
+            hook.unsubscribe.startup(module.on_startup)
     finally:
         for name in set(sys.modules) - before:
             if name == "utils" or name.startswith("utils."):
@@ -161,4 +162,41 @@ def test_start_once_isolates_a_raising_step(
     errors = [r for r in caplog.records if r.levelno == logging.ERROR]
     assert len(errors) == 1
     assert errors[0].exc_info is not None
+    assert errors[0].exc_info[0] is RuntimeError
+
+
+def test_on_startup_is_subscribed_to_startup(hooks_module) -> None:
+    # `startup`, not `startup_once`: only `startup` fires on a config reload.
+    from libqtile import hook
+
+    assert hooks_module.on_startup in hook.subscriptions["qtile"]["startup"]
+
+
+def test_on_startup_refreshes_the_launchers_for_the_registry(
+    hooks_module, monkeypatch
+) -> None:
+    registry = [object()]
+    seen: list[object] = []
+    monkeypatch.setattr(hooks_module, "load_scratchpads", lambda: registry)
+    monkeypatch.setattr(hooks_module, "refresh_desktop_entries", seen.append)
+
+    hooks_module.on_startup()
+
+    assert seen == [registry]
+
+
+def test_on_startup_isolates_a_raising_refresh(
+    hooks_module, monkeypatch, caplog
+) -> None:
+    def explode(_apps):
+        raise RuntimeError("refresh exploded")
+
+    monkeypatch.setattr(hooks_module, "load_scratchpads", list)
+    monkeypatch.setattr(hooks_module, "refresh_desktop_entries", explode)
+
+    with caplog.at_level(logging.DEBUG, logger="libqtile"):
+        hooks_module.on_startup()
+
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1
     assert errors[0].exc_info[0] is RuntimeError

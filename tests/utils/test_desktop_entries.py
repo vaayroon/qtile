@@ -9,7 +9,9 @@ from src.utils.desktop_entries import (
     TOGGLE_SCRIPT,
     default_target_dir,
     desktop_filename,
+    refresh_desktop_entries,
     render_desktop_entry,
+    runtime_clone_dir,
     sync_desktop_entries,
 )
 from src.utils.scratchpads import ScratchpadApp
@@ -278,3 +280,95 @@ def test_sync_creates_the_target_directory(tmp_path: Path) -> None:
     _sync([_app("term")], target)
 
     assert (target / "qtile-scratchpad-term.desktop").is_file()
+
+
+# ---------------------------------------------------------------------------
+# runtime_clone_dir / refresh_desktop_entries
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def xdg(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+    """Points XDG_CONFIG_HOME and XDG_DATA_HOME into tmp_path; returns the
+    runtime clone dir and the applications dir."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    return tmp_path / "config" / "qtile", tmp_path / "data" / "applications"
+
+
+def test_runtime_clone_dir_follows_xdg_config_home(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+    assert runtime_clone_dir() == tmp_path / "config" / "qtile"
+
+
+@pytest.mark.parametrize("value", [None, "relative/config"])
+def test_runtime_clone_dir_ignores_an_unset_or_relative_xdg_config_home(
+    tmp_path: Path, monkeypatch, value: str | None
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    if value is None:
+        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    else:
+        monkeypatch.setenv("XDG_CONFIG_HOME", value)
+
+    assert runtime_clone_dir() == tmp_path / ".config" / "qtile"
+
+
+def test_refresh_writes_launchers_from_the_runtime_clone(xdg) -> None:
+    runtime, applications = xdg
+    runtime.mkdir(parents=True)
+
+    report = refresh_desktop_entries([_app("term")], repo_root=runtime)
+
+    assert report is not None
+    assert report.written == ["qtile-scratchpad-term.desktop"]
+    text = (applications / "qtile-scratchpad-term.desktop").read_text()
+    toggle = runtime / "src" / "assets" / "scratchpad" / "scratchpad-toggle.sh"
+    assert _keys(text)["Exec"] == f'"{toggle}" term'
+
+
+def test_refresh_leaves_launchers_alone_from_another_clone(
+    xdg, tmp_path: Path, caplog
+) -> None:
+    runtime, applications = xdg
+    runtime.mkdir(parents=True)
+    dev_clone = tmp_path / "dev"
+    dev_clone.mkdir()
+
+    with caplog.at_level(logging.INFO, logger="libqtile"):
+        report = refresh_desktop_entries([_app("term")], repo_root=dev_clone)
+
+    assert report is None
+    assert not applications.exists()
+    assert any("is not the runtime clone" in m for m in caplog.messages)
+
+
+def test_refresh_follows_a_symlinked_runtime_clone(xdg, tmp_path: Path) -> None:
+    runtime, applications = xdg
+    real_clone = tmp_path / "clones" / "qtile"
+    real_clone.mkdir(parents=True)
+    runtime.parent.mkdir(parents=True)
+    runtime.symlink_to(real_clone)
+
+    report = refresh_desktop_entries([_app("term")], repo_root=real_clone)
+
+    assert report is not None
+    assert (applications / "qtile-scratchpad-term.desktop").is_file()
+
+
+def test_refresh_warns_when_the_target_dir_is_unusable(
+    xdg, tmp_path: Path, monkeypatch, caplog
+) -> None:
+    runtime, _ = xdg
+    runtime.mkdir(parents=True)
+    # A regular file where the data directory should be: mkdir raises.
+    blocker = tmp_path / "blocker"
+    blocker.write_text("")
+    monkeypatch.setenv("XDG_DATA_HOME", str(blocker))
+
+    with caplog.at_level(logging.WARNING, logger="libqtile"):
+        report = refresh_desktop_entries([_app("term")], repo_root=runtime)
+
+    assert report is None
+    assert any("cannot refresh rofi launchers" in m for m in caplog.messages)

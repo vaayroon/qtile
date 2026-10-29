@@ -2,9 +2,9 @@
 
 Loads ``scratchpads.toml`` and ``scratchpads.local.toml`` the way Qtile does
 and syncs one ``qtile-scratchpad-<name>.desktop`` per entry into the target
-directory (see ``utils.desktop_entries``). ``install.sh`` runs it; run it
-again by hand after editing the registry, since Qtile itself never writes
-these files.
+directory (see ``utils.desktop_entries``). ``install.sh`` runs it. Qtile
+refreshes the launchers on every start and config reload when it runs from
+the runtime clone; run this tool to refresh them without Qtile.
 
 Usage: ``.venv/bin/python tools/generate_scratchpad_desktops.py [TARGET_DIR]``
 

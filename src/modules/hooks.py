@@ -1,6 +1,8 @@
 from libqtile import hook
 from libqtile.log_utils import logger
 
+from utils.desktop_entries import refresh_desktop_entries
+from utils.scratchpads import load_scratchpads
 from utils.startup import run_autostart, run_steps, set_root_background
 from utils.system import apply_best_effort_layout
 
@@ -20,3 +22,18 @@ def start_once() -> None:
             ("autostart", run_autostart),
         ]
     )
+
+
+def _refresh_launchers() -> None:
+    report = refresh_desktop_entries(load_scratchpads())
+    if report is not None and (report.written or report.removed):
+        logger.info(
+            "Rofi launchers written=%s removed=%s", report.written, report.removed
+        )
+
+
+@hook.subscribe.startup
+def on_startup() -> None:
+    # `startup` fires on start, restart and every config reload, so an edited
+    # registry reaches rofi without rerunning the generator tool.
+    run_steps([("rofi launchers", _refresh_launchers)])

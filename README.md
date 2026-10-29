@@ -376,13 +376,13 @@ Any entry can be toggled from outside Qtile through its IPC interface:
 
 `./install.sh` also writes one rofi launcher per entry with `desktop_entry = true`, so `rofi -show drun` can toggle every scratchpad by its `label` (for example "Scratchpad Calculator"). Each one is `qtile-scratchpad-<name>.desktop` in `$XDG_DATA_HOME/applications` (default `~/.local/share/applications`) and runs [`src/assets/scratchpad/scratchpad-toggle.sh`](src/assets/scratchpad/scratchpad-toggle.sh) `<name>`, which uses the repository's `.venv/bin/qtile` and falls back to `qtile` on your `PATH`.
 
-Qtile never writes these files, so after changing either registry file, refresh them:
+Qtile refreshes them on every start and config reload (`mod + Shift + r`), so an edit to either registry file reaches rofi after a reload. It only does this when the config runs from the runtime clone, `$XDG_CONFIG_HOME/qtile` (default `~/.config/qtile`): any other clone, such as a dev clone under `./test-xephyr.sh`, would point every launcher at itself, so it leaves them alone and logs why. To refresh them without Qtile, run:
 
 ```bash
 .venv/bin/python tools/generate_scratchpad_desktops.py
 ```
 
-It rewrites only launchers that changed, removes the ones it wrote for entries that are gone or set `desktop_entry = false` (and the old single `qtile-scratchpad.desktop`), and never touches a file it did not write. A `name` that does not start with a letter or digit, or has characters other than letters, digits, `.`, `_` or `-`, gets no launcher and a warning.
+Both rewrite only launchers that changed, remove the ones they wrote for entries that are gone or set `desktop_entry = false` (and the old single `qtile-scratchpad.desktop`), and never touch a file they did not write. A `name` that does not start with a letter or digit, or has characters other than letters, digits, `.`, `_` or `-`, gets no launcher and a warning.
 
 ---
 

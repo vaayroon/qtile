@@ -7,9 +7,11 @@ scratchpad through ``scratchpad-toggle.sh <name>``. Every file carries the
 file that has it, so a user's own launcher that happens to share the
 filename pattern is left alone.
 
-Like ``utils.scratchpads``, this module MUST NOT import ``libqtile``. It is
-run by ``tools/generate_scratchpad_desktops.py`` (from ``install.sh``), never
-at qtile config load, so it may raise: the caller decides how to degrade.
+Like ``utils.scratchpads``, this module MUST NOT import ``libqtile``.
+``tools/generate_scratchpad_desktops.py`` (run by ``install.sh``) calls
+`sync_desktop_entries`, which may raise: the caller decides how to degrade.
+Qtile's ``startup`` hook calls `refresh_desktop_entries` instead, which only
+writes from the runtime clone and turns an ``OSError`` into a warning.
 """
 
 import logging
@@ -32,7 +34,8 @@ _LEGACY_SIGNATURE = "scratchpad-toggle.sh"
 _REPO_ROOT = Path(__file__).resolve().parents[2]  # src/utils/<this> -> repo
 # The launchers run this script, by the absolute path of the clone that wrote
 # them.
-TOGGLE_SCRIPT = _REPO_ROOT / "src" / "assets" / "scratchpad" / "scratchpad-toggle.sh"
+_TOGGLE_RELPATH = Path("src") / "assets" / "scratchpad" / "scratchpad-toggle.sh"
+TOGGLE_SCRIPT = _REPO_ROOT / _TOGGLE_RELPATH
 
 # A name becomes part of a filename and of the Exec line, so only names that
 # are safe in both are written. Anything else is skipped with a warning. The
@@ -58,6 +61,16 @@ def default_target_dir() -> Path:
     if not data_home.is_absolute():
         data_home = Path.home() / ".local" / "share"
     return data_home / "applications"
+
+
+def runtime_clone_dir() -> Path:
+    """`$XDG_CONFIG_HOME/qtile`, defaulting to `~/.config/qtile`: the clone
+    the live session runs from."""
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", "").strip())
+    # The XDG spec says relative values must be ignored.
+    if not config_home.is_absolute():
+        config_home = Path.home() / ".config"
+    return config_home / "qtile"
 
 
 def desktop_filename(name: str) -> str | None:
@@ -205,3 +218,31 @@ def sync_desktop_entries(
         report.removed.append(path.name)
 
     return report
+
+
+def refresh_desktop_entries(
+    apps: Iterable[ScratchpadApp], repo_root: Path = _REPO_ROOT
+) -> SyncReport | None:
+    """Sync the launchers for `apps`, but only when `repo_root` is the runtime
+    clone. Returns None when it wrote nothing for that reason or on an error.
+
+    Any other clone is left out on purpose: `test-xephyr.sh` runs the dev
+    clone's config, and syncing from there would point every launcher at the
+    dev clone. An ``OSError`` (a read-only or unusable target directory, an
+    unresolvable path) is logged as a warning, never raised.
+    """
+    try:
+        runtime_dir = runtime_clone_dir().resolve()
+        if repo_root.resolve() != runtime_dir:
+            logger.info(
+                "scratchpad desktop: %s is not the runtime clone %s; "
+                "rofi launchers left as they are",
+                repo_root,
+                runtime_dir,
+            )
+            return None
+        target_dir = default_target_dir()
+        return sync_desktop_entries(apps, target_dir, repo_root / _TOGGLE_RELPATH)
+    except (OSError, RuntimeError) as error:  # RuntimeError: no home directory
+        logger.warning("scratchpad desktop: cannot refresh rofi launchers: %s", error)
+        return None
