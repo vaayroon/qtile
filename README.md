@@ -376,7 +376,7 @@ Any entry can be toggled from outside Qtile through its IPC interface:
 
 `./install.sh` also writes one rofi launcher per entry with `desktop_entry = true`, so `rofi -show drun` can toggle every scratchpad by its `label` (for example "Scratchpad Calculator"). Each one is `qtile-scratchpad-<name>.desktop` in `$XDG_DATA_HOME/applications` (default `~/.local/share/applications`) and runs [`src/assets/scratchpad/scratchpad-toggle.sh`](src/assets/scratchpad/scratchpad-toggle.sh) `<name>`, which uses the repository's `.venv/bin/qtile` and falls back to `qtile` on your `PATH`.
 
-Qtile refreshes them on every start and config reload (`mod + Shift + r`), so an edit to either registry file reaches rofi after a reload. It only does this when the config runs from the runtime clone, `$XDG_CONFIG_HOME/qtile` (default `~/.config/qtile`): any other clone, such as a dev clone under `./test-xephyr.sh`, would point every launcher at itself, so it leaves them alone and logs why. To refresh them without Qtile, run:
+Qtile refreshes them on every start and config reload (`mod + Shift + r`), so an edit to either registry file reaches rofi after a reload. It only does this when the config runs from the runtime clone, `$XDG_CONFIG_HOME/qtile` (default `~/.config/qtile`): any other clone, such as a dev clone under `./test-xephyr.sh`, would point every launcher at itself, so it leaves them alone and logs why at INFO level. To refresh them without Qtile, run:
 
 ```bash
 .venv/bin/python tools/generate_scratchpad_desktops.py

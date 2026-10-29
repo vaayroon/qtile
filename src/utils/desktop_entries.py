@@ -56,7 +56,7 @@ class SyncReport:
 
 def default_target_dir() -> Path:
     """`$XDG_DATA_HOME/applications`, defaulting to `~/.local/share`."""
-    data_home = Path(os.environ.get("XDG_DATA_HOME", "").strip())
+    data_home = Path(os.environ.get("XDG_DATA_HOME", "").strip()).expanduser()
     # The XDG spec says relative values must be ignored.
     if not data_home.is_absolute():
         data_home = Path.home() / ".local" / "share"
@@ -66,7 +66,8 @@ def default_target_dir() -> Path:
 def runtime_clone_dir() -> Path:
     """`$XDG_CONFIG_HOME/qtile`, defaulting to `~/.config/qtile`: the clone
     the live session runs from."""
-    config_home = Path(os.environ.get("XDG_CONFIG_HOME", "").strip())
+    # expanduser, as Qtile's own config lookup does, so both agree on `~/cfg`.
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", "").strip()).expanduser()
     # The XDG spec says relative values must be ignored.
     if not config_home.is_absolute():
         config_home = Path.home() / ".config"

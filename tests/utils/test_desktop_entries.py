@@ -51,6 +51,15 @@ def test_default_target_dir_ignores_an_unset_or_relative_xdg_data_home(
     assert default_target_dir() == tmp_path / ".local" / "share" / "applications"
 
 
+def test_default_target_dir_expands_a_leading_tilde(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", "~/data")
+
+    assert default_target_dir() == tmp_path / "data" / "applications"
+
+
 def test_toggle_script_is_the_shipped_script() -> None:
     assert TOGGLE_SCRIPT.is_absolute()
     assert TOGGLE_SCRIPT.is_file()
@@ -302,7 +311,7 @@ def test_runtime_clone_dir_follows_xdg_config_home(tmp_path: Path, monkeypatch) 
     assert runtime_clone_dir() == tmp_path / "config" / "qtile"
 
 
-@pytest.mark.parametrize("value", [None, "relative/config"])
+@pytest.mark.parametrize("value", [None, "", "  ", "relative/config"])
 def test_runtime_clone_dir_ignores_an_unset_or_relative_xdg_config_home(
     tmp_path: Path, monkeypatch, value: str | None
 ) -> None:
@@ -313,6 +322,13 @@ def test_runtime_clone_dir_ignores_an_unset_or_relative_xdg_config_home(
         monkeypatch.setenv("XDG_CONFIG_HOME", value)
 
     assert runtime_clone_dir() == tmp_path / ".config" / "qtile"
+
+
+def test_runtime_clone_dir_expands_a_leading_tilde(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", "~/cfg")
+
+    assert runtime_clone_dir() == tmp_path / "cfg" / "qtile"
 
 
 def test_refresh_writes_launchers_from_the_runtime_clone(xdg) -> None:
@@ -371,4 +387,38 @@ def test_refresh_warns_when_the_target_dir_is_unusable(
         report = refresh_desktop_entries([_app("term")], repo_root=runtime)
 
     assert report is None
+    assert any("cannot refresh rofi launchers" in m for m in caplog.messages)
+
+
+def test_refresh_accepts_a_symlink_to_the_runtime_clone_as_repo_root(
+    xdg, tmp_path: Path
+) -> None:
+    runtime, applications = xdg
+    runtime.mkdir(parents=True)
+    link = tmp_path / "link"
+    link.symlink_to(runtime)
+
+    report = refresh_desktop_entries([_app("term")], repo_root=link)
+
+    assert report is not None
+    assert (applications / "qtile-scratchpad-term.desktop").is_file()
+
+
+def test_refresh_warns_when_there_is_no_home_directory(
+    xdg, monkeypatch, caplog
+) -> None:
+    runtime, applications = xdg
+    runtime.mkdir(parents=True)
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+
+    def no_home() -> Path:
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(Path, "home", staticmethod(no_home))
+
+    with caplog.at_level(logging.WARNING, logger="libqtile"):
+        report = refresh_desktop_entries([_app("term")], repo_root=runtime)
+
+    assert report is None
+    assert not applications.exists()
     assert any("cannot refresh rofi launchers" in m for m in caplog.messages)

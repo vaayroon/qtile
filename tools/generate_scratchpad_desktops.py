@@ -9,7 +9,8 @@ the runtime clone; run this tool to refresh them without Qtile.
 Usage: ``.venv/bin/python tools/generate_scratchpad_desktops.py [TARGET_DIR]``
 
 ``TARGET_DIR`` defaults to ``$XDG_DATA_HOME/applications``, or
-``~/.local/share/applications`` when ``XDG_DATA_HOME`` is unset or relative.
+``~/.local/share/applications`` when ``XDG_DATA_HOME`` is unset or relative
+(a leading ``~`` is expanded first).
 """
 
 import argparse

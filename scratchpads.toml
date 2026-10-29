@@ -10,8 +10,8 @@
 #
 # `label` and `icon` are the name and icon of the entry's rofi launcher, and
 # `desktop_entry = false` gives it none. install.sh writes the launchers, and
-# Qtile refreshes them on every start and config reload when it runs from
-# ~/.config/qtile.
+# Qtile refreshes them on every start and config reload when it runs from the
+# runtime clone ($XDG_CONFIG_HOME/qtile, default ~/.config/qtile).
 #
 # Add your own personal overrides in `scratchpads.local.toml` (gitignored)
 # instead of editing this file — see README.md > Scratchpads > Personal overrides.
