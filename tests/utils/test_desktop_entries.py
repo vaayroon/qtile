@@ -6,6 +6,8 @@ import pytest
 from src.utils.desktop_entries import (
     LEGACY_FILENAME,
     MARKER,
+    TOGGLE_SCRIPT,
+    default_target_dir,
     desktop_filename,
     render_desktop_entry,
     sync_desktop_entries,
@@ -21,6 +23,41 @@ def _app(name: str = "files", **fields: object) -> ScratchpadApp:
 
 def _keys(text: str) -> dict[str, str]:
     return dict(line.split("=", 1) for line in text.splitlines()[1:])
+
+
+# ---------------------------------------------------------------------------
+# default_target_dir / TOGGLE_SCRIPT
+# ---------------------------------------------------------------------------
+
+
+def test_default_target_dir_follows_xdg_data_home(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+
+    assert default_target_dir() == tmp_path / "data" / "applications"
+
+
+@pytest.mark.parametrize("value", [None, "", "  ", "relative/data"])
+def test_default_target_dir_ignores_an_unset_or_relative_xdg_data_home(
+    tmp_path: Path, monkeypatch, value: str | None
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    if value is None:
+        monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    else:
+        monkeypatch.setenv("XDG_DATA_HOME", value)
+
+    assert default_target_dir() == tmp_path / ".local" / "share" / "applications"
+
+
+def test_toggle_script_is_the_shipped_script() -> None:
+    assert TOGGLE_SCRIPT.is_absolute()
+    assert TOGGLE_SCRIPT.is_file()
+    assert TOGGLE_SCRIPT.parts[-4:] == (
+        "src",
+        "assets",
+        "scratchpad",
+        "scratchpad-toggle.sh",
+    )
 
 
 # ---------------------------------------------------------------------------

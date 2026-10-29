@@ -29,6 +29,11 @@ MARKER = "X-QtileScratchpad=true"
 LEGACY_FILENAME = "qtile-scratchpad.desktop"
 _LEGACY_SIGNATURE = "scratchpad-toggle.sh"
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]  # src/utils/<this> -> repo
+# The launchers run this script, by the absolute path of the clone that wrote
+# them.
+TOGGLE_SCRIPT = _REPO_ROOT / "src" / "assets" / "scratchpad" / "scratchpad-toggle.sh"
+
 # A name becomes part of a filename and of the Exec line, so only names that
 # are safe in both are written. Anything else is skipped with a warning. The
 # first character is alphanumeric so `qtile cmd-obj -a <name>` never reads
@@ -44,6 +49,15 @@ class SyncReport:
     unchanged: list[str] = field(default_factory=list)
     removed: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
+
+
+def default_target_dir() -> Path:
+    """`$XDG_DATA_HOME/applications`, defaulting to `~/.local/share`."""
+    data_home = Path(os.environ.get("XDG_DATA_HOME", "").strip())
+    # The XDG spec says relative values must be ignored.
+    if not data_home.is_absolute():
+        data_home = Path.home() / ".local" / "share"
+    return data_home / "applications"
 
 
 def desktop_filename(name: str) -> str | None:
