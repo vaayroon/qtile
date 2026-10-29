@@ -4,12 +4,12 @@ The real ``ip`` binary is never spawned: ``network.subprocess.run`` is replaced
 with a fake that records its argv and kwargs and returns a canned
 ``CompletedProcess``, or ``_run_ip_command`` itself is patched. ``/sys`` is
 never read: the module's ``Path`` name is redirected into ``tmp_path`` and each
-test builds the fake ``sys/class/net/<dev>/...`` tree it needs. Results of
-``_active_devices`` follow ``iterdir()`` order, so tests compare them sorted.
-Every test passes identically on a CI runner with no network devices at all.
+test builds the fake ``sys/class/net/<dev>/...`` tree it needs. Every test
+passes identically on a CI runner with no network devices at all.
 """
 
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 from src.utils import network
@@ -209,7 +209,37 @@ def test_active_devices_skips_loopback_and_inactive(monkeypatch, sysfs):
     _add_device(sysfs, "eth1", operstate="down", carrier=0)
     _add_device(sysfs, "wlan0", operstate="down", carrier=1, wireless=True)
 
-    assert sorted(_active_devices()) == ["eth0", "wlan0"]
+    assert _active_devices() == ["eth0", "wlan0"]
+
+
+class _FakeNetDir:
+    """A ``/sys/class/net`` stand-in whose ``iterdir()`` order is fixed."""
+
+    def __init__(self, names):
+        self._names = names
+
+    def exists(self):
+        return True
+
+    def iterdir(self):
+        return iter(SimpleNamespace(name=name) for name in self._names)
+
+
+@pytest.mark.parametrize(
+    "listing",
+    [
+        ["wlan0", "eth0", "enp3s0"],
+        ["eth0", "enp3s0", "wlan0"],
+        ["enp3s0", "wlan0", "eth0"],
+    ],
+)
+def test_active_devices_are_sorted_whatever_the_iterdir_order(monkeypatch, listing):
+    # Every rotation of the same names must give one result; an implementation
+    # that keeps iterdir() order can pass at most one of these cases.
+    monkeypatch.setattr(network, "Path", lambda _p: _FakeNetDir(listing))
+    monkeypatch.setattr(network, "_is_device_active", lambda _device: True)
+
+    assert _active_devices() == ["enp3s0", "eth0", "wlan0"]
 
 
 # --- _device_icon ------------------------------------------------------------
