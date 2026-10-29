@@ -11,6 +11,7 @@ Every test therefore passes identically on a CI runner with no X server and no
 ``xrandr`` binary.
 """
 
+import errno
 import subprocess
 
 import pytest
@@ -330,9 +331,18 @@ def test_run_xrandr_props_invokes_xrandr_without_stderr(monkeypatch):
     assert kwargs["stderr"] == subprocess.DEVNULL
 
 
-def test_run_xrandr_props_missing_binary_is_empty(monkeypatch):
+@pytest.mark.parametrize(
+    "error",
+    [
+        FileNotFoundError(errno.ENOENT, "No such file or directory", "xrandr"),
+        PermissionError(errno.EACCES, "Permission denied", "xrandr"),
+        OSError(errno.ENOEXEC, "Exec format error", "xrandr"),
+    ],
+    ids=["missing", "not-executable", "bad-format"],
+)
+def test_run_xrandr_props_exec_failure_is_empty(monkeypatch, error):
     def fake_check_output(*_args, **_kwargs):
-        raise FileNotFoundError("xrandr")
+        raise error
 
     monkeypatch.setattr(system.subprocess, "check_output", fake_check_output)
 

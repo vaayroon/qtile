@@ -94,7 +94,9 @@ def _run_xrandr_props() -> str:
             text=True,
             stderr=subprocess.DEVNULL,
         )
-    except (FileNotFoundError, subprocess.CalledProcessError):
+    except (OSError, subprocess.CalledProcessError):
+        # Any exec failure (missing, not executable, bad format) must yield no
+        # monitors: this runs at config import time.
         return ""
 
 
