@@ -66,9 +66,10 @@ def _active_devices() -> list[str]:
     if not net_dir.exists():
         return []
 
+    # Sorted so get_my_net_ip()'s fallback to the first device does not depend
+    # on filesystem order.
     devices: list[str] = []
-    for device_path in net_dir.iterdir():
-        device = device_path.name
+    for device in sorted(device_path.name for device_path in net_dir.iterdir()):
         if device == "lo":
             continue
         if _is_device_active(device):

@@ -94,7 +94,9 @@ def _run_xrandr_props() -> str:
             text=True,
             stderr=subprocess.DEVNULL,
         )
-    except (FileNotFoundError, subprocess.CalledProcessError):
+    except (OSError, subprocess.CalledProcessError):
+        # Any exec failure (missing, not executable, bad format) must yield no
+        # monitors: this runs at config import time.
         return ""
 
 
@@ -108,22 +110,27 @@ def detect_connected_monitors() -> list[MonitorInfo]:
 
     current_name: str | None = None
     current_mode: str | None = None
-    current_serial: str | None = None
+    # An explicit "serial number:" property beats the EDID serial wherever
+    # either appears in the block; the EDID serial is only the fallback.
+    current_explicit_serial: str | None = None
+    current_edid_serial: str | None = None
     current_connected = False
     pending_edid: list[str] = []
 
     def flush_current_monitor() -> None:
         nonlocal current_name
         nonlocal current_mode
-        nonlocal current_serial
+        nonlocal current_explicit_serial
+        nonlocal current_edid_serial
         nonlocal current_connected
         nonlocal pending_edid
         if current_name is None:
             return
 
-        serial = current_serial
-        if serial is None and pending_edid:
-            serial = _serial_from_edid(pending_edid)
+        edid_serial = current_edid_serial
+        if edid_serial is None and pending_edid:
+            edid_serial = _serial_from_edid(pending_edid)
+        serial = current_explicit_serial or edid_serial
 
         if current_connected:
             monitors.append(
@@ -138,7 +145,8 @@ def detect_connected_monitors() -> list[MonitorInfo]:
 
         current_name = None
         current_mode = None
-        current_serial = None
+        current_explicit_serial = None
+        current_edid_serial = None
         current_connected = False
         pending_edid = []
 
@@ -165,7 +173,7 @@ def detect_connected_monitors() -> list[MonitorInfo]:
 
         serial_match = _XRANDR_SERIAL_RE.match(raw_line)
         if serial_match:
-            current_serial = serial_match.group("serial")
+            current_explicit_serial = serial_match.group("serial")
             continue
 
         if raw_line.strip() == "EDID:":
@@ -177,9 +185,7 @@ def detect_connected_monitors() -> list[MonitorInfo]:
             continue
 
         if pending_edid:
-            edid_serial = _serial_from_edid(pending_edid)
-            if edid_serial is not None:
-                current_serial = edid_serial
+            current_edid_serial = _serial_from_edid(pending_edid)
             pending_edid = []
 
     flush_current_monitor()

@@ -11,6 +11,7 @@ Every test therefore passes identically on a CI runner with no X server and no
 ``xrandr`` binary.
 """
 
+import errno
 import subprocess
 
 import pytest
@@ -330,9 +331,18 @@ def test_run_xrandr_props_invokes_xrandr_without_stderr(monkeypatch):
     assert kwargs["stderr"] == subprocess.DEVNULL
 
 
-def test_run_xrandr_props_missing_binary_is_empty(monkeypatch):
+@pytest.mark.parametrize(
+    "error",
+    [
+        FileNotFoundError(errno.ENOENT, "No such file or directory", "xrandr"),
+        PermissionError(errno.EACCES, "Permission denied", "xrandr"),
+        OSError(errno.ENOEXEC, "Exec format error", "xrandr"),
+    ],
+    ids=["missing", "not-executable", "bad-format"],
+)
+def test_run_xrandr_props_exec_failure_is_empty(monkeypatch, error):
     def fake_check_output(*_args, **_kwargs):
-        raise FileNotFoundError("xrandr")
+        raise error
 
     monkeypatch.setattr(system.subprocess, "check_output", fake_check_output)
 
@@ -394,6 +404,36 @@ def test_detect_connected_monitors_reads_serial_property_line(monkeypatch):
     (hdmi,) = _detect(monkeypatch, SERIAL_PROPERTY_ONLY)
 
     assert hdmi.serial == "SN12345"
+
+
+_HEADER = "DP-1 connected 1920x1080+0+0 (normal left inverted right x axis y axis)"
+_SERIAL_LINE = "\tserial number: SN12345 "
+_EDID_BLOCK = ("\tEDID: ", *_edid_lines(SERIAL_A))
+_PROPERTY = "\tnon-desktop: 0 "
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        (_SERIAL_LINE, *_EDID_BLOCK, _PROPERTY),
+        (_SERIAL_LINE, *_EDID_BLOCK),
+        (*_EDID_BLOCK, _SERIAL_LINE, _PROPERTY),
+        (*_EDID_BLOCK, _SERIAL_LINE),
+        (*_EDID_BLOCK, _PROPERTY, _SERIAL_LINE),
+    ],
+    ids=[
+        "serial-edid-property",
+        "serial-edid-end",
+        "edid-serial-property",
+        "edid-serial-end",
+        "edid-property-serial",
+    ],
+)
+def test_detect_connected_monitors_explicit_serial_beats_edid(monkeypatch, block):
+    # Which serial won used to depend on the line after the EDID block.
+    (monitor,) = _detect(monkeypatch, _xrandr(_HEADER, *block))
+
+    assert monitor.serial == "SN12345"
 
 
 def test_detect_connected_monitors_without_geometry_has_no_mode(monkeypatch):
