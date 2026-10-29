@@ -2,7 +2,7 @@ from libqtile.config import Key, KeyChord
 from libqtile.lazy import lazy
 from libqtile.log_utils import logger
 
-from settings import mod, myTerm
+from settings import mod
 from utils.scratchpad_size import cycle_focused_dropdown
 from utils.scratchpads import build_scratchpad_chord, has_entry, load_scratchpads
 
@@ -53,12 +53,6 @@ keys = [
     Key([mod, "shift"], "c", lazy.window.kill(), desc="Kill active window"),
     Key([mod, "shift"], "r", lazy.reload_config(), desc="Reload Qtile"),
     Key([mod, "shift"], "q", lazy.shutdown(), desc="Shutdown Qtile"),
-    Key(
-        ["control", "shift"],
-        "e",
-        lazy.spawn(myTerm + " sudo -S ls -l"),
-        desc="Doom Emacs",
-    ),
     Key(["control", "mod1"], "l", lazy.spawn("i3lock -ufc 000000")),
     Key(["control"], "1", lazy.spawn("boomer -w"), desc="Zoom"),
     # Switch focus to specific monitor (out of three)

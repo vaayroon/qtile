@@ -24,7 +24,6 @@ def load_keys(monkeypatch):
     monkeypatch.syspath_prepend(str(SRC))
     stub = types.ModuleType("settings")
     stub.mod = "mod4"
-    stub.myTerm = "x"
     monkeypatch.setitem(sys.modules, "settings", stub)
     before = set(sys.modules)
 
