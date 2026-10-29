@@ -9,9 +9,9 @@
 # hardcoding a machine-specific absolute path.
 #
 # `label` and `icon` are the name and icon of the entry's rofi launcher, and
-# `desktop_entry = false` gives it none. install.sh writes the launchers; after
-# editing this file or the local one, re-run
-# `.venv/bin/python tools/generate_scratchpad_desktops.py`.
+# `desktop_entry = false` gives it none. install.sh writes the launchers, and
+# Qtile refreshes them on every start and config reload when it runs from the
+# runtime clone ($XDG_CONFIG_HOME/qtile, default ~/.config/qtile).
 #
 # Add your own personal overrides in `scratchpads.local.toml` (gitignored)
 # instead of editing this file — see README.md > Scratchpads > Personal overrides.

@@ -2,33 +2,31 @@
 
 Loads ``scratchpads.toml`` and ``scratchpads.local.toml`` the way Qtile does
 and syncs one ``qtile-scratchpad-<name>.desktop`` per entry into the target
-directory (see ``utils.desktop_entries``). ``install.sh`` runs it; run it
-again by hand after editing the registry, since Qtile itself never writes
-these files.
+directory (see ``utils.desktop_entries``). ``install.sh`` runs it. Qtile
+refreshes the launchers on every start and config reload when it runs from
+the runtime clone; run this tool to refresh them without Qtile.
 
 Usage: ``.venv/bin/python tools/generate_scratchpad_desktops.py [TARGET_DIR]``
 
 ``TARGET_DIR`` defaults to ``$XDG_DATA_HOME/applications``, or
-``~/.local/share/applications`` when ``XDG_DATA_HOME`` is unset.
+``~/.local/share/applications`` when ``XDG_DATA_HOME`` is unset or relative
+(a leading ``~`` is expanded first).
 """
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parent.parent / "src"
-TOGGLE_SCRIPT = SRC / "assets" / "scratchpad" / "scratchpad-toggle.sh"
 sys.path.insert(0, str(SRC))
 
-from utils.desktop_entries import sync_desktop_entries  # noqa: E402
+from utils.desktop_entries import (  # noqa: E402
+    TOGGLE_SCRIPT,
+    default_target_dir,
+    sync_desktop_entries,
+)
 from utils.scratchpads import load_scratchpads  # noqa: E402
-
-
-def default_target_dir() -> Path:
-    data_home = os.environ.get("XDG_DATA_HOME") or "~/.local/share"
-    return Path(data_home).expanduser() / "applications"
 
 
 def main(argv: list[str] | None = None) -> int:
