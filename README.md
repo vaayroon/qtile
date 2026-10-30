@@ -432,6 +432,7 @@ The sections above cover Qtile itself. To reproduce the rest of the desktop (aud
 
 | Distro | Guide | Status |
 |--------|-------|--------|
+| Ubuntu 24.04 | [docs/setup/ubuntu.md](docs/setup/ubuntu.md) | Current |
 | Kali Linux | [docs/setup/kali.md](docs/setup/kali.md) | Legacy (2022), may be outdated |
 
 ---
