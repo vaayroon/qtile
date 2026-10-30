@@ -1,8 +1,9 @@
 # Ubuntu 24.04 desktop setup
 
 This guide covers the desktop around Qtile on Ubuntu 24.04: audio, screens,
-notifications, GTK and Qt themes, and the display manager. It assumes the
-config is already installed. For the shell and the terminal, see
+notifications, GTK and Qt themes, and the display manager. Step 1 of the quick
+path installs Qtile itself; the rest of the guide is what comes after it. For
+the shell and the terminal, see
 [shell.md](shell.md).
 
 ## Quick path
@@ -106,12 +107,15 @@ The reference desktop uses the **Orchis-Light** GTK theme and the
 **Tela-light** icons. Both come from their upstream install scripts:
 
 ```bash
-git clone --depth=1 https://github.com/vinceliuice/Orchis-theme.git /tmp/Orchis-theme
-sudo /tmp/Orchis-theme/install.sh -d /usr/share/themes
+mkdir -p ~/.cache/themes && cd ~/.cache/themes
+git clone --depth=1 https://github.com/vinceliuice/Orchis-theme.git
+sudo ./Orchis-theme/install.sh -d /usr/share/themes
 
-git clone --depth=1 https://github.com/vinceliuice/Tela-icon-theme.git /tmp/Tela-icon-theme
-sudo /tmp/Tela-icon-theme/install.sh -d /usr/share/icons
+git clone --depth=1 https://github.com/vinceliuice/Tela-icon-theme.git
+sudo ./Tela-icon-theme/install.sh -d /usr/share/icons
 ```
+
+On a second run, `git -C <dir> pull` instead of cloning again.
 
 > Without `sudo` and `-d`, the scripts install into your home instead
 > (`~/.themes` and `~/.local/share/icons`).
@@ -128,8 +132,15 @@ gtk-application-prefer-dark-theme=0
 ```
 
 Restart the GTK apps to apply it. libadwaita apps (most GTK 4 GNOME apps)
-ignore `gtk-theme-name`. To theme them too, run the Orchis script with `-l`,
-which links the theme into `~/.config/gtk-4.0`.
+ignore `gtk-theme-name`. To theme them too, run the Orchis script again
+**without** `sudo` (it refuses `-l` as root and does nothing):
+
+```bash
+~/.cache/themes/Orchis-theme/install.sh -c light -l
+```
+
+It links the light theme into `~/.config/gtk-4.0`, and also installs a copy
+into `~/.themes`.
 
 ## Qt theme
 

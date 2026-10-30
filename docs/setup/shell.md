@@ -62,11 +62,14 @@ sudo curl -fsSL -o /usr/share/zsh-sudo/sudo.plugin.zsh \
 VClip (clipboard commands) live in the config repo:
 
 ```bash
-git clone --depth=1 https://github.com/vaayroon/config.git /tmp/vaayroon-config
+git clone --depth=1 https://github.com/vaayroon/config.git ~/.cache/vaayroon-config
 sudo mkdir -p /usr/share/zsh-vaayroon
-sudo cp -r /tmp/vaayroon-config/linux/Modules/VGitAliases \
-    /tmp/vaayroon-config/linux/Modules/VClip /usr/share/zsh-vaayroon/
+sudo cp -r ~/.cache/vaayroon-config/linux/Modules/VGitAliases \
+    ~/.cache/vaayroon-config/linux/Modules/VClip /usr/share/zsh-vaayroon/
 ```
+
+On a second run, `git -C ~/.cache/vaayroon-config pull` instead of cloning
+again.
 
 | Path the zshrc sources | Comes from |
 |---|---|
@@ -90,15 +93,23 @@ The zshrc already has it, and a second one loads the theme twice.
 
 ## zshrc
 
+The download replaces `~/.zshrc`, so back up your current one first:
+
 ```bash
+[ -f ~/.zshrc ] && cp ~/.zshrc ~/.zshrc.bak
 curl -fsSL -o ~/.zshrc \
     https://raw.githubusercontent.com/vaayroon/config/main/linux/.zshrc
 ```
 
-> The zshrc is a personal file. Besides the shell setup above, it also
-> configures gpg-agent as the SSH agent and adds tools such as dotnet, fnm,
-> pnpm, cargo and Go to `PATH`. Read it before you use it, and remove what you
-> do not need.
+> The zshrc is a personal file. Read it before you use it, and remove what you
+> do not need. Besides the shell setup above:
+>
+> - It **always** makes gpg-agent the SSH agent: every shell start replaces
+>   `SSH_AUTH_SOCK`. That overrides gnome-keyring's agent and a forwarded
+>   agent in SSH sessions. Delete the "SSH via gpg-agent" block if you do not
+>   keep your SSH keys in GPG.
+> - It adds tools such as dotnet, fnm, pnpm, cargo and Go to `PATH`. Missing
+>   ones are harmless.
 
 Make zsh your login shell, then log out and back in:
 
@@ -140,8 +151,11 @@ Then edit `~/.p10k.zsh`:
 kitty is the terminal that `mod + Return` opens. `packages/apt.txt` installs
 it. Download the config and its color file:
 
+This replaces an existing kitty config, so back it up first:
+
 ```bash
 mkdir -p ~/.config/kitty
+[ -f ~/.config/kitty/kitty.conf ] && cp ~/.config/kitty/kitty.conf ~/.config/kitty/kitty.conf.bak
 curl -fsSL -o ~/.config/kitty/kitty.conf \
     https://raw.githubusercontent.com/vaayroon/config/main/linux/kitty/kitty.conf
 curl -fsSL -o ~/.config/kitty/color.ini \
@@ -154,9 +168,11 @@ curl -fsSL -o ~/.config/kitty/color.ini \
 ## Root shell
 
 `sudo -i` opens a root shell with root's own config, which is empty. To give
-root the same setup:
+root the same setup. The symlink replaces root's own `.zshrc`, so the first
+line backs it up:
 
 ```bash
+sudo sh -c '[ -f /root/.zshrc ] && [ ! -L /root/.zshrc ] && cp /root/.zshrc /root/.zshrc.bak'
 sudo ln -sf "$HOME/.zshrc" /root/.zshrc
 sudo git clone --depth=1 https://github.com/romkatv/powerlevel10k.git /root/.powerlevel10k
 sudo chsh -s /usr/bin/zsh root
