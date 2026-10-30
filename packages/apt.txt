@@ -41,3 +41,8 @@ volumeicon-alsa
 udiskie
 network-manager-gnome
 blueman
+
+# install.sh --nerd-font: download, verify, unpack and register the font
+curl
+xz-utils
+fontconfig

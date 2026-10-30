@@ -6,7 +6,8 @@
 # pins and prunes unlocked packages, except the seed tools uv leaves in place),
 # sets up the .env file, and registers an X session entry so your display
 # manager can launch Qtile from this repo's venv. With --system-packages it
-# first installs the apt packages listed in packages/apt.txt.
+# first installs the apt packages listed in packages/apt.txt; with --nerd-font
+# it installs the bar's Nerd Font for the current user.
 #
 # Requires uv (https://docs.astral.sh/uv/). It is never installed from here.
 # Re-runnable: .env is preserved and the venv is converged to uv.lock on every
@@ -24,6 +25,14 @@ CONFIG_PY="${REPO_DIR}/src/config.py"
 QTILE_BIN="${VENV_DIR}/bin/qtile"
 BACKUP_DIR="${VENV_DIR}.bak"
 APT_PACKAGES_FILE="${REPO_DIR}/packages/apt.txt"
+
+# The bar, the layouts and the scratchpad terminal use this font. Bumping the
+# release means updating the URL and its SHA-256 together (the GitHub release
+# API lists each asset's digest).
+NERD_FONT_NAME="CaskaydiaCove Nerd Font"
+NERD_FONT_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/CascadiaCode.tar.xz"
+NERD_FONT_SHA256="ae598e9401e2846aa3ee364513715de0490b844a4b54f0768991f45f23aa8369"
+NERD_FONT_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/fonts/CaskaydiaCove-NerdFont"
 # QTILE_XSESSION_FILE only exists so the tests can write the session entry to a
 # temp dir; real users never need to set it.
 XSESSION_FILE="${QTILE_XSESSION_FILE:-/usr/share/xsessions/qtile-venv.desktop}"
@@ -40,6 +49,7 @@ INSTALL_DEV=false
 FORCE=false
 SKIP_XSESSION=false
 SYSTEM_PACKAGES=false
+NERD_FONT=false
 
 usage() {
     cat <<EOF
@@ -48,6 +58,8 @@ Usage: ./install.sh [options]
 Options:
   --system-packages  First install the apt packages in packages/apt.txt (needs sudo,
                      Debian/Ubuntu only)
+  --nerd-font        Also install ${NERD_FONT_NAME} into ~/.local/share/fonts
+                     (pinned release, checksum verified; skipped if already installed)
   --dev              Also install dev tools (ruff, mypy, pytest, pre-commit); without it they are removed
   --force            Recreate the virtual environment (the old one is kept as .venv.bak
                      during the sync and restored if it fails)
@@ -62,6 +74,7 @@ EOF
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --system-packages) SYSTEM_PACKAGES=true ;;
+        --nerd-font) NERD_FONT=true ;;
         --dev) INSTALL_DEV=true ;;
         --force) FORCE=true ;;
         --skip-xsession) SKIP_XSESSION=true ;;
@@ -238,6 +251,42 @@ log "Registering rofi launcher entries for the scratchpads"
 chmod +x "$SCRATCHPAD_TOGGLE" 2>/dev/null || true
 "${VENV_DIR}/bin/python" "$DESKTOP_GENERATOR" \
     || warn "Could not write the rofi launchers. Re-run: ${VENV_DIR}/bin/python ${DESKTOP_GENERATOR}"
+
+# --- 5. Nerd Font (opt-in) ---------------------------------------------------
+# Downloads the pinned release, refuses it unless the checksum matches, and
+# unpacks it into a temp dir first, so a failed download or extraction never
+# leaves a half-installed font behind. No sudo: the font is per user.
+if [[ "$NERD_FONT" == true ]]; then
+    command -v fc-list >/dev/null 2>&1 \
+        || die "--nerd-font needs fc-list (fontconfig, listed in packages/apt.txt)."
+    if [[ -n "$(fc-list "$NERD_FONT_NAME" family)" ]]; then
+        log "${NERD_FONT_NAME} is already installed — skipping (--nerd-font)"
+    else
+        for tool in curl tar xz sha256sum fc-cache; do
+            command -v "$tool" >/dev/null 2>&1 \
+                || die "--nerd-font needs ${tool} (see packages/apt.txt)."
+        done
+        font_tmp="$(mktemp -d)"
+        trap 'rm -rf "$font_tmp"' EXIT
+
+        log "Downloading ${NERD_FONT_NAME} from ${NERD_FONT_URL}"
+        curl -fsSL --proto '=https' -o "${font_tmp}/font.tar.xz" "$NERD_FONT_URL" \
+            || die "Could not download ${NERD_FONT_URL}; no font was installed."
+        printf '%s  %s\n' "$NERD_FONT_SHA256" "${font_tmp}/font.tar.xz" \
+            | sha256sum --check --status \
+            || die "Checksum mismatch for ${NERD_FONT_URL}; no font was installed."
+        mkdir "${font_tmp}/font"
+        tar -xJf "${font_tmp}/font.tar.xz" -C "${font_tmp}/font" \
+            || die "Could not unpack the font archive; no font was installed."
+
+        log "Installing ${NERD_FONT_NAME} into ${NERD_FONT_DIR}"
+        mkdir -p "$(dirname "$NERD_FONT_DIR")"
+        rm -rf "$NERD_FONT_DIR"
+        mv "${font_tmp}/font" "$NERD_FONT_DIR"
+        fc-cache -f "$NERD_FONT_DIR" \
+            || warn "fc-cache failed. Run it yourself: fc-cache -f ${NERD_FONT_DIR}"
+    fi
+fi
 
 # --- Done ---------------------------------------------------------------------
 log "Done."

@@ -6,6 +6,7 @@ the temp dir. ``uv`` is a fake that records its arguments and fabricates
 ``.venv/bin/qtile``, so no network, no real venv and no sudo are involved.
 """
 
+import hashlib
 import re
 import shutil
 import stat
@@ -23,6 +24,8 @@ UV_INSTALL_CMD = "curl -LsSf https://astral.sh/uv/install.sh | sh"
 
 # External tools install.sh needs besides bash builtins (--skip-xsession path).
 TOOLS = ("dirname", "cat", "rm", "mv", "cp", "mkdir", "chmod", "readlink")
+# Real tools the --nerd-font step needs (curl and fontconfig are faked).
+FONT_TOOLS = ("mktemp", "tar", "xz", "sha256sum")
 
 # Fake uv: records its call and fabricates a venv the way a real sync would,
 # including the pyvenv.cfg ``home`` of the interpreter it was told to use
@@ -83,9 +86,30 @@ printf 'apt-get was called without sudo\\n' >> "$FAKEBIN_LOG/apt-get.called"
 exit 1
 """
 
+# Fake curl: records its arguments; with FAKE_CURL_SOURCE it "downloads" that
+# file to the -o path, with FAKE_CURL_FAIL it fails like a network error.
 FAKE_CURL = f"""#!{BASH}
-printf 'curl was called\\n' >> "$FAKEBIN_LOG/curl.called"
+printf '%s\\n' "$*" >> "$FAKEBIN_LOG/curl.called"
+[[ -z "${{FAKE_CURL_FAIL:-}}" ]] || exit 22
+out=""
+while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "-o" ]]; then out="$2"; fi
+    shift
+done
+if [[ -n "${{FAKE_CURL_SOURCE:-}}" && -n "$out" ]]; then
+    cp "$FAKE_CURL_SOURCE" "$out"
+fi
 exit 0
+"""
+
+# Fake fontconfig: fc-list prints FAKE_FC_LIST (the font is "installed" when
+# it is not empty); fc-cache records the directory it was asked to scan.
+FAKE_FC_LIST = f"""#!{BASH}
+printf '%s' "${{FAKE_FC_LIST:-}}"
+"""
+
+FAKE_FC_CACHE = f"""#!{BASH}
+printf '%s\\n' "$*" >> "$FAKEBIN_LOG/fc-cache.args"
 """
 
 
@@ -202,6 +226,12 @@ def sandbox(tmp_path: Path) -> Sandbox:
     _write_executable(fakebin / "curl", FAKE_CURL)  # must never be called
     _write_executable(fakebin / "sudo", FAKE_SUDO)
     _write_executable(fakebin / "apt-get", FAKE_APT_GET)
+    _write_executable(fakebin / "fc-list", FAKE_FC_LIST)
+    _write_executable(fakebin / "fc-cache", FAKE_FC_CACHE)
+    for tool in FONT_TOOLS:
+        found = shutil.which(tool)
+        assert found, f"{tool} not found on the host"
+        (fakebin / tool).symlink_to(found)
     (repo / "packages").mkdir()
     (repo / "packages" / "apt.txt").write_text(
         "# comment line\n\npkg-one\n  pkg-two   # trailing comment\nlib.three+x"
@@ -642,6 +672,145 @@ def test_readme_points_at_the_package_list() -> None:
     readme = (ROOT / "README.md").read_text()
     assert "packages/apt.txt" in readme
     assert "--system-packages" in readme
+    assert "--nerd-font" in readme
+
+
+# --- Nerd Font (--nerd-font) --------------------------------------------------
+
+PINNED_FONT_URL = re.compile(
+    r'^NERD_FONT_URL="(https://github\.com/ryanoasis/nerd-fonts/releases/'
+    r'download/v\d+\.\d+\.\d+/CascadiaCode\.tar\.xz)"$',
+    re.MULTILINE,
+)
+PINNED_FONT_SHA = re.compile(r'^NERD_FONT_SHA256="([0-9a-f]{64})"$', re.MULTILINE)
+
+
+def _font_archive(sandbox: Sandbox, pin: bool = True) -> dict[str, str]:
+    """Build a small font archive for the fake curl to serve.
+
+    With pin, the sandbox copy of install.sh is rewritten to expect its
+    checksum (the real pin belongs to the real release). Returns the env.
+    """
+    content = sandbox.root / "font-src"
+    content.mkdir()
+    (content / "CaskaydiaCoveNerdFont-Regular.ttf").write_text("fake font\n")
+    archive = sandbox.root / "CascadiaCode.tar.xz"
+    subprocess.run(
+        ["tar", "-cJf", str(archive), "-C", str(content), "."],
+        check=True,
+        timeout=30,
+    )
+    if pin:
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        script = sandbox.repo / "install.sh"
+        text, count = PINNED_FONT_SHA.subn(
+            f'NERD_FONT_SHA256="{digest}"', script.read_text()
+        )
+        assert count == 1
+        script.write_text(text)
+    return {"FAKE_CURL_SOURCE": str(archive)}
+
+
+def _font_dir(sandbox: Sandbox) -> Path:
+    return sandbox.home / ".local/share/fonts/CaskaydiaCove-NerdFont"
+
+
+def test_default_run_never_installs_the_font(sandbox: Sandbox) -> None:
+    result = sandbox.run()
+    assert result.returncode == 0, result.stderr
+    assert not sandbox.curl_called
+    assert not (sandbox.log / "fc-cache.args").exists()
+
+
+def test_nerd_font_downloads_the_pinned_release_and_installs_it(
+    sandbox: Sandbox,
+) -> None:
+    result = sandbox.run("--nerd-font", env_extra=_font_archive(sandbox))
+    assert result.returncode == 0, result.stderr
+    match = PINNED_FONT_URL.search(INSTALL_SH.read_text())
+    assert match
+    curl_args = (sandbox.log / "curl.called").read_text().split()
+    assert curl_args[-1] == match.group(1)
+    assert "-fsSL" in curl_args  # -f: an HTTP error is a failure, not a file
+    assert curl_args[curl_args.index("--proto") + 1] == "=https"
+    installed = _font_dir(sandbox) / "CaskaydiaCoveNerdFont-Regular.ttf"
+    assert installed.read_text() == "fake font\n"
+    assert (sandbox.log / "fc-cache.args").read_text().split() == [
+        "-f",
+        str(_font_dir(sandbox)),
+    ]
+    assert "Done." in result.stdout
+
+
+def test_nerd_font_honours_xdg_data_home(sandbox: Sandbox) -> None:
+    data = sandbox.root / "data"
+    env = _font_archive(sandbox) | {"XDG_DATA_HOME": str(data)}
+    result = sandbox.run("--nerd-font", env_extra=env)
+    assert result.returncode == 0, result.stderr
+    assert (data / "fonts/CaskaydiaCove-NerdFont").is_dir()
+    assert not _font_dir(sandbox).exists()
+
+
+def test_nerd_font_replaces_a_previous_partial_install(sandbox: Sandbox) -> None:
+    _font_dir(sandbox).mkdir(parents=True)
+    (_font_dir(sandbox) / "stale.ttf").write_text("old\n")
+    result = sandbox.run("--nerd-font", env_extra=_font_archive(sandbox))
+    assert result.returncode == 0, result.stderr
+    assert sorted(p.name for p in _font_dir(sandbox).iterdir()) == [
+        "CaskaydiaCoveNerdFont-Regular.ttf"
+    ]
+
+
+def test_nerd_font_already_installed_is_skipped(sandbox: Sandbox) -> None:
+    env = _font_archive(sandbox) | {"FAKE_FC_LIST": "CaskaydiaCove Nerd Font\n"}
+    result = sandbox.run("--nerd-font", env_extra=env)
+    assert result.returncode == 0, result.stderr
+    assert "already installed" in result.stdout
+    assert not sandbox.curl_called
+    assert not _font_dir(sandbox).exists()
+
+
+def test_nerd_font_checksum_mismatch_installs_nothing(sandbox: Sandbox) -> None:
+    result = sandbox.run("--nerd-font", env_extra=_font_archive(sandbox, pin=False))
+    assert result.returncode != 0
+    assert "Checksum mismatch" in result.stderr
+    assert not _font_dir(sandbox).exists()
+    assert not (sandbox.log / "fc-cache.args").exists()
+
+
+def test_nerd_font_download_failure_installs_nothing(sandbox: Sandbox) -> None:
+    env = _font_archive(sandbox) | {"FAKE_CURL_FAIL": "1"}
+    result = sandbox.run("--nerd-font", env_extra=env)
+    assert result.returncode != 0
+    assert "Could not download" in result.stderr
+    assert not _font_dir(sandbox).exists()
+
+
+@pytest.mark.parametrize("tool", ["fc-list", "curl", "xz", "fc-cache"])
+def test_nerd_font_missing_tool_fails_naming_it(sandbox: Sandbox, tool: str) -> None:
+    (sandbox.fakebin / tool).unlink()
+    result = sandbox.run("--nerd-font", env_extra=_font_archive(sandbox))
+    assert result.returncode != 0
+    assert f"--nerd-font needs {tool}" in result.stderr
+    assert "packages/apt.txt" in result.stderr
+    assert not _font_dir(sandbox).exists()
+
+
+def test_nerd_font_pin_is_an_https_release_with_a_sha256() -> None:
+    script = INSTALL_SH.read_text()
+    assert PINNED_FONT_URL.search(script)
+    assert PINNED_FONT_SHA.search(script)
+
+
+def test_nerd_font_name_matches_the_font_the_config_uses() -> None:
+    settings = (ROOT / "src" / "settings.py").read_text()
+    assert '"font": "CaskaydiaCove Nerd Font"' in settings
+    assert 'NERD_FONT_NAME="CaskaydiaCove Nerd Font"' in INSTALL_SH.read_text()
+
+
+@pytest.mark.parametrize("package", ["curl", "xz-utils", "fontconfig"])
+def test_shipped_package_list_has_the_font_tools(package: str) -> None:
+    assert package in _shipped_packages()
 
 
 # --- Script text --------------------------------------------------------------
@@ -688,4 +857,5 @@ def test_usage_documents_uv_force_backup_and_the_default_interpreter(
     assert "--force" in result.stdout and ".venv.bak" in result.stdout
     assert f"default: {SYSTEM_PYTHON}" in result.stdout
     assert "--system-packages" in result.stdout
+    assert "--nerd-font" in result.stdout
     assert "pip" not in result.stdout.lower()

@@ -33,7 +33,7 @@ A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11
   ```
 
   Other installation methods are listed in the [uv docs](https://docs.astral.sh/uv/getting-started/installation/).
-- A **Nerd Font** installed — the bar uses `CaskaydiaCove Nerd Font`. Grab it from [nerdfonts.com](https://www.nerdfonts.com/).
+- A **Nerd Font** installed — the bar uses `CaskaydiaCove Nerd Font`. `./install.sh --nerd-font` installs it for your user, or grab it from [nerdfonts.com](https://www.nerdfonts.com/).
 - A display manager that reads `/usr/share/xsessions/` (LightDM, GDM, SDDM, etc.).
 - The **system packages** in [`packages/apt.txt`](packages/apt.txt): the native libraries the venv loads (cairo, pango, xcb), the X utilities and the programs the keybindings, bar and autostart use. On Debian/Ubuntu, `./install.sh --system-packages` installs them.
 
@@ -59,6 +59,7 @@ Useful flags:
 | Flag | Effect |
 |---|---|
 | `--system-packages` | First run `sudo apt-get update` and `sudo apt-get install` with every package in [`packages/apt.txt`](packages/apt.txt). Debian/Ubuntu only; it fails without `apt-get`. Without the flag, apt is never touched. |
+| `--nerd-font` | Install `CaskaydiaCove Nerd Font` into `~/.local/share/fonts` (no `sudo`). It downloads a pinned Nerd Fonts release, refuses it unless the SHA-256 matches, and is skipped when `fc-list` already finds the font. |
 | `--dev` | Also install the dev tools (`ruff`, `mypy`, `pytest`, `pytest-asyncio`, `pre-commit`). Without it they are removed. |
 | `--force` | Recreate the virtual environment. The old one is moved to `.venv.bak` while the new one is synced, restored if the sync fails, and deleted once it succeeds. |
 | `--skip-xsession` | Don't touch `/usr/share/xsessions` (no `sudo`). |
