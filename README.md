@@ -186,6 +186,8 @@ Runtime behavior is controlled through `.env` (loaded by `python-dotenv` at star
 
 The script is started in the background; a missing or non-executable script only logs a warning. Its output is written to `$XDG_DATA_HOME/qtile/autostart.log` (default `~/.local/share/qtile/autostart.log`) and truncated each session.
 
+The shipped `autostart.sh` is plain POSIX `sh`. It starts the keyring and the tray applets (`cbatticon`, `volumeicon`, `udiskie`, `nm-applet`, `blueman-applet`). A program that is not installed is logged and skipped. `cbatticon` gets the first power supply of type `Battery` under `/sys/class/power_supply`, and is skipped on machines without one.
+
 ### Terminal
 
 | Variable | Default | Purpose |
