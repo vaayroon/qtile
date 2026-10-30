@@ -2,8 +2,9 @@
 
 > **Legacy guide (December 2022).** Written for Kali Linux and an older version of
 > this config. Package names, paths and versions may be outdated. For the current
-> Qtile install, follow the [README](../../README.md#quick-start). An adapted
-> Ubuntu / generic Linux guide will replace this one.
+> Qtile install, follow the [README](../../README.md#quick-start). The current
+> guides are [ubuntu.md](ubuntu.md) for the desktop and [shell.md](shell.md)
+> for the shell and the terminal.
 
 # Table of Contents
 - [Kali Installation](#kali-installation)
@@ -53,11 +54,10 @@ Clone repository:
   ```
 
   Change default terminal:
-  Edit config file
-  ```
-  nano ~/.config/qtile/config.py
-  ```
-  and replace "myTerm = "/usr/bin/kitty" by your terminal, fo example: "/usr/bin/qterminal"
+  Set `QTILE_TERMINAL` in `~/.config/qtile/.env` (copied from `.env.example`
+  by `install.sh`) to your terminal, for example `/usr/bin/qterminal`. It is the
+  terminal the bar widgets' click actions open; `mod + Return` always opens
+  kitty. See [Terminal](../../README.md#terminal).
 
 Install qtile (http://docs.qtile.org/en/latest/manual/install/):
   I use to install qtile as following:

@@ -428,10 +428,11 @@ Other optional integrations referenced in keybindings: `nautilus`, `pavucontrol`
 
 ## Full desktop setup
 
-The sections above cover Qtile itself. To reproduce the rest of the desktop (audio, systray, notifications, themes, display manager, shell and terminal), follow the guide for your distro:
+The sections above cover Qtile itself. To reproduce the rest of the desktop (audio, screens, notifications, themes and display manager), follow the guide for your distro. For the shell and the terminal (zsh, Powerlevel10k, kitty) on any distro, see [docs/setup/shell.md](docs/setup/shell.md).
 
 | Distro | Guide | Status |
 |--------|-------|--------|
+| Ubuntu 24.04 | [docs/setup/ubuntu.md](docs/setup/ubuntu.md) | Current |
 | Kali Linux | [docs/setup/kali.md](docs/setup/kali.md) | Legacy (2022), may be outdated |
 
 ---
@@ -652,7 +653,7 @@ install.sh           # Bootstrap script (apt packages, uv sync, .env, X session,
 autostart.sh         # Keyring and tray applets, run once per login (POSIX sh)
 packages/apt.txt     # System packages for Ubuntu 24.04 (install.sh --system-packages)
 test-xephyr.sh       # Validate the config and run it in a nested Xephyr window
-docs/setup/          # Per-distro full desktop setup guides
+docs/setup/          # Per-distro desktop guides, plus shell.md (zsh, Powerlevel10k, kitty)
 .screenshots/        # README assets
 ```
 
