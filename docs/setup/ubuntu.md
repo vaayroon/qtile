@@ -2,7 +2,8 @@
 
 This guide covers the desktop around Qtile on Ubuntu 24.04: audio, screens,
 notifications, GTK and Qt themes, and the display manager. It assumes the
-config is already installed.
+config is already installed. For the shell and the terminal, see
+[shell.md](shell.md).
 
 ## Quick path
 
@@ -171,3 +172,7 @@ rerun `./install.sh` without `--skip-xsession`.
 - [ ] Qt apps (such as `qt5ct` itself) use the Kvantum theme.
 - [ ] The tray shows the volume, network and, on a laptop, battery icons.
 - [ ] To test config changes without logging out, run `./test-xephyr.sh` ([Try it without logging out](../../README.md#try-it-without-logging-out)).
+
+## Next step
+
+Set up zsh, its plugins, Powerlevel10k and kitty with [shell.md](shell.md).
