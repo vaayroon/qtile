@@ -5,7 +5,8 @@
 # Syncs the virtual environment from uv.lock (it installs exactly what the lock
 # pins and prunes unlocked packages, except the seed tools uv leaves in place),
 # sets up the .env file, and registers an X session entry so your display
-# manager can launch Qtile from this repo's venv.
+# manager can launch Qtile from this repo's venv. With --system-packages it
+# first installs the apt packages listed in packages/apt.txt.
 #
 # Requires uv (https://docs.astral.sh/uv/). It is never installed from here.
 # Re-runnable: .env is preserved and the venv is converged to uv.lock on every
@@ -22,6 +23,7 @@ VENV_DIR="${REPO_DIR}/.venv"
 CONFIG_PY="${REPO_DIR}/src/config.py"
 QTILE_BIN="${VENV_DIR}/bin/qtile"
 BACKUP_DIR="${VENV_DIR}.bak"
+APT_PACKAGES_FILE="${REPO_DIR}/packages/apt.txt"
 # QTILE_XSESSION_FILE only exists so the tests can write the session entry to a
 # temp dir; real users never need to set it.
 XSESSION_FILE="${QTILE_XSESSION_FILE:-/usr/share/xsessions/qtile-venv.desktop}"
@@ -37,25 +39,29 @@ PYTHON="${PYTHON:-$DEFAULT_PYTHON}"
 INSTALL_DEV=false
 FORCE=false
 SKIP_XSESSION=false
+SYSTEM_PACKAGES=false
 
 usage() {
     cat <<EOF
 Usage: ./install.sh [options]
 
 Options:
-  --dev            Also install dev tools (ruff, mypy, pytest, pre-commit); without it they are removed
-  --force          Recreate the virtual environment (the old one is kept as .venv.bak
-                   during the sync and restored if it fails)
-  --skip-xsession  Do not write the /usr/share/xsessions entry (needs sudo)
-  -h, --help       Show this help
+  --system-packages  First install the apt packages in packages/apt.txt (needs sudo,
+                     Debian/Ubuntu only)
+  --dev              Also install dev tools (ruff, mypy, pytest, pre-commit); without it they are removed
+  --force            Recreate the virtual environment (the old one is kept as .venv.bak
+                     during the sync and restored if it fails)
+  --skip-xsession    Do not write the /usr/share/xsessions entry (needs sudo)
+  -h, --help         Show this help
 
 Environment:
-  PYTHON           Python interpreter uv uses for the venv (default: ${DEFAULT_PYTHON})
+  PYTHON             Python interpreter uv uses for the venv (default: ${DEFAULT_PYTHON})
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --system-packages) SYSTEM_PACKAGES=true ;;
         --dev) INSTALL_DEV=true ;;
         --force) FORCE=true ;;
         --skip-xsession) SKIP_XSESSION=true ;;
@@ -103,6 +109,36 @@ verify_venv_interpreter() {
         rollback_and_die "${cfg} says the venv was built from '${home}', not from ${PYTHON} (${python_path}). Fix PYTHON= or your PATH, then re-run with --force."
     fi
 }
+
+# Print the package names in packages/apt.txt, one per line: everything after
+# a `#` is a comment and blank lines are skipped.
+read_package_list() {
+    local line words
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        read -ra words <<< "${line%%#*}"
+        if (( ${#words[@]} )); then
+            printf '%s\n' "${words[@]}"
+        fi
+    done < "$APT_PACKAGES_FILE"
+}
+
+# --- 0. System packages (opt-in) ----------------------------------------------
+# Runs before the preconditions so it can provide the interpreter they check.
+# Without --system-packages, apt is never touched.
+if [[ "$SYSTEM_PACKAGES" == true ]]; then
+    command -v apt-get >/dev/null 2>&1 \
+        || die "--system-packages needs apt-get (Debian/Ubuntu). Install the packages in ${APT_PACKAGES_FILE} with your package manager, then re-run without it."
+    [[ -f "$APT_PACKAGES_FILE" ]] \
+        || die "${APT_PACKAGES_FILE} not found. Restore it with: git checkout -- packages/apt.txt"
+    mapfile -t packages < <(read_package_list)
+    (( ${#packages[@]} )) || die "${APT_PACKAGES_FILE} lists no packages."
+
+    log "Installing ${#packages[@]} system packages from packages/apt.txt (needs sudo)"
+    sudo apt-get update \
+        || die "apt-get update failed; nothing else was changed."
+    sudo apt-get install "${packages[@]}" \
+        || die "apt-get install failed; nothing else was changed."
+fi
 
 # --- Preconditions ------------------------------------------------------------
 command -v uv >/dev/null 2>&1 \
