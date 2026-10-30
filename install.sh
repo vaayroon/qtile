@@ -57,7 +57,7 @@ Usage: ./install.sh [options]
 
 Options:
   --system-packages  First install the apt packages in packages/apt.txt (needs sudo,
-                     Debian/Ubuntu only)
+                     apt only; the names target Ubuntu 24.04)
   --nerd-font        Also install ${NERD_FONT_NAME} into ~/.local/share/fonts
                      (pinned release, checksum verified; skipped if already installed)
   --dev              Also install dev tools (ruff, mypy, pytest, pre-commit); without it they are removed
@@ -140,7 +140,7 @@ read_package_list() {
 # Without --system-packages, apt is never touched.
 if [[ "$SYSTEM_PACKAGES" == true ]]; then
     command -v apt-get >/dev/null 2>&1 \
-        || die "--system-packages needs apt-get (Debian/Ubuntu). Install the packages in ${APT_PACKAGES_FILE} with your package manager, then re-run without it."
+        || die "--system-packages needs apt-get (the list targets Ubuntu 24.04). Install the packages in ${APT_PACKAGES_FILE} with your package manager, then re-run without it."
     [[ -f "$APT_PACKAGES_FILE" ]] \
         || die "${APT_PACKAGES_FILE} not found. Restore it with: git checkout -- packages/apt.txt"
     mapfile -t packages < <(read_package_list)
@@ -149,8 +149,9 @@ if [[ "$SYSTEM_PACKAGES" == true ]]; then
     log "Installing ${#packages[@]} system packages from packages/apt.txt (needs sudo)"
     sudo apt-get update \
         || die "apt-get update failed; nothing else was changed."
-    sudo apt-get install "${packages[@]}" \
-        || die "apt-get install failed; nothing else was changed."
+    # No -y: apt shows what it will install and asks first.
+    sudo apt-get install -- "${packages[@]}" \
+        || die "apt-get install failed; the venv, .env and session entries were not touched."
 fi
 
 # --- Preconditions ------------------------------------------------------------
@@ -254,23 +255,26 @@ chmod +x "$SCRATCHPAD_TOGGLE" 2>/dev/null || true
 
 # --- 5. Nerd Font (opt-in) ---------------------------------------------------
 # Downloads the pinned release, refuses it unless the checksum matches, and
-# unpacks it into a temp dir first, so a failed download or extraction never
-# leaves a half-installed font behind. No sudo: the font is per user.
+# unpacks it into a temp dir next to the target first, so a failed download or
+# extraction never leaves a half-installed font behind and the final mv is an
+# atomic rename on the same filesystem. No sudo: the font is per user.
 if [[ "$NERD_FONT" == true ]]; then
     command -v fc-list >/dev/null 2>&1 \
         || die "--nerd-font needs fc-list (fontconfig, listed in packages/apt.txt)."
     if [[ -n "$(fc-list "$NERD_FONT_NAME" family)" ]]; then
         log "${NERD_FONT_NAME} is already installed — skipping (--nerd-font)"
     else
-        for tool in curl tar xz sha256sum fc-cache; do
+        for tool in curl tar xz sha256sum mktemp fc-cache; do
             command -v "$tool" >/dev/null 2>&1 \
                 || die "--nerd-font needs ${tool} (see packages/apt.txt)."
         done
-        font_tmp="$(mktemp -d)"
+        mkdir -p "$(dirname "$NERD_FONT_DIR")"
+        font_tmp="$(mktemp -d "$(dirname "$NERD_FONT_DIR")/.nerd-font.XXXXXX")"
         trap 'rm -rf "$font_tmp"' EXIT
 
         log "Downloading ${NERD_FONT_NAME} from ${NERD_FONT_URL}"
-        curl -fsSL --proto '=https' -o "${font_tmp}/font.tar.xz" "$NERD_FONT_URL" \
+        curl -fsSL --proto '=https' --proto-redir '=https' --connect-timeout 30 \
+            --max-time 600 -o "${font_tmp}/font.tar.xz" "$NERD_FONT_URL" \
             || die "Could not download ${NERD_FONT_URL}; no font was installed."
         printf '%s  %s\n' "$NERD_FONT_SHA256" "${font_tmp}/font.tar.xz" \
             | sha256sum --check --status \
@@ -280,7 +284,6 @@ if [[ "$NERD_FONT" == true ]]; then
             || die "Could not unpack the font archive; no font was installed."
 
         log "Installing ${NERD_FONT_NAME} into ${NERD_FONT_DIR}"
-        mkdir -p "$(dirname "$NERD_FONT_DIR")"
         rm -rf "$NERD_FONT_DIR"
         mv "${font_tmp}/font" "$NERD_FONT_DIR"
         fc-cache -f "$NERD_FONT_DIR" \

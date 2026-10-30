@@ -20,14 +20,19 @@ start() {
 }
 
 # Print the name of the first power supply (in name order) whose type is
-# Battery. AC adapters (Mains) and USB supplies are skipped.
+# Battery. AC adapters (Mains), USB supplies and the batteries of peripherals
+# such as wireless mice (scope Device) are skipped.
 first_battery() {
     for supply in "$POWER_SUPPLY_DIR"/*; do
         [ -r "$supply/type" ] || continue
         # No "|| continue": read fails on a last line without a newline, but
         # it still sets the variable.
         read -r supply_type < "$supply/type"
-        if [ "$supply_type" = Battery ]; then
+        supply_scope=
+        if [ -r "$supply/scope" ]; then
+            read -r supply_scope < "$supply/scope"
+        fi
+        if [ "$supply_type" = Battery ] && [ "$supply_scope" != Device ]; then
             echo "${supply##*/}"
             return 0
         fi

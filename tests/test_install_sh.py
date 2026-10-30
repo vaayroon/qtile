@@ -571,7 +571,7 @@ def test_unknown_flag_is_rejected_before_touching_anything(sandbox: Sandbox) -> 
 # --- System packages (--system-packages) --------------------------------------
 
 APT_PACKAGES = ROOT / "packages" / "apt.txt"
-APT_INSTALL = "apt-get install pkg-one pkg-two lib.three+x"
+APT_INSTALL = "apt-get install -- pkg-one pkg-two lib.three+x"
 
 
 def test_default_run_never_touches_apt(sandbox: Sandbox) -> None:
@@ -733,6 +733,11 @@ def test_nerd_font_downloads_the_pinned_release_and_installs_it(
     assert curl_args[-1] == match.group(1)
     assert "-fsSL" in curl_args  # -f: an HTTP error is a failure, not a file
     assert curl_args[curl_args.index("--proto") + 1] == "=https"
+    assert curl_args[curl_args.index("--proto-redir") + 1] == "=https"
+    assert "--max-time" in curl_args  # a stalled download must not hang
+    # The temp dir sits next to the target and is gone afterwards.
+    fonts = _font_dir(sandbox).parent
+    assert [p.name for p in fonts.iterdir()] == [_font_dir(sandbox).name]
     installed = _font_dir(sandbox) / "CaskaydiaCoveNerdFont-Regular.ttf"
     assert installed.read_text() == "fake font\n"
     assert (sandbox.log / "fc-cache.args").read_text().split() == [
@@ -775,6 +780,7 @@ def test_nerd_font_checksum_mismatch_installs_nothing(sandbox: Sandbox) -> None:
     assert result.returncode != 0
     assert "Checksum mismatch" in result.stderr
     assert not _font_dir(sandbox).exists()
+    assert list(_font_dir(sandbox).parent.iterdir()) == []  # temp dir removed
     assert not (sandbox.log / "fc-cache.args").exists()
 
 
@@ -786,7 +792,7 @@ def test_nerd_font_download_failure_installs_nothing(sandbox: Sandbox) -> None:
     assert not _font_dir(sandbox).exists()
 
 
-@pytest.mark.parametrize("tool", ["fc-list", "curl", "xz", "fc-cache"])
+@pytest.mark.parametrize("tool", ["fc-list", "curl", "xz", "mktemp", "fc-cache"])
 def test_nerd_font_missing_tool_fails_naming_it(sandbox: Sandbox, tool: str) -> None:
     (sandbox.fakebin / tool).unlink()
     result = sandbox.run("--nerd-font", env_extra=_font_archive(sandbox))

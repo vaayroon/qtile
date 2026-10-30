@@ -17,7 +17,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 AUTOSTART_SH = ROOT / "autostart.sh"
-SH = shutil.which("dash") or "/bin/sh"
+SH = shutil.which("dash")
 
 PROGRAMS = (
     "dbus-update-activation-environment",
@@ -40,15 +40,24 @@ class Sandbox:
     power: Path
     log: Path
 
-    def add_supply(self, name: str, supply_type: str, newline: bool = True) -> None:
+    def add_supply(
+        self,
+        name: str,
+        supply_type: str,
+        newline: bool = True,
+        scope: str | None = None,
+    ) -> None:
         supply = self.power / name
         supply.mkdir()
         (supply / "type").write_text(supply_type + ("\n" if newline else ""))
+        if scope is not None:
+            (supply / "scope").write_text(scope + "\n")
 
     def remove_program(self, name: str) -> None:
         (self.fakebin / name).unlink()
 
     def run(self) -> subprocess.CompletedProcess[str]:
+        assert SH, "dash is required to check that autostart.sh is POSIX sh"
         return subprocess.run(
             [SH, str(AUTOSTART_SH)],
             env={
@@ -97,6 +106,7 @@ def test_script_is_executable() -> None:
 
 
 def test_script_parses_under_dash() -> None:
+    assert SH, "dash is required to check that autostart.sh is POSIX sh"
     result = subprocess.run(
         [SH, "-n", str(AUTOSTART_SH)],
         capture_output=True,
@@ -142,6 +152,28 @@ def test_battery_is_the_first_supply_of_type_battery(sandbox: Sandbox) -> None:
     result = sandbox.run()
     assert result.returncode == 0, result.stderr
     assert sandbox.args("cbatticon") == _cbatticon_args("BAT1")
+
+
+@pytest.mark.parametrize("scope", ["System", "Unknown"])
+def test_system_battery_scope_is_accepted(sandbox: Sandbox, scope: str) -> None:
+    sandbox.add_supply("BAT0", "Battery", scope=scope)
+    sandbox.run()
+    assert sandbox.args("cbatticon") == _cbatticon_args("BAT0")
+
+
+def test_peripheral_battery_is_skipped(sandbox: Sandbox) -> None:
+    # A wireless mouse sorts before BAT0 but must not be picked.
+    sandbox.add_supply("hidpp_battery_0", "Battery", scope="Device")
+    sandbox.add_supply("BAT0", "Battery")
+    sandbox.run()
+    assert sandbox.args("cbatticon") == _cbatticon_args("BAT0")
+
+
+def test_only_a_peripheral_battery_skips_cbatticon(sandbox: Sandbox) -> None:
+    sandbox.add_supply("hidpp_battery_0", "Battery", scope="Device")
+    result = sandbox.run()
+    assert sandbox.args("cbatticon") is None
+    assert "no battery" in result.stdout
 
 
 def test_battery_type_without_a_trailing_newline_is_still_read(
