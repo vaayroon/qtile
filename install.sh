@@ -5,7 +5,9 @@
 # Syncs the virtual environment from uv.lock (it installs exactly what the lock
 # pins and prunes unlocked packages, except the seed tools uv leaves in place),
 # sets up the .env file, and registers an X session entry so your display
-# manager can launch Qtile from this repo's venv.
+# manager can launch Qtile from this repo's venv. With --system-packages it
+# first installs the apt packages listed in packages/apt.txt; with --nerd-font
+# it installs the bar's Nerd Font for the current user.
 #
 # Requires uv (https://docs.astral.sh/uv/). It is never installed from here.
 # Re-runnable: .env is preserved and the venv is converged to uv.lock on every
@@ -22,6 +24,15 @@ VENV_DIR="${REPO_DIR}/.venv"
 CONFIG_PY="${REPO_DIR}/src/config.py"
 QTILE_BIN="${VENV_DIR}/bin/qtile"
 BACKUP_DIR="${VENV_DIR}.bak"
+APT_PACKAGES_FILE="${REPO_DIR}/packages/apt.txt"
+
+# The bar, the layouts and the scratchpad terminal use this font. Bumping the
+# release means updating the URL and its SHA-256 together (the GitHub release
+# API lists each asset's digest).
+NERD_FONT_NAME="CaskaydiaCove Nerd Font"
+NERD_FONT_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/CascadiaCode.tar.xz"
+NERD_FONT_SHA256="ae598e9401e2846aa3ee364513715de0490b844a4b54f0768991f45f23aa8369"
+NERD_FONT_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/fonts/CaskaydiaCove-NerdFont"
 # QTILE_XSESSION_FILE only exists so the tests can write the session entry to a
 # temp dir; real users never need to set it.
 XSESSION_FILE="${QTILE_XSESSION_FILE:-/usr/share/xsessions/qtile-venv.desktop}"
@@ -37,25 +48,33 @@ PYTHON="${PYTHON:-$DEFAULT_PYTHON}"
 INSTALL_DEV=false
 FORCE=false
 SKIP_XSESSION=false
+SYSTEM_PACKAGES=false
+NERD_FONT=false
 
 usage() {
     cat <<EOF
 Usage: ./install.sh [options]
 
 Options:
-  --dev            Also install dev tools (ruff, mypy, pytest, pre-commit); without it they are removed
-  --force          Recreate the virtual environment (the old one is kept as .venv.bak
-                   during the sync and restored if it fails)
-  --skip-xsession  Do not write the /usr/share/xsessions entry (needs sudo)
-  -h, --help       Show this help
+  --system-packages  First install the apt packages in packages/apt.txt (needs sudo,
+                     apt only; the names target Ubuntu 24.04)
+  --nerd-font        Also install ${NERD_FONT_NAME} into ~/.local/share/fonts
+                     (pinned release, checksum verified; skipped if already installed)
+  --dev              Also install dev tools (ruff, mypy, pytest, pre-commit); without it they are removed
+  --force            Recreate the virtual environment (the old one is kept as .venv.bak
+                     during the sync and restored if it fails)
+  --skip-xsession    Do not write the /usr/share/xsessions entry (needs sudo)
+  -h, --help         Show this help
 
 Environment:
-  PYTHON           Python interpreter uv uses for the venv (default: ${DEFAULT_PYTHON})
+  PYTHON             Python interpreter uv uses for the venv (default: ${DEFAULT_PYTHON})
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --system-packages) SYSTEM_PACKAGES=true ;;
+        --nerd-font) NERD_FONT=true ;;
         --dev) INSTALL_DEV=true ;;
         --force) FORCE=true ;;
         --skip-xsession) SKIP_XSESSION=true ;;
@@ -103,6 +122,37 @@ verify_venv_interpreter() {
         rollback_and_die "${cfg} says the venv was built from '${home}', not from ${PYTHON} (${python_path}). Fix PYTHON= or your PATH, then re-run with --force."
     fi
 }
+
+# Print the package names in packages/apt.txt, one per line: everything after
+# a `#` is a comment and blank lines are skipped.
+read_package_list() {
+    local line words
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        read -ra words <<< "${line%%#*}"
+        if (( ${#words[@]} )); then
+            printf '%s\n' "${words[@]}"
+        fi
+    done < "$APT_PACKAGES_FILE"
+}
+
+# --- 0. System packages (opt-in) ----------------------------------------------
+# Runs before the preconditions so it can provide the interpreter they check.
+# Without --system-packages, apt is never touched.
+if [[ "$SYSTEM_PACKAGES" == true ]]; then
+    command -v apt-get >/dev/null 2>&1 \
+        || die "--system-packages needs apt-get (the list targets Ubuntu 24.04). Install the packages in ${APT_PACKAGES_FILE} with your package manager, then re-run without it."
+    [[ -f "$APT_PACKAGES_FILE" ]] \
+        || die "${APT_PACKAGES_FILE} not found. Restore it with: git checkout -- packages/apt.txt"
+    mapfile -t packages < <(read_package_list)
+    (( ${#packages[@]} )) || die "${APT_PACKAGES_FILE} lists no packages."
+
+    log "Installing ${#packages[@]} system packages from packages/apt.txt (needs sudo)"
+    sudo apt-get update \
+        || die "apt-get update failed; nothing else was changed."
+    # No -y: apt shows what it will install and asks first.
+    sudo apt-get install -- "${packages[@]}" \
+        || die "apt-get install failed; the venv, .env and session entries were not touched."
+fi
 
 # --- Preconditions ------------------------------------------------------------
 command -v uv >/dev/null 2>&1 \
@@ -202,6 +252,44 @@ log "Registering rofi launcher entries for the scratchpads"
 chmod +x "$SCRATCHPAD_TOGGLE" 2>/dev/null || true
 "${VENV_DIR}/bin/python" "$DESKTOP_GENERATOR" \
     || warn "Could not write the rofi launchers. Re-run: ${VENV_DIR}/bin/python ${DESKTOP_GENERATOR}"
+
+# --- 5. Nerd Font (opt-in) ---------------------------------------------------
+# Downloads the pinned release, refuses it unless the checksum matches, and
+# unpacks it into a temp dir next to the target first, so a failed download or
+# extraction never leaves a half-installed font behind and the final mv is an
+# atomic rename on the same filesystem. No sudo: the font is per user.
+if [[ "$NERD_FONT" == true ]]; then
+    command -v fc-list >/dev/null 2>&1 \
+        || die "--nerd-font needs fc-list (fontconfig, listed in packages/apt.txt)."
+    if [[ -n "$(fc-list "$NERD_FONT_NAME" family)" ]]; then
+        log "${NERD_FONT_NAME} is already installed — skipping (--nerd-font)"
+    else
+        for tool in curl tar xz sha256sum mktemp fc-cache; do
+            command -v "$tool" >/dev/null 2>&1 \
+                || die "--nerd-font needs ${tool} (see packages/apt.txt)."
+        done
+        mkdir -p "$(dirname "$NERD_FONT_DIR")"
+        font_tmp="$(mktemp -d "$(dirname "$NERD_FONT_DIR")/.nerd-font.XXXXXX")"
+        trap 'rm -rf "$font_tmp"' EXIT
+
+        log "Downloading ${NERD_FONT_NAME} from ${NERD_FONT_URL}"
+        curl -fsSL --proto '=https' --proto-redir '=https' --connect-timeout 30 \
+            --max-time 600 -o "${font_tmp}/font.tar.xz" "$NERD_FONT_URL" \
+            || die "Could not download ${NERD_FONT_URL}; no font was installed."
+        printf '%s  %s\n' "$NERD_FONT_SHA256" "${font_tmp}/font.tar.xz" \
+            | sha256sum --check --status \
+            || die "Checksum mismatch for ${NERD_FONT_URL}; no font was installed."
+        mkdir "${font_tmp}/font"
+        tar -xJf "${font_tmp}/font.tar.xz" -C "${font_tmp}/font" \
+            || die "Could not unpack the font archive; no font was installed."
+
+        log "Installing ${NERD_FONT_NAME} into ${NERD_FONT_DIR}"
+        rm -rf "$NERD_FONT_DIR"
+        mv "${font_tmp}/font" "$NERD_FONT_DIR"
+        fc-cache -f "$NERD_FONT_DIR" \
+            || warn "fc-cache failed. Run it yourself: fc-cache -f ${NERD_FONT_DIR}"
+    fi
+fi
 
 # --- Done ---------------------------------------------------------------------
 log "Done."

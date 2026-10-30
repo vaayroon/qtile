@@ -1,0 +1,50 @@
+# System packages for this Qtile config. The names target Ubuntu 24.04; other
+# Debian-based releases may name or version some of them differently (Debian 13
+# has no python3.12, for example).
+#
+# Install them with `./install.sh --system-packages`, or by hand with
+# `sudo apt-get install` and the names below. One package per line; `#` starts
+# a comment. uv is not here: install it from https://docs.astral.sh/uv/.
+
+# Interpreter the venv is built on (install.sh uses /usr/bin/python3.12)
+python3.12
+
+# Native libraries the venv loads at runtime (cairocffi, xcffib, pango)
+libcairo2
+libpangocairo-1.0-0
+libgdk-pixbuf-2.0-0
+libxcb1
+libxcb-cursor0
+
+# X session: xrandr and xsetroot come from x11-xserver-utils
+xserver-xorg
+x11-xserver-utils
+
+# Keybinding targets: terminal, launchers, audio, media, brightness, lock, screenshots
+kitty
+rofi
+suckless-tools
+pamixer
+playerctl
+brightnessctl
+i3lock
+flameshot
+
+# Bar widgets and their click actions
+lm-sensors
+htop
+glances
+
+# autostart.sh: keyring and tray applets
+dbus
+gnome-keyring
+cbatticon
+volumeicon-alsa
+udiskie
+network-manager-gnome
+blueman
+
+# install.sh --nerd-font: download, verify, unpack and register the font
+curl
+xz-utils
+fontconfig
