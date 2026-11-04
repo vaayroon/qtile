@@ -33,9 +33,10 @@ NERD_FONT_NAME="CaskaydiaCove Nerd Font"
 NERD_FONT_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/CascadiaCode.tar.xz"
 NERD_FONT_SHA256="ae598e9401e2846aa3ee364513715de0490b844a4b54f0768991f45f23aa8369"
 NERD_FONT_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/fonts/CaskaydiaCove-NerdFont"
-# QTILE_XSESSION_FILE only exists so the tests can write the session entry to a
-# temp dir; real users never need to set it.
-XSESSION_FILE="${QTILE_XSESSION_FILE:-/usr/share/xsessions/qtile-venv.desktop}"
+# Where the X session entry is written. QTILE_XSESSION_FILE overrides it (an
+# empty value keeps the default); the tests use it to write to a temp dir.
+DEFAULT_XSESSION_FILE="/usr/share/xsessions/qtile-venv.desktop"
+XSESSION_FILE="${QTILE_XSESSION_FILE:-$DEFAULT_XSESSION_FILE}"
 
 # The login session runs from this venv, so it must be built on the distro
 # interpreter. uv's python-preference = "only-system" still accepts ANY non-uv
@@ -63,11 +64,15 @@ Options:
   --dev              Also install dev tools (ruff, mypy, pytest, pre-commit); without it they are removed
   --force            Recreate the virtual environment (the old one is kept as .venv.bak
                      during the sync and restored if it fails)
-  --skip-xsession    Do not write the /usr/share/xsessions entry (needs sudo)
+  --skip-xsession    Do not write the X session entry (writing it may need sudo)
   -h, --help         Show this help
 
 Environment:
-  PYTHON             Python interpreter uv uses for the venv (default: ${DEFAULT_PYTHON})
+  PYTHON               Python interpreter uv uses for the venv (default: ${DEFAULT_PYTHON})
+  QTILE_XSESSION_FILE  Path of the X session entry; empty uses the default
+                       (default: ${DEFAULT_XSESSION_FILE}).
+                       Its directory must already exist (the run fails otherwise);
+                       sudo writes the entry when that directory is not writable
 EOF
 }
 
