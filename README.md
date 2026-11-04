@@ -17,7 +17,7 @@ A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11
 - **11 layouts** — MonadTall, MonadWide, Max, Tile, Stack, TreeTab, Matrix, and more.
 - **Powerline status bar** — system updates, crypto ticker, CPU/GPU temps, memory, network, clock, and a system tray.
 - **Phone mirroring widget** — start/stop scrcpy, reconnect ADB, and control phone volume straight from the bar.
-- **`.env`-driven** — runtime behavior (monitor ordering, phone mirror) is configured through environment variables, not hardcoded.
+- **`.env`-driven** — runtime behavior (monitor ordering, phone mirror, optional bar widgets) is configured through environment variables, not hardcoded.
 - **Reproducible deps** — managed and locked with [uv](https://docs.astral.sh/uv/) (`uv.lock`, exact installs); linted, formatted and type-checked with `ruff` and `mypy`, gated by GitHub Actions CI and local pre-commit hooks.
 
 ---
@@ -203,6 +203,24 @@ The shipped `autostart.sh` is plain POSIX `sh`. It starts the keyring and the tr
 | Variable | Default | Purpose |
 |---|---|---|
 | `QTILE_TERMINAL` | `/usr/bin/qterminal` | Terminal emulator spawned by the bar widgets' click actions (empty = default). `mod + Return` always opens `kitty`. |
+
+### Bar widgets
+
+Widgets that depend on hardware, an external tool or a personal preference can be switched off. Every toggle defaults to `true`, so an empty `.env` keeps the full bar.
+
+| Variable | Default | Widget |
+|---|---|---|
+| `QTILE_WIDGET_UPDATES` | `true` | Pending apt upgrades (`CheckUpdates`, Debian-based distros). |
+| `QTILE_WIDGET_CRYPTO` | `true` | BTC/EUR ticker (`CryptoTicker`, needs network access). |
+| `QTILE_WIDGET_THERMAL` | `true` | CPU temperature and its icon (`ThermalSensor`, reads the AMD `Tctl` sensor via `lm-sensors`). |
+| `QTILE_WIDGET_NVIDIA` | `true` | NVIDIA GPU temperature, fan and perf level and their icon (`NvidiaSensors`, needs `nvidia-smi`). |
+| `QTILE_WIDGET_PHONE_MIRROR` | `true` | The [phone mirror widget](#phone-mirror-widget). |
+
+Values are case-insensitive: `1`, `true`, `yes`, `on` enable a widget and `0`, `false`, `no`, `off` disable it. An empty value uses the default. Any other value also uses the default and logs `env: QTILE_WIDGET_...=... is not a boolean` to `qtile.log`.
+
+A config reload (`mod + Shift + r`) reads `.env` again, so changing a value applies at once. Deleting a line does not: the old value stays in Qtile's environment until you log out. To turn a widget back on, set it to `true` rather than deleting its line.
+
+The powerline segments alternate their two background colors over the widgets that remain, so any combination keeps the arrows matched. The group box, window name, memory, network, clock, current layout and system tray are always shown.
 
 ### Appearance
 
@@ -400,7 +418,7 @@ Both rewrite only launchers that changed, remove the ones they wrote for entries
 
 ## The status bar
 
-Left to right, the bar shows: group box → window name → available updates → BTC/EUR ticker → CPU & GPU temps → memory → network → **phone mirror** → clock → current layout → system tray (primary monitor only).
+Left to right, the bar shows: group box → window name → available updates → BTC/EUR ticker → CPU & GPU temps → memory → network → **phone mirror** → clock → current layout → system tray (primary monitor only). The updates, ticker, temperature and phone mirror widgets can be switched off in `.env`; see [Bar widgets](#bar-widgets).
 
 ### Phone mirror widget
 
@@ -464,6 +482,7 @@ Validate the config without an X server: `.venv/bin/qtile check -c src/config.py
 | The app has no `mod + s` sub-key | `scratchpad registry: dropping chord key ... (reserved or already used by another entry)` | Pick a different `key`. The scratchpad still exists and can be [toggled from a script](#toggle-from-rofi-or-a-script). |
 | Only a plain terminal scratchpad exists | `scratchpad registry: no valid entries found, falling back to the built-in terminal` | Every entry failed validation. Read the warnings above that line. |
 | `mod + Ctrl + l` / `mod + Ctrl + h` do nothing | Nothing at the default log level | The focused window must be a scratchpad. Focus one first. Start Qtile with `-l DEBUG` to see `scratchpad size: focused window is not a dropdown`. |
+| A bar widget stays on after you set its `QTILE_WIDGET_*` toggle | `env: QTILE_WIDGET_...=... is not a boolean` | The value was not recognised, so the widget kept its default (`true`). Use one of the values listed in [Bar widgets](#bar-widgets). No warning means the new `.env` has not been loaded yet: reload with `mod + Shift + r`. |
 | Autostart apps did not start | `startup: autostart: script not found` or `script not executable` | Run `chmod +x autostart.sh`, or check `QTILE_AUTOSTART_PATH`. If the script ran, read `autostart.log`. |
 | `Can't grab <Key (['mod4'], masculine)> (unknown keysym: ba)` at startup | The line itself | Harmless. The Spanish layout is applied after Qtile starts; when the keymap changes, Qtile re-grabs every key, so `mod + º` works. |
 
