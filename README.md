@@ -62,7 +62,14 @@ Useful flags:
 | `--nerd-font` | Install `CaskaydiaCove Nerd Font` into `~/.local/share/fonts` (no `sudo`). It downloads a pinned Nerd Fonts release, refuses it unless the SHA-256 matches, and is skipped when `fc-list` already finds the font. |
 | `--dev` | Also install the dev tools (`ruff`, `mypy`, `pytest`, `pytest-asyncio`, `pre-commit`). Without it they are removed. |
 | `--force` | Recreate the virtual environment. The old one is moved to `.venv.bak` while the new one is synced, restored if the sync fails, and deleted once it succeeds. |
-| `--skip-xsession` | Don't touch `/usr/share/xsessions` (no `sudo`). |
+| `--skip-xsession` | Don't write the X session entry (no `sudo`). |
+
+Environment overrides (set them on the command line; `install.sh` does not read `.env`):
+
+| Variable | Default | Effect |
+|---|---|---|
+| `PYTHON` | `/usr/bin/python3.12` | Interpreter uv builds the venv on. See [Requirements](#requirements). |
+| `QTILE_XSESSION_FILE` | `/usr/share/xsessions/qtile-venv.desktop` | Where the X session entry is written. An empty value uses the default. The directory must already exist; when it is not writable, the entry is written with `sudo tee`. A relative path is resolved against the directory you run the script from. |
 
 > The script is re-runnable. `.env` is never overwritten, and `.venv` is
 > converged to `uv.lock` on every run: missing packages are installed and
