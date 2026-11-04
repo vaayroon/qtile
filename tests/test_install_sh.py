@@ -7,6 +7,7 @@ the temp dir. ``uv`` is a fake that records its arguments and fabricates
 """
 
 import hashlib
+import os
 import re
 import shutil
 import stat
@@ -505,6 +506,27 @@ def test_xsession_entry_uses_sudo_when_the_directory_is_not_writable(
     )
 
 
+DEFAULT_XSESSION_FILE = Path("/usr/share/xsessions/qtile-venv.desktop")
+
+
+@pytest.mark.skipif(
+    os.access(DEFAULT_XSESSION_FILE.parent, os.W_OK),
+    reason="the default xsessions dir is writable, so the real entry would be written",
+)
+def test_empty_xsession_file_override_falls_back_to_the_default_path(
+    sandbox: Sandbox,
+) -> None:
+    result = sandbox.run(xsession=True, env_extra={"QTILE_XSESSION_FILE": ""})
+    assert result.returncode == 0, result.stderr
+    assert f"Registering X session entry at {DEFAULT_XSESSION_FILE}" in result.stdout
+    # The default dir is not writable here, so the fake sudo gets the write.
+    assert (sandbox.log / "sudo.args").read_text().split() == [
+        "tee",
+        str(DEFAULT_XSESSION_FILE),
+    ]
+    assert not sandbox.xsession_file.exists()
+
+
 def test_skip_xsession_writes_no_session_entry_and_never_calls_sudo(
     sandbox: Sandbox,
 ) -> None:
@@ -862,6 +884,8 @@ def test_usage_documents_uv_force_backup_and_the_default_interpreter(
     assert "uv" in result.stdout
     assert "--force" in result.stdout and ".venv.bak" in result.stdout
     assert f"default: {SYSTEM_PYTHON}" in result.stdout
+    assert "QTILE_XSESSION_FILE" in result.stdout
+    assert f"default: {DEFAULT_XSESSION_FILE}" in result.stdout
     assert "--system-packages" in result.stdout
     assert "--nerd-font" in result.stdout
     assert "pip" not in result.stdout.lower()
