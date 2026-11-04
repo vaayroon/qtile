@@ -71,8 +71,8 @@ Environment:
   PYTHON               Python interpreter uv uses for the venv (default: ${DEFAULT_PYTHON})
   QTILE_XSESSION_FILE  Path of the X session entry; empty uses the default
                        (default: ${DEFAULT_XSESSION_FILE}).
-                       Its directory must already exist; sudo writes the entry
-                       when that directory is not writable
+                       Its directory must already exist (the run fails otherwise);
+                       sudo writes the entry when that directory is not writable
 EOF
 }
 
