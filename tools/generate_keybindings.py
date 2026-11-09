@@ -3,8 +3,9 @@
 Imports the config's key modules, renders ``modules.keys.cheatsheet_sections``
 with ``utils.cheatsheet.to_markdown`` and rewrites the block between the
 ``BEGIN``/``END GENERATED KEYBINDINGS`` markers in README.md. Only the shipped
-``scratchpads.toml`` is read, so a personal ``scratchpads.local.toml`` never
-leaks into the README.
+``scratchpads.toml`` and ``launchers.toml`` are read, so a personal
+``scratchpads.local.toml`` or ``launchers.local.toml`` never leaks into the
+README.
 
 Usage: ``.venv/bin/python tools/generate_keybindings.py [--check] [README]``
 
@@ -27,14 +28,20 @@ END = "<!-- END GENERATED KEYBINDINGS -->"
 
 
 def _use_shipped_registry_only() -> None:
-    """Point `load_scratchpads` at `scratchpads.toml` alone. Must run before
-    `modules` is imported, since its modules bind the name on import."""
+    """Point `load_scratchpads` and `load_launchers` at the shipped
+    `scratchpads.toml` and `launchers.toml` alone. Must run before `modules`
+    is imported, since its modules bind the names on import."""
+    import utils.launchers as launchers
     import utils.scratchpads as scratchpads
 
-    shipped = functools.cache(
+    scratchpads.load_scratchpads = functools.cache(
         lambda: scratchpads.load_scratchpads_from(ROOT / "scratchpads.toml", None)
     )
-    scratchpads.load_scratchpads = shipped
+    launchers.load_launchers = functools.cache(
+        lambda mod: launchers.load_launchers_from(
+            ROOT / "launchers.toml", None, mod=mod
+        )
+    )
 
 
 def render() -> str:

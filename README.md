@@ -17,6 +17,7 @@ A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11
 - **11 layouts** — MonadTall, MonadWide, Max, Tile, Stack, TreeTab, Matrix, and more.
 - **Powerline status bar** — system updates, crypto ticker, CPU/GPU temps, memory, network, clock, and a system tray.
 - **Phone mirroring widget** — start/stop scrcpy, reconnect ADB, and control phone volume straight from the bar.
+- **App launcher registry** — the app keys live in [`launchers.toml`](launchers.toml), with personal additions in a gitignored local file; see [App launchers](#app-launchers).
 - **Keybinding cheat sheet** — `mod + F1` lists every binding in rofi; the [Keybindings](#keybindings) tables are generated from the same `desc` strings.
 - **`.env`-driven** — runtime behavior (monitor ordering, phone mirror, optional bar widgets) is configured through environment variables, not hardcoded.
 - **Reproducible deps** — managed and locked with [uv](https://docs.astral.sh/uv/) (`uv.lock`, exact installs); linted, formatted and type-checked with `ruff` and `mypy`, gated by GitHub Actions CI and local pre-commit hooks.
@@ -295,11 +296,11 @@ Colors, borders, and fonts are defined in [`src/settings.py`](src/settings.py):
 | Keys | Action |
 |---|---|
 | `mod + Return` | Launches My Terminal |
-| `mod + Alt + Return` | Launches Virtual Kitty |
 | `mod + Shift + Return` | Dmenu Run Launcher |
 | `Menu` | Rofi App Launcher |
 | `XF86Favorites` | Rofi App Launcher |
 | `XF86HomePage` | Rofi App Launcher |
+| `mod + Alt + Return` | Launches Virtual Kitty |
 | `XF86Explorer` | Private Brave window |
 | `Ctrl + Alt + p` | Passmenu |
 | `Ctrl + Alt + t` | Open Trash |
@@ -358,6 +359,64 @@ Colors, borders, and fonts are defined in [`src/settings.py`](src/settings.py):
 > The tables above are generated from each binding's `desc` in [`src/modules/keys.py`](src/modules/keys.py) and [`src/modules/groups.py`](src/modules/groups.py). After changing a binding, run `.venv/bin/python tools/generate_keybindings.py`; CI fails while they are out of date.
 >
 > The `mod + s` sub-keys come from the shipped `scratchpads.toml`, so entries from your `scratchpads.local.toml` are not listed here. `mod + F1` shows the live list, local entries included, in a rofi popup. See [Scratchpads](#scratchpads) to add your own and [Size presets](#size-presets) for the grow/shrink keys.
+>
+> Likewise, the Launchers table lists the core launchers and the shipped [`launchers.toml`](launchers.toml), not your `launchers.local.toml`. See [App launchers](#app-launchers).
+
+---
+
+## App launchers
+
+App keys such as `mod + Alt + e` (Spotify) are declared in [`launchers.toml`](launchers.toml), one `[[launcher]]` table per app. Keep your changes in [`launchers.local.toml`](#local-launchers), then reload with `mod + Shift + r`.
+
+The core launchers stay in [`src/modules/keys.py`](src/modules/keys.py), so a broken registry never takes them away: the terminal (`mod + Return`), dmenu (`mod + Shift + Return`) and the rofi app menu (`Menu`, `XF86Favorites`, `XF86HomePage`).
+
+```toml
+[[launcher]]
+name = "spotify"
+command = "spotify"
+keys = ["mod+alt+e"]
+desc = "Spotify Music Player"
+```
+
+| Field | Default | Notes |
+|---|---|---|
+| `name` | required | Unique identifier: a letter or digit, then letters, digits, `.`, `_` or `-`. |
+| `command` | required | Command line to start the app. It runs without a shell, split like a command line, so pipes and `~` are not expanded. |
+| `keys` | required | One or more combos, such as `"mod+alt+e"`, `"ctrl+1"` or `"XF86Explorer"`. Modifiers are `mod` (the config's mod key), `alt`, `ctrl` and `shift`, in any order and any case; the last part is the key, as an X keysym (write `plus` for `+`). |
+| `desc` | `Launch <name>` | Text shown in the [Keybindings](#keybindings) tables and the `mod + F1` cheat sheet. |
+
+- An invalid combo, or one whose key is not a known X keysym name (Qtile would reject the whole config for it), is ignored with a warning; the entry keeps its other combos. Key names ignore case, so `mod+S` is the same combo as `mod+s`. An entry with no valid combo, or a missing or wrong `name` or `command` (such as unbalanced quotes), is skipped.
+- A combo another binding already uses is skipped with a warning: the keys in `src/modules/keys.py` and `src/modules/groups.py` always win, and so does the `mod + s` scratchpad chord. Between two launchers, the first one wins.
+- An unknown field is ignored with a warning. The loader never raises, and an empty registry is valid.
+
+### Local launchers
+
+Put machine-specific launchers in `launchers.local.toml`, next to `launchers.toml`. It is gitignored and optional, and it follows the scratchpad [override rules](#personal-overrides):
+
+```toml
+# launchers.local.toml
+
+# Same name as a shipped entry: replaces it completely.
+[[launcher]]
+name = "edge"
+command = "microsoft-edge-stable"
+keys = ["mod+alt+m"]
+desc = "Microsoft Edge"
+
+# New name: appended after the shipped entries.
+[[launcher]]
+name = "obsidian"
+command = "obsidian"
+keys = ["mod+alt+o"]
+desc = "Obsidian notes"
+
+# enabled = false: removes the shipped entry and frees its keys.
+[[launcher]]
+name = "vmware"
+enabled = false
+```
+
+`mod + F1` lists your local launchers; the README tables do not.
 
 ---
 
@@ -527,7 +586,7 @@ Start with the logs, then validate the config.
 
 | Log | Path | Notes |
 |---|---|---|
-| Qtile | `~/.local/share/qtile/qtile.log` | `$XDG_DATA_HOME/qtile/qtile.log`. Scratchpad messages are prefixed `scratchpad registry:` (loading) and `scratchpad size:` (size keys). |
+| Qtile | `~/.local/share/qtile/qtile.log` | `$XDG_DATA_HOME/qtile/qtile.log`. Scratchpad messages are prefixed `scratchpad registry:` (loading) and `scratchpad size:` (size keys); launcher messages `launcher registry:`. |
 | Autostart | `~/.local/share/qtile/autostart.log` | Output of the autostart script; truncated each session. |
 
 Validate the config without an X server: `.venv/bin/qtile check -c src/config.py` (what to expect is explained in [Upgrading from a pip-based install](#upgrading-from-a-pip-based-install), step 5).
@@ -542,6 +601,7 @@ Validate the config without an X server: `.venv/bin/qtile check -c src/config.py
 | Only a plain terminal scratchpad exists | `scratchpad registry: no valid entries found, falling back to the built-in terminal` | Every entry failed validation. Read the warnings above that line. |
 | `mod + Ctrl + l` / `mod + Ctrl + h` do nothing | Nothing at the default log level | The focused window must be a scratchpad. Focus one first. Start Qtile with `-l DEBUG` to see `scratchpad size: focused window is not a dropdown`. |
 | A bar widget stays on after you set its `QTILE_WIDGET_*` toggle | `env: QTILE_WIDGET_...=... is not a boolean` | The value was not recognised, so the widget kept its default (`true`). Use one of the values listed in [Bar widgets](#bar-widgets). No warning means the new `.env` has not been loaded yet: reload with `mod + Shift + r`. |
+| A launcher key does nothing | `launcher registry: ... is already bound; combo skipped`, `... is not a known key name`, `... invalid combo`, `... missing required field`, `... skipping` | Another binding uses the combo, or the entry was skipped. Pick a free combo or fix the field the message names (see [App launchers](#app-launchers)). |
 | Autostart apps did not start | `startup: autostart: script not found` or `script not executable` | Run `chmod +x autostart.sh`, or check `QTILE_AUTOSTART_PATH`. If the script ran, read `autostart.log`. |
 | `Can't grab <Key (['mod4'], masculine)> (unknown keysym: ba)` at startup | The line itself | Harmless. The Spanish layout is applied after Qtile starts; when the keymap changes, Qtile re-grabs every key, so `mod + º` works. |
 
@@ -725,8 +785,9 @@ src/
 ├── modules/         # groups · hooks · keys · layouts · mouse · screens · widgets
 ├── widgets/         # Custom widgets (PhoneMirrorWidget)
 ├── assets/          # scratchpad/ — kitty.conf and the rofi/script toggle script
-└── utils/           # cheatsheet · desktop_entries · network · scratchpads · scratchpad_size · startup · system helpers
+└── utils/           # cheatsheet · desktop_entries · launchers · network · scratchpads · scratchpad_size · startup · system · toml_registry helpers
 scratchpads.toml     # Scratchpad registry (personal overrides go in scratchpads.local.toml, gitignored)
+launchers.toml       # App launcher registry (personal launchers go in launchers.local.toml, gitignored)
 .github/             # CI workflow (workflows/ci.yml) and Dependabot config
 tools/               # check_junit.py (CI gate on test count and skips) · generate_keybindings.py (README keybinding tables) · generate_scratchpad_desktops.py (rofi launchers)
 .pre-commit-config.yaml  # Local hooks (ruff, uv lock --check, mypy)

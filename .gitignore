@@ -192,3 +192,6 @@ poetry.toml
 
 # Personal scratchpad app overrides (see scratchpads.toml)
 scratchpads.local.toml
+
+# Personal app launcher overrides (see launchers.toml)
+launchers.local.toml
