@@ -71,7 +71,7 @@ Environment overrides (set them on the command line; `install.sh` does not read 
 | Variable | Default | Effect |
 |---|---|---|
 | `PYTHON` | `/usr/bin/python3.12` | Interpreter uv builds the venv on. See [Requirements](#requirements). |
-| `QTILE_XSESSION_FILE` | `/usr/share/xsessions/qtile-venv.desktop` | Where the X session entry is written. An empty value uses the default. The directory must already exist: the script does not create it, and a missing one fails the run after the venv is synced. When the directory is not writable, the entry is written with `sudo tee`. A relative path is resolved against the directory you run the script from. |
+| `QTILE_XSESSION_FILE` | `/usr/share/xsessions/qtile-venv.desktop` | Where the X session entry is written. An empty value uses the default. The directory must already exist: the script does not create it, and a missing one fails the run after the venv is synced. When the existing entry (or, for a new one, the directory) is not writable, the entry is written with `sudo tee`. A relative path is resolved against the directory you run the script from. |
 
 > The script is re-runnable. `.env` is never overwritten, and `.venv` is
 > converged to `uv.lock` on every run: missing packages are installed and
