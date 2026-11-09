@@ -53,7 +53,7 @@ keys = [
     Key([mod, "shift"], "c", lazy.window.kill(), desc="Kill active window"),
     Key([mod, "shift"], "r", lazy.reload_config(), desc="Reload Qtile"),
     Key([mod, "shift"], "q", lazy.shutdown(), desc="Shutdown Qtile"),
-    Key(["control", "mod1"], "l", lazy.spawn("i3lock -ufc 000000")),
+    Key(["control", "mod1"], "l", lazy.spawn("i3lock -ufc 000000"), desc="Lock screen"),
     Key(["control"], "1", lazy.spawn("boomer -w"), desc="Zoom"),
     # Switch focus to specific monitor (out of three)
     Key([mod], "w", lazy.to_screen(0), desc="Keyboard focus to primary monitor"),
@@ -147,7 +147,7 @@ keys = [
         [mod, "mod1"],
         "m",
         lazy.spawn("microsoft-edge-dev"),
-        desc="Microsfot Edge Developer",
+        desc="Microsoft Edge Developer",
     ),
     Key([mod, "mod1"], "f", lazy.spawn("flameshot"), desc="Flameshot Screenshot Tool"),
     Key([mod, "mod1"], "p", lazy.spawn("pavucontrol"), desc="Volume Control Utility"),
@@ -168,7 +168,7 @@ keys = [
         [],
         "XF86Explorer",
         lazy.spawn("brave-browser-stable --new-window --incognito"),
-        desc="Private Firefox",
+        desc="Private Brave window",
     ),
     # Volume
     Key([], "XF86AudioMute", lazy.spawn("pamixer --toggle-mute"), desc="Toggle Mute"),

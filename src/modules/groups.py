@@ -73,8 +73,22 @@ groups.append(
 )
 
 for i, (name, _cfg) in enumerate(group_names, 1):
-    keys.append(Key([mod], str(i), lazy.group[name].toscreen(toggle=True)))
-    keys.append(Key([mod, "shift"], str(i), lazy.window.togroup(name)))
+    keys.append(
+        Key(
+            [mod],
+            str(i),
+            lazy.group[name].toscreen(toggle=True),
+            desc=f"Switch to group {i}",
+        )
+    )
+    keys.append(
+        Key(
+            [mod, "shift"],
+            str(i),
+            lazy.window.togroup(name),
+            desc=f"Move focused window to group {i}",
+        )
+    )
 
 
 def init_groups() -> list[Group]:

@@ -36,7 +36,7 @@ print(len(config.screens))
 """
 
 
-def test_config_imports_headless_and_builds_one_screen(tmp_path):
+def _headless_env(tmp_path):
     env = os.environ.copy()
     # widget.Prompt creates ~/.cache/qtile on import; keep that out of the
     # developer's home.
@@ -52,15 +52,56 @@ def test_config_imports_headless_and_builds_one_screen(tmp_path):
     ):
         env.pop(name, None)
     env["USER"] = "tester"
+    return env
 
-    result = subprocess.run(
-        [sys.executable, "-c", SCRIPT],
+
+def _run(script, tmp_path):
+    return subprocess.run(
+        [sys.executable, "-c", script],
         cwd=REPO_ROOT,
-        env=env,
+        env=_headless_env(tmp_path),
         capture_output=True,
         text=True,
         timeout=60,
     )
 
+
+def test_config_imports_headless_and_builds_one_screen(tmp_path):
+    result = _run(SCRIPT, tmp_path)
+
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "1"
+
+
+MISSING_DESC_SCRIPT = """
+import dotenv
+dotenv.dotenv_values = lambda *a, **k: {}
+
+import sys
+sys.path.insert(0, "src")
+
+from libqtile.config import KeyChord
+
+import config
+
+def walk(bindings, prefix):
+    for binding in bindings:
+        combo = prefix + "+".join([*binding.modifiers, str(binding.key)])
+        if isinstance(binding, KeyChord):
+            if not binding.desc:
+                print(combo)
+            walk(binding.submappings, combo + " ")
+        elif binding.commands and not binding.desc:
+            # A command-less Key is the Escape that KeyChord appends itself.
+            print(combo)
+
+walk(config.keys, "")
+"""
+
+
+def test_every_binding_has_a_desc(tmp_path):
+    # The keybinding cheat sheet is generated from Key.desc / KeyChord.desc.
+    result = _run(MISSING_DESC_SCRIPT, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split("\n")[:-1] == []

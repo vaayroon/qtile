@@ -990,8 +990,10 @@ def _fake_key(modifiers: list[str], key: str, action: str, desc: str = "") -> tu
     return ("key", tuple(modifiers), key, action, desc)
 
 
-def _fake_chord(modifiers: list[str], key: str, submappings: list) -> tuple:
-    return ("chord", tuple(modifiers), key, tuple(submappings))
+def _fake_chord(
+    modifiers: list[str], key: str, submappings: list, name: str = "", desc: str = ""
+) -> tuple:
+    return ("chord", tuple(modifiers), key, tuple(submappings), name, desc)
 
 
 def _fake_action(name: str) -> str:
@@ -1025,6 +1027,8 @@ def test_chord_maps_each_keyed_entry_to_its_toggle() -> None:
             ("key", (), "n", "toggle:files", "Toggle files scratchpad"),
             ("key", (), "c", "toggle:calc", "Toggle calc scratchpad"),
         ),
+        "scratchpad",
+        "Scratchpad chord: press a sub-key to toggle a dropdown",
     )
 
 
