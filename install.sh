@@ -72,7 +72,8 @@ Environment:
   QTILE_XSESSION_FILE  Path of the X session entry; empty uses the default
                        (default: ${DEFAULT_XSESSION_FILE}).
                        Its directory must already exist (the run fails otherwise);
-                       sudo writes the entry when that directory is not writable
+                       sudo writes the entry when the existing file (or, for a
+                       new entry, that directory) is not writable
 EOF
 }
 
@@ -237,7 +238,12 @@ Exec=${QTILE_BIN} start -c ${CONFIG_PY}
 EOF
 )"
 
-    if [[ -w "$(dirname "$XSESSION_FILE")" ]]; then
+    # Overwriting an existing entry truncates it in place, which needs write
+    # access to the file (an earlier sudo run may have left it owned by root);
+    # only a new entry needs write access to the directory.
+    xsession_target="$XSESSION_FILE"
+    [[ -e "$XSESSION_FILE" ]] || xsession_target="$(dirname "$XSESSION_FILE")"
+    if [[ -w "$xsession_target" ]]; then
         printf '%s\n' "$desktop_entry" > "$XSESSION_FILE"
     else
         warn "Writing ${XSESSION_FILE} requires sudo."

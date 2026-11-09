@@ -506,6 +506,40 @@ def test_xsession_entry_uses_sudo_when_the_directory_is_not_writable(
     )
 
 
+def test_xsession_entry_uses_sudo_when_the_existing_file_is_not_writable(
+    sandbox: Sandbox,
+) -> None:
+    # A root-owned entry left by an earlier sudo run, in a writable directory:
+    # truncating it needs write access to the file, not to the directory.
+    sandbox.xsession_file.write_text("stale\n")
+    sandbox.xsession_file.chmod(0o444)
+    try:
+        result = sandbox.run(xsession=True)
+    finally:
+        sandbox.xsession_file.chmod(0o644)
+    assert result.returncode == 0, result.stderr
+    assert (sandbox.log / "sudo.args").read_text().split() == [
+        "tee",
+        str(sandbox.xsession_file),
+    ]
+    assert sandbox.xsession_file.read_text() == "stale\n"  # fake sudo writes nothing
+
+
+def test_xsession_entry_skips_sudo_when_the_existing_file_is_writable(
+    sandbox: Sandbox,
+) -> None:
+    # Overwriting an existing file only needs write access to the file itself.
+    sandbox.xsession_file.write_text("stale\n")
+    sandbox.xsession_file.parent.chmod(0o555)
+    try:
+        result = sandbox.run(xsession=True)
+    finally:
+        sandbox.xsession_file.parent.chmod(0o755)
+    assert result.returncode == 0, result.stderr
+    assert not sandbox.sudo_called
+    assert f"Exec={sandbox.venv}/bin/qtile start" in sandbox.xsession_file.read_text()
+
+
 DEFAULT_XSESSION_FILE = Path("/usr/share/xsessions/qtile-venv.desktop")
 
 
