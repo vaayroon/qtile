@@ -7,7 +7,7 @@ from libqtile.lazy import lazy
 from settings import mod
 from utils.scratchpads import MatchSpec, load_scratchpads
 
-from .keys import keys
+from .keys import GROUPS_SECTION, key_sections
 
 
 class GroupCfg(TypedDict):
@@ -72,9 +72,24 @@ groups.append(
     )
 )
 
+group_keys = key_sections[GROUPS_SECTION]
 for i, (name, _cfg) in enumerate(group_names, 1):
-    keys.append(Key([mod], str(i), lazy.group[name].toscreen(toggle=True)))
-    keys.append(Key([mod, "shift"], str(i), lazy.window.togroup(name)))
+    group_keys.append(
+        Key(
+            [mod],
+            str(i),
+            lazy.group[name].toscreen(toggle=True),
+            desc=f"Switch to group {i}",
+        )
+    )
+    group_keys.append(
+        Key(
+            [mod, "shift"],
+            str(i),
+            lazy.window.togroup(name),
+            desc=f"Move focused window to group {i}",
+        )
+    )
 
 
 def init_groups() -> list[Group]:

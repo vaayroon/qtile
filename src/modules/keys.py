@@ -1,8 +1,12 @@
+import functools
+from typing import Any
+
 from libqtile.config import Key, KeyChord
 from libqtile.lazy import lazy
 from libqtile.log_utils import logger
 
 from settings import mod
+from utils.cheatsheet import build_sections, popup_input_path, rofi_command, to_lines
 from utils.scratchpad_size import cycle_focused_dropdown
 from utils.scratchpads import build_scratchpad_chord, has_entry, load_scratchpads
 
@@ -16,203 +20,276 @@ def _dropdown_key(modifiers: list[str], key: str, name: str, desc: str) -> list[
     return [Key(modifiers, key, toggle, desc=desc)]
 
 
-keys = [
-    # The essentials
-    Key([mod], "Return", lazy.spawn("kitty"), desc="Launches My Terminal"),
-    Key(
-        [mod, "mod1"],
-        "Return",
-        lazy.spawn("kitty --title virtual-shell"),
-        desc="Launches Virtual Kitty",
-    ),
-    Key(
-        [mod, "shift"],
-        "Return",
-        lazy.spawn("dmenu_run -p 'Run: '"),
-        desc="Dmenu Run Launcher",
-    ),
-    *_dropdown_key(
-        [mod],
-        "masculine",
-        "term",
-        "Toggle floating dropdown terminal (key below Esc, es layout)",
-    ),
-    Key(
-        [mod, "control"],
-        "l",
-        lazy.function(cycle_focused_dropdown, "grow", load_scratchpads),
-        desc="Grow focused scratchpad (cycle size presets)",
-    ),
-    Key(
-        [mod, "control"],
-        "h",
-        lazy.function(cycle_focused_dropdown, "shrink", load_scratchpads),
-        desc="Shrink focused scratchpad (cycle size presets)",
-    ),
-    Key([mod], "Tab", lazy.next_layout(), desc="Toggle through layouts"),
-    Key([mod, "shift"], "c", lazy.window.kill(), desc="Kill active window"),
-    Key([mod, "shift"], "r", lazy.reload_config(), desc="Reload Qtile"),
-    Key([mod, "shift"], "q", lazy.shutdown(), desc="Shutdown Qtile"),
-    Key(["control", "mod1"], "l", lazy.spawn("i3lock -ufc 000000")),
-    Key(["control"], "1", lazy.spawn("boomer -w"), desc="Zoom"),
-    # Switch focus to specific monitor (out of three)
-    Key([mod], "w", lazy.to_screen(0), desc="Keyboard focus to primary monitor"),
-    Key([mod], "e", lazy.to_screen(1), desc="Keyboard focus to secondary monitor"),
-    Key([mod], "r", lazy.to_screen(2), desc="Keyboard focus to tertiary monitor"),
-    # Switch focus of monitors
-    Key([mod], "period", lazy.next_screen(), desc="Move focus to next monitor"),
-    Key([mod], "comma", lazy.prev_screen(), desc="Move focus to prev monitor"),
-    # Treetab controls
-    Key(
-        [mod, "control"],
-        "j",
-        lazy.layout.section_up(),
-        desc="Move up a section in treetab",
-    ),
-    Key(
-        [mod, "control"],
-        "k",
-        lazy.layout.section_down(),
-        desc="Move down a section in treetab",
-    ),
-    # Window controls
-    Key([mod], "k", lazy.layout.down(), desc="Move focus down in current stack pane"),
-    Key([mod], "j", lazy.layout.up(), desc="Move focus up in current stack pane"),
-    Key(
-        [mod, "shift"],
-        "k",
-        lazy.layout.shuffle_down(),
-        desc="Move windows down in current stack",
-    ),
-    Key(
-        [mod, "shift"],
-        "j",
-        lazy.layout.shuffle_up(),
-        desc="Move windows up in current stack",
-    ),
-    Key(
-        [mod],
-        "h",
-        lazy.layout.grow(),
-        lazy.layout.increase_nmaster(),
-        desc="Expand window (MonadTall), increase number in master pane (Tile)",
-    ),
-    Key(
-        [mod],
-        "l",
-        lazy.layout.shrink(),
-        lazy.layout.decrease_nmaster(),
-        desc="Shrink window (MonadTall), decrease number in master pane (Tile)",
-    ),
-    Key([mod], "n", lazy.layout.normalize(), desc="normalize window size ratios"),
-    Key(
-        [mod],
-        "m",
-        lazy.layout.maximize(),
-        desc="toggle window between minimum and maximum sizes",
-    ),
-    Key([mod, "shift"], "f", lazy.window.toggle_floating(), desc="toggle floating"),
-    Key([mod, "shift"], "m", lazy.window.toggle_fullscreen(), desc="toggle fullscreen"),
-    # Stack controls
-    Key(
-        [mod, "shift"],
-        "space",
-        lazy.layout.rotate(),
-        lazy.layout.flip(),
-        desc="Switch which side main pane occupies (XmonadTall)",
-    ),
-    Key(
-        [mod],
-        "space",
-        lazy.layout.next(),
-        desc="Switch window focus to other pane(s) of stack",
-    ),
-    Key(
-        [mod, "control"],
-        "Return",
-        lazy.layout.toggle_split(),
-        desc="Toggle between split and unsplit sides of stack",
-    ),
-    Key(["mod1", "control"], "p", lazy.spawn("passmenu"), desc="Passmenu"),
-    Key(["mod1", "control"], "t", lazy.spawn("nautilus trash:///"), desc="Open Trash"),
-    # My applications launched with SUPER + ALT + KEY
-    Key([mod, "mod1"], "n", lazy.spawn("gnome-todo"), desc="Take Notes"),
-    Key([mod, "mod1"], "a", lazy.spawn("anydesk"), desc="AnyDesk Remote Desktop"),
-    Key(
-        [mod, "mod1"], "r", lazy.spawn("remmina"), desc="Remmina Remote Desktop Client"
-    ),
-    Key([mod, "mod1"], "t", lazy.spawn("rustdesk"), desc="RustDesk Remote Desktop"),
-    Key([mod, "mod1"], "e", lazy.spawn("spotify"), desc="Spotify Music Player"),
-    Key(
-        [mod, "mod1"],
-        "m",
-        lazy.spawn("microsoft-edge-dev"),
-        desc="Microsfot Edge Developer",
-    ),
-    Key([mod, "mod1"], "f", lazy.spawn("flameshot"), desc="Flameshot Screenshot Tool"),
-    Key([mod, "mod1"], "p", lazy.spawn("pavucontrol"), desc="Volume Control Utility"),
-    Key(
-        [mod, "mod1"],
-        "s",
-        lazy.spawn("code-insiders"),
-        desc="Visual Studio Code Insiders",
-    ),
-    Key([mod, "mod1"], "v", lazy.spawn("vmware"), desc="VMware Workstation Player"),
-    Key([mod, "mod1"], "w", lazy.spawn("wps"), desc="WPS Office Suite"),
-    # Application launchers
-    Key([], "Menu", lazy.spawn("rofi -show drun"), desc="Rofi App Launcher"),
-    Key([], "XF86Favorites", lazy.spawn("rofi -show drun"), desc="Rofi App Launcher"),
-    Key([], "XF86HomePage", lazy.spawn("rofi -show drun"), desc="Rofi App Launcher"),
-    # Web browser shortcuts
-    Key(
-        [],
-        "XF86Explorer",
-        lazy.spawn("brave-browser-stable --new-window --incognito"),
-        desc="Private Firefox",
-    ),
-    # Volume
-    Key([], "XF86AudioMute", lazy.spawn("pamixer --toggle-mute"), desc="Toggle Mute"),
-    Key(
-        [],
-        "XF86AudioLowerVolume",
-        lazy.spawn("pamixer --decrease 2"),
-        desc="Lower Volume",
-    ),
-    Key(
-        [],
-        "XF86AudioRaiseVolume",
-        lazy.spawn("pamixer --increase 2"),
-        desc="Raise Volume",
-    ),
-    # Audio
-    Key([], "XF86AudioPlay", lazy.spawn("playerctl play-pause"), desc="Play/Pause"),
-    Key([], "XF86AudioNext", lazy.spawn("playerctl next"), desc="Next Track"),
-    Key([], "XF86AudioPrev", lazy.spawn("playerctl previous"), desc="Previous Track"),
-    Key([], "XF86AudioStop", lazy.spawn("playerctl stop"), desc="Stop Playback"),
-    # Laptop Screen Brightness
-    Key(
-        [],
-        "XF86MonBrightnessUp",
-        lazy.spawn("brightnessctl set +10%"),
-        desc="Increase Brightness",
-    ),
-    Key(
-        [],
-        "XF86MonBrightnessDown",
-        lazy.spawn("brightnessctl set 10%-"),
-        desc="Decrease Brightness",
-    ),
-    # Extras
-    *_dropdown_key([], "XF86Calculator", "calc", "Toggle calculator scratchpad"),
-    # Screen Shots
-    Key(["shift", mod], "s", lazy.spawn("flameshot gui"), desc="Flameshot GUI"),
-]
+def show_cheatsheet(qtile: Any) -> None:
+    """`mod + F1`: list every binding in a rofi popup. Built from the live
+    sections, so local scratchpad overrides show up (the README cannot)."""
+    try:
+        path = popup_input_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = to_lines(build_sections(cheatsheet_sections()))
+        # Write then rename, so a rofi still reading the previous file
+        # never sees a half-written one.
+        partial = path.with_name(path.name + ".part")
+        partial.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        partial.replace(path)
+    except OSError:
+        logger.exception("cheat sheet: could not write the rofi input file")
+        return
+    qtile.spawn(rofi_command(path))
+
+
+GROUPS_SECTION = "Groups (workspaces)"
+SCRATCHPADS_SECTION = "Scratchpad keys"
+
+# Top-level bindings, by cheat sheet section. The section titles are the
+# headings of the generated README "Keybindings" tables, and the order here
+# is the order there. `modules.groups` fills GROUPS_SECTION on import.
+key_sections: dict[str, list[Key]] = {
+    "Windows & layouts": [
+        Key([mod], "Tab", lazy.next_layout(), desc="Toggle through layouts"),
+        Key([mod, "shift"], "c", lazy.window.kill(), desc="Kill active window"),
+        Key(
+            [mod], "k", lazy.layout.down(), desc="Move focus down in current stack pane"
+        ),
+        Key([mod], "j", lazy.layout.up(), desc="Move focus up in current stack pane"),
+        Key(
+            [mod, "shift"],
+            "k",
+            lazy.layout.shuffle_down(),
+            desc="Move windows down in current stack",
+        ),
+        Key(
+            [mod, "shift"],
+            "j",
+            lazy.layout.shuffle_up(),
+            desc="Move windows up in current stack",
+        ),
+        Key(
+            [mod],
+            "h",
+            lazy.layout.grow(),
+            lazy.layout.increase_nmaster(),
+            desc="Expand window (MonadTall), increase number in master pane (Tile)",
+        ),
+        Key(
+            [mod],
+            "l",
+            lazy.layout.shrink(),
+            lazy.layout.decrease_nmaster(),
+            desc="Shrink window (MonadTall), decrease number in master pane (Tile)",
+        ),
+        Key([mod], "n", lazy.layout.normalize(), desc="Normalize window size ratios"),
+        Key(
+            [mod],
+            "m",
+            lazy.layout.maximize(),
+            desc="Toggle window between minimum and maximum sizes",
+        ),
+        Key([mod, "shift"], "f", lazy.window.toggle_floating(), desc="Toggle floating"),
+        Key(
+            [mod, "shift"],
+            "m",
+            lazy.window.toggle_fullscreen(),
+            desc="Toggle fullscreen",
+        ),
+        Key(
+            [mod, "shift"],
+            "space",
+            lazy.layout.rotate(),
+            lazy.layout.flip(),
+            desc="Switch which side main pane occupies (XmonadTall)",
+        ),
+        Key(
+            [mod],
+            "space",
+            lazy.layout.next(),
+            desc="Switch window focus to other pane(s) of stack",
+        ),
+        Key(
+            [mod, "control"],
+            "Return",
+            lazy.layout.toggle_split(),
+            desc="Toggle between split and unsplit sides of stack",
+        ),
+        Key(
+            [mod, "control"],
+            "j",
+            lazy.layout.section_up(),
+            desc="Move up a section in treetab",
+        ),
+        Key(
+            [mod, "control"],
+            "k",
+            lazy.layout.section_down(),
+            desc="Move down a section in treetab",
+        ),
+    ],
+    GROUPS_SECTION: [],
+    "Monitors": [
+        Key([mod], "w", lazy.to_screen(0), desc="Keyboard focus to primary monitor"),
+        Key([mod], "e", lazy.to_screen(1), desc="Keyboard focus to secondary monitor"),
+        Key([mod], "r", lazy.to_screen(2), desc="Keyboard focus to tertiary monitor"),
+        Key([mod], "period", lazy.next_screen(), desc="Move focus to next monitor"),
+        Key([mod], "comma", lazy.prev_screen(), desc="Move focus to previous monitor"),
+    ],
+    "Launchers": [
+        Key([mod], "Return", lazy.spawn("kitty"), desc="Launches My Terminal"),
+        Key(
+            [mod, "mod1"],
+            "Return",
+            lazy.spawn("kitty --title virtual-shell"),
+            desc="Launches Virtual Kitty",
+        ),
+        Key(
+            [mod, "shift"],
+            "Return",
+            lazy.spawn("dmenu_run -p 'Run: '"),
+            desc="Dmenu Run Launcher",
+        ),
+        Key([], "Menu", lazy.spawn("rofi -show drun"), desc="Rofi App Launcher"),
+        Key(
+            [], "XF86Favorites", lazy.spawn("rofi -show drun"), desc="Rofi App Launcher"
+        ),
+        Key(
+            [], "XF86HomePage", lazy.spawn("rofi -show drun"), desc="Rofi App Launcher"
+        ),
+        Key(
+            [],
+            "XF86Explorer",
+            lazy.spawn("brave-browser-stable --new-window --incognito"),
+            desc="Private Brave window",
+        ),
+        Key(["mod1", "control"], "p", lazy.spawn("passmenu"), desc="Passmenu"),
+        Key(
+            ["mod1", "control"],
+            "t",
+            lazy.spawn("nautilus trash:///"),
+            desc="Open Trash",
+        ),
+        # My applications launched with SUPER + ALT + KEY
+        Key([mod, "mod1"], "n", lazy.spawn("gnome-todo"), desc="Take Notes"),
+        Key([mod, "mod1"], "a", lazy.spawn("anydesk"), desc="AnyDesk Remote Desktop"),
+        Key(
+            [mod, "mod1"],
+            "r",
+            lazy.spawn("remmina"),
+            desc="Remmina Remote Desktop Client",
+        ),
+        Key([mod, "mod1"], "t", lazy.spawn("rustdesk"), desc="RustDesk Remote Desktop"),
+        Key([mod, "mod1"], "e", lazy.spawn("spotify"), desc="Spotify Music Player"),
+        Key(
+            [mod, "mod1"],
+            "m",
+            lazy.spawn("microsoft-edge-dev"),
+            desc="Microsoft Edge Developer",
+        ),
+        Key(
+            [mod, "mod1"],
+            "f",
+            lazy.spawn("flameshot"),
+            desc="Flameshot Screenshot Tool",
+        ),
+        Key(
+            [mod, "mod1"], "p", lazy.spawn("pavucontrol"), desc="Volume Control Utility"
+        ),
+        Key(
+            [mod, "mod1"],
+            "s",
+            lazy.spawn("code-insiders"),
+            desc="Visual Studio Code Insiders",
+        ),
+        Key([mod, "mod1"], "v", lazy.spawn("vmware"), desc="VMware Workstation Player"),
+        Key([mod, "mod1"], "w", lazy.spawn("wps"), desc="WPS Office Suite"),
+        Key(["shift", mod], "s", lazy.spawn("flameshot gui"), desc="Flameshot GUI"),
+        Key(["control"], "1", lazy.spawn("boomer -w"), desc="Zoom"),
+    ],
+    SCRATCHPADS_SECTION: [
+        *_dropdown_key(
+            [mod],
+            "masculine",
+            "term",
+            "Toggle floating dropdown terminal (key below Esc, es layout)",
+        ),
+        *_dropdown_key([], "XF86Calculator", "calc", "Toggle calculator scratchpad"),
+        Key(
+            [mod, "control"],
+            "l",
+            lazy.function(cycle_focused_dropdown, "grow", load_scratchpads),
+            desc="Grow focused scratchpad (cycle size presets)",
+        ),
+        Key(
+            [mod, "control"],
+            "h",
+            lazy.function(cycle_focused_dropdown, "shrink", load_scratchpads),
+            desc="Shrink focused scratchpad (cycle size presets)",
+        ),
+    ],
+    "Media, audio & brightness": [
+        Key(
+            [],
+            "XF86AudioMute",
+            lazy.spawn("pamixer --toggle-mute"),
+            desc="Toggle Mute",
+        ),
+        Key(
+            [],
+            "XF86AudioLowerVolume",
+            lazy.spawn("pamixer --decrease 2"),
+            desc="Lower Volume",
+        ),
+        Key(
+            [],
+            "XF86AudioRaiseVolume",
+            lazy.spawn("pamixer --increase 2"),
+            desc="Raise Volume",
+        ),
+        Key([], "XF86AudioPlay", lazy.spawn("playerctl play-pause"), desc="Play/Pause"),
+        Key([], "XF86AudioNext", lazy.spawn("playerctl next"), desc="Next Track"),
+        Key(
+            [], "XF86AudioPrev", lazy.spawn("playerctl previous"), desc="Previous Track"
+        ),
+        Key([], "XF86AudioStop", lazy.spawn("playerctl stop"), desc="Stop Playback"),
+        Key(
+            [],
+            "XF86MonBrightnessUp",
+            lazy.spawn("brightnessctl set +10%"),
+            desc="Increase Brightness",
+        ),
+        Key(
+            [],
+            "XF86MonBrightnessDown",
+            lazy.spawn("brightnessctl set 10%-"),
+            desc="Decrease Brightness",
+        ),
+    ],
+    "Session": [
+        Key([mod, "shift"], "r", lazy.reload_config(), desc="Reload Qtile"),
+        Key([mod, "shift"], "q", lazy.shutdown(), desc="Shutdown Qtile"),
+        Key(
+            ["control", "mod1"],
+            "l",
+            lazy.spawn("i3lock -ufc 000000"),
+            desc="Lock screen",
+        ),
+        Key(
+            [mod],
+            "F1",
+            lazy.function(show_cheatsheet),
+            desc="Show this keybinding cheat sheet",
+        ),
+    ],
+}
+
+
+def top_level_keys() -> list[Key]:
+    """Every top-level `Key`, flattened from `key_sections` in order."""
+    return [key for section in key_sections.values() for key in section]
 
 
 def _scratchpad_chord() -> KeyChord | None:
     """`Super+s` chord generated from the scratchpad registry. Built after
-    `keys` so the leader collision check sees every existing top-level bind."""
-    taken = {(frozenset(k.modifiers), str(k.key)) for k in keys}
+    every top-level key exists so the leader collision check sees them all."""
+    taken = {(frozenset(k.modifiers), str(k.key)) for k in top_level_keys()}
     return build_scratchpad_chord(
         load_scratchpads(),
         taken,
@@ -224,14 +301,34 @@ def _scratchpad_chord() -> KeyChord | None:
     )
 
 
-def init_keys() -> list[Key | KeyChord]:
-    all_keys: list[Key | KeyChord] = [*keys]
+@functools.cache
+def _safe_scratchpad_chord() -> KeyChord | None:
+    """The chord, built once so `init_keys` and `cheatsheet_sections` share
+    it (and a taken leader is logged once)."""
     try:
-        chord = _scratchpad_chord()
+        return _scratchpad_chord()
     except Exception:
         # Never let a bad registry entry take down the whole config.
         logger.exception("scratchpad chord: failed to build, skipping Super+s chord")
-        chord = None
+        return None
+
+
+def init_keys() -> list[Key | KeyChord]:
+    all_keys: list[Key | KeyChord] = [*top_level_keys()]
+    chord = _safe_scratchpad_chord()
     if chord is not None:
         all_keys.append(chord)
     return all_keys
+
+
+def cheatsheet_sections() -> list[tuple[str, list[Key | KeyChord]]]:
+    """`key_sections` with the scratchpad chord appended to its section:
+    the input of `utils.cheatsheet`."""
+    chord = _safe_scratchpad_chord()
+    sections: list[tuple[str, list[Key | KeyChord]]] = []
+    for title, bindings in key_sections.items():
+        merged: list[Key | KeyChord] = [*bindings]
+        if title == SCRATCHPADS_SECTION and chord is not None:
+            merged.append(chord)
+        sections.append((title, merged))
+    return sections

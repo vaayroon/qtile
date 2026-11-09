@@ -855,7 +855,7 @@ def build_scratchpad_chord[K, C](
     leader: str,
     *,
     make_key: Callable[..., K],
-    make_chord: Callable[[list[str], str, list[K]], C],
+    make_chord: Callable[..., C],
     make_action: Callable[[str], Any],
 ) -> C | None:
     """Build the scratchpad leader chord from registry entries.
@@ -881,11 +881,17 @@ def build_scratchpad_chord[K, C](
             [],
             app.key,
             make_action(app.name),
-            desc=f"Toggle {app.name} scratchpad",
+            desc=f"Toggle {app.label or app.name}",
         )
         for app in dedupe_chord_keys(apps)
         if app.key is not None
     ]
     if not submappings:
         return None
-    return make_chord(modifiers, leader, submappings)
+    return make_chord(
+        modifiers,
+        leader,
+        submappings,
+        name="scratchpad",
+        desc="Scratchpad chord: press a sub-key to toggle a dropdown",
+    )
