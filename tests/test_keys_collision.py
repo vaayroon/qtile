@@ -110,3 +110,32 @@ def test_scratchpad_size_bindings_exist_once(init_keys, key_name, direction):
     assert command.name == "function"
     # LazyCall args: (function, direction, registry provider)
     assert command.args[1] == direction
+
+
+@pytest.fixture
+def keys_module(load_keys):
+    # The module is loaded unregistered, so reach it through its globals.
+    return types.SimpleNamespace(**load_keys().__globals__)
+
+
+def test_cheatsheet_sections_cover_every_binding_once(keys_module):
+    sectioned = [
+        b for _, bindings in keys_module.cheatsheet_sections() for b in bindings
+    ]
+    # Same objects, same count: nothing bound is missing from the cheat sheet
+    # and nothing appears twice.
+    assert sorted(map(id, sectioned)) == sorted(map(id, keys_module.init_keys()))
+
+
+def test_scratchpad_chord_is_listed_under_the_scratchpad_section(keys_module):
+    sections = dict(keys_module.cheatsheet_sections())
+    chords = [
+        b
+        for b in sections[keys_module.SCRATCHPADS_SECTION]
+        if hasattr(b, "submappings")
+    ]
+    assert [(c.modifiers, c.key) for c in chords] == [(["mod4"], "s")]
+
+
+def test_groups_section_starts_empty_for_modules_groups_to_fill(keys_module):
+    assert keys_module.key_sections[keys_module.GROUPS_SECTION] == []

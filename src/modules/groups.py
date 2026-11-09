@@ -7,7 +7,7 @@ from libqtile.lazy import lazy
 from settings import mod
 from utils.scratchpads import MatchSpec, load_scratchpads
 
-from .keys import keys
+from .keys import GROUPS_SECTION, key_sections
 
 
 class GroupCfg(TypedDict):
@@ -72,8 +72,9 @@ groups.append(
     )
 )
 
+group_keys = key_sections[GROUPS_SECTION]
 for i, (name, _cfg) in enumerate(group_names, 1):
-    keys.append(
+    group_keys.append(
         Key(
             [mod],
             str(i),
@@ -81,7 +82,7 @@ for i, (name, _cfg) in enumerate(group_names, 1):
             desc=f"Switch to group {i}",
         )
     )
-    keys.append(
+    group_keys.append(
         Key(
             [mod, "shift"],
             str(i),
