@@ -11,6 +11,7 @@ from utils.cheatsheet import build_sections, popup_input_path, rofi_command, to_
 from utils.launchers import bindable_launchers, load_launchers
 from utils.scratchpad_size import cycle_focused_dropdown
 from utils.scratchpads import build_scratchpad_chord, has_entry, load_scratchpads
+from widgets.phone_mirror_controller import phone_toggle
 
 
 def _dropdown_key(modifiers: list[str], key: str, name: str, desc: str) -> list[Key]:
@@ -43,6 +44,7 @@ def show_cheatsheet(qtile: Any) -> None:
 GROUPS_SECTION = "Groups (workspaces)"
 LAUNCHERS_SECTION = "Launchers"
 SCRATCHPADS_SECTION = "Scratchpad keys"
+PHONE_SECTION = "Phone"
 # The `mod + s` scratchpad chord leader. Reserved, so a launcher combo can
 # never take it.
 SCRATCHPAD_LEADER = "s"
@@ -214,6 +216,14 @@ key_sections: dict[str, list[Key]] = {
             "XF86MonBrightnessDown",
             lazy.spawn("brightnessctl set 10%-"),
             desc="Decrease Brightness",
+        ),
+    ],
+    PHONE_SECTION: [
+        Key(
+            [mod],
+            "p",
+            lazy.function(phone_toggle),
+            desc="Toggle phone mirroring",
         ),
     ],
     "Session": [

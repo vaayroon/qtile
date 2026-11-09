@@ -13,9 +13,6 @@ from src.widgets import phone_mirror_runner as runner
 
 SRC = Path(__file__).resolve().parent.parent / "src"
 RUNNER_FILE = "phone_mirror_runner.py"
-# TEMPORARY: the legacy widget still spawns processes itself. Slice 1c rewrites
-# it on top of the runner and must empty this set.
-LEGACY_SUBPROCESS_USERS = {"phone_mirror.py"}
 
 FORBIDDEN_EXECUTABLES = [
     "nmcli",
@@ -277,7 +274,7 @@ def test_runner_never_touches_network_config() -> None:
 def test_subprocess_is_only_used_by_the_runner() -> None:
     offenders: list[str] = []
     for path in _phone_files():
-        if path.name == RUNNER_FILE or path.name in LEGACY_SUBPROCESS_USERS:
+        if path.name == RUNNER_FILE:
             continue
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):

@@ -209,6 +209,8 @@ def _phone_mirror(background: Any) -> list[Any]:
             wireless_target="",
             device="",
             turn_screen_off=True,
+            quality="balanced",
+            audio=False,
             show_device=False,
             update_interval=8,
         ),

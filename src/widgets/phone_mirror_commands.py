@@ -94,3 +94,32 @@ def ready_device(devices: Sequence[Device], expected: str = "") -> str | None:
         if device.state == "device" and (not expected or device.serial == expected):
             return device.serial
     return None
+
+
+def build_zenity_argv(initial: dict[str, str]) -> list[str]:
+    """The setup form shown when no device could be reached."""
+    return [
+        "zenity",
+        "--forms",
+        "--title=Phone Mirror Setup",
+        "--text=Enter only what is needed to connect the phone",
+        "--separator=|",
+        (
+            "--add-entry=ADB host:port "
+            f"({initial['wireless_target'] or '192.168.1.10:5555'})"
+        ),
+        f"--add-entry=Device serial, optional ({initial['device'] or 'auto'})",
+        f"--add-entry=ADB path ({initial['adb_path']})",
+        f"--add-entry=scrcpy path ({initial['scrcpy_path']})",
+    ]
+
+
+def parse_zenity_values(stdout: str, initial: dict[str, str]) -> dict[str, str] | None:
+    """Parse the `|`-separated form output; blanks keep the current value."""
+    values = stdout.strip().split("|")
+    if len(values) < 4:
+        return None
+    keys = ("wireless_target", "device", "adb_path", "scrcpy_path")
+    return {
+        key: values[index].strip() or initial[key] for index, key in enumerate(keys)
+    }

@@ -187,6 +187,8 @@ Runtime behavior is controlled through `.env` (loaded by `python-dotenv` at star
 | `QTILE_PHONE_MIRROR_ADB_PATH` | `/opt/genymobile/adb` | Path to the `adb` binary. |
 | `QTILE_PHONE_MIRROR_SCRCPY_PATH` | `/opt/genymobile/scrcpy` | Path to the `scrcpy` binary. |
 | `QTILE_PHONE_MIRROR_SCREEN_OFF` | `true` | Start scrcpy with the phone screen off (`-S`). |
+| `QTILE_PHONE_MIRROR_QUALITY` | `balanced` | Video preset: `low` (1024 px, 4M, 30 fps), `balanced` (1600 px, 8M, 60 fps) or `high` (native size, 16M, 60 fps). |
+| `QTILE_PHONE_MIRROR_AUDIO` | `false` | Forward the phone audio to the computer (`--no-audio` when off). |
 | `QTILE_PHONE_MIRROR_SHOW_DEVICE` | `false` | Append the device serial to the bar status text. |
 | `QTILE_PHONE_MIRROR_VOLUME_STEP` | `5` | ADB volume key-events sent per scroll tick. |
 
@@ -344,6 +346,12 @@ Colors, borders, and fonts are defined in [`src/settings.py`](src/settings.py):
 | `XF86AudioStop` | Stop Playback |
 | `XF86MonBrightnessUp` | Increase Brightness |
 | `XF86MonBrightnessDown` | Decrease Brightness |
+
+### Phone
+
+| Keys | Action |
+|---|---|
+| `mod + p` | Toggle phone mirroring |
 
 ### Session
 
@@ -549,7 +557,13 @@ A custom widget ([`src/widgets/phone_mirror.py`](src/widgets/phone_mirror.py)) t
 | **Middle click** | Toggle "phone screen off" mode |
 | **Scroll up / down** | Phone volume up / down |
 
-Status text: `PHONE:READY` (connected, idle) · `PHONE:MIRROR` (running) · `PHONE:DISC` (no device) · `PHONE:ERR` (adb/scrcpy not found). If a binary is missing it opens a `zenity`/`tkinter` dialog to fix paths and targets on the fly.
+**`mod + p`** toggles mirroring from the keyboard. The bar has one widget per screen, but they all share a single controller ([`src/widgets/phone_mirror_controller.py`](src/widgets/phone_mirror_controller.py)), so only one scrcpy process ever runs. A click that arrives while an action is still in progress is ignored.
+
+Status text: `PHONE:READY` (connected, idle) · `PHONE:MIRROR` (running) · `PHONE:DISC` (no device) · `PHONE:ERR` (adb/scrcpy not found). If no device can be reached it opens a `zenity` dialog to fix paths and targets on the fly.
+
+Start and failure messages are sent as desktop notifications that name the reason (unauthorized, offline, unreachable, missing binary), and scrcpy's output goes to the qtile log (`~/.local/share/qtile/qtile.log`).
+
+**Host network safety.** Every process the phone mirror code starts goes through one allowlisted runner ([`src/widgets/phone_mirror_runner.py`](src/widgets/phone_mirror_runner.py)): only `adb`, `scrcpy`, `zenity` and `kitty` may run, and `adb` is limited to `devices`, `connect`, `disconnect`, `pair`, `mdns`, `shell input keyevent`, `tcpip` and `version`. It never touches NetworkManager, firewall rules, routes, DNS or any system service. Tests enforce this.
 
 ---
 

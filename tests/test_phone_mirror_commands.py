@@ -12,8 +12,10 @@ from src.widgets.phone_mirror_commands import (
     build_disconnect_argv,
     build_keyevent_argv,
     build_scrcpy_argv,
+    build_zenity_argv,
     normalize_quality,
     parse_devices,
+    parse_zenity_values,
     ready_device,
 )
 
@@ -164,3 +166,40 @@ def test_ready_device_filters_by_expected_serial() -> None:
     assert ready_device(devices, "A") is None
     assert ready_device(devices, "Z") is None
     assert ready_device([], "") is None
+
+
+# --- setup prompt ---------------------------------------------------------------
+
+INITIAL = {
+    "wireless_target": "",
+    "device": "",
+    "adb_path": "adb",
+    "scrcpy_path": "scrcpy",
+}
+
+SPANISH_FRAGMENTS = ("Ingresa", "telefono", "opcional", "minimo")
+
+
+def test_zenity_prompt_is_english_and_allowlisted() -> None:
+    argv = build_zenity_argv(INITIAL)
+    runner.validate(argv)
+    joined = " ".join(argv)
+
+    assert argv[0] == "zenity"
+    assert "--title=Phone Mirror Setup" in argv
+    assert not any(word in joined for word in SPANISH_FRAGMENTS)
+    assert "192.168.1.10:5555" in joined
+
+
+def test_parse_zenity_values_fills_blanks_from_initial() -> None:
+    values = parse_zenity_values("10.0.0.1:5555||/x/adb|\n", INITIAL)
+    assert values == {
+        "wireless_target": "10.0.0.1:5555",
+        "device": "",
+        "adb_path": "/x/adb",
+        "scrcpy_path": "scrcpy",
+    }
+
+
+def test_parse_zenity_values_rejects_short_output() -> None:
+    assert parse_zenity_values("only|two", INITIAL) is None
