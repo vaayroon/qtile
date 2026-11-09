@@ -15,7 +15,7 @@
 # Add your own launchers in `launchers.local.toml` (gitignored) instead of
 # editing this file. A local entry with a shipped name REPLACES it in full,
 # `enabled = false` removes it, and a new name adds a launcher. Reload with
-# mod+Shift+r. See README.md > Launchers.
+# mod+Shift+r. See README.md > App launchers.
 
 [[launcher]]
 name = "virtual-shell"
