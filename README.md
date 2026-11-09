@@ -236,69 +236,126 @@ Colors, borders, and fonts are defined in [`src/settings.py`](src/settings.py):
 
 `mod` = `Super` (Windows key).
 
+<!-- BEGIN GENERATED KEYBINDINGS: tools/generate_keybindings.py -->
+
 ### Windows & layouts
 
 | Keys | Action |
 |---|---|
-| `mod + Tab` | Cycle to next layout |
-| `mod + j` / `mod + k` | Move focus up / down the stack |
-| `mod + Shift + j` / `mod + Shift + k` | Shuffle window up / down |
-| `mod + h` / `mod + l` | Grow / shrink window (or adjust master count) |
-| `mod + n` | Normalize window sizes |
-| `mod + m` | Toggle maximize |
+| `mod + Tab` | Toggle through layouts |
+| `mod + Shift + c` | Kill active window |
+| `mod + k` | Move focus down in current stack pane |
+| `mod + j` | Move focus up in current stack pane |
+| `mod + Shift + k` | Move windows down in current stack |
+| `mod + Shift + j` | Move windows up in current stack |
+| `mod + h` | Expand window (MonadTall), increase number in master pane (Tile) |
+| `mod + l` | Shrink window (MonadTall), decrease number in master pane (Tile) |
+| `mod + n` | Normalize window size ratios |
+| `mod + m` | Toggle window between minimum and maximum sizes |
 | `mod + Shift + f` | Toggle floating |
 | `mod + Shift + m` | Toggle fullscreen |
-| `mod + space` | Switch focus between stack panes |
-| `mod + Shift + space` | Flip the main pane side |
-| `mod + Ctrl + Return` | Toggle split / unsplit |
-| `mod + Shift + c` | Close window |
-| `mod + Shift + r` | Reload config |
-| `mod + Shift + q` | Quit Qtile |
+| `mod + Shift + space` | Switch which side main pane occupies (XmonadTall) |
+| `mod + space` | Switch window focus to other pane(s) of stack |
+| `mod + Ctrl + Return` | Toggle between split and unsplit sides of stack |
+| `mod + Ctrl + j` | Move up a section in treetab |
+| `mod + Ctrl + k` | Move down a section in treetab |
 
 ### Groups (workspaces)
 
 | Keys | Action |
 |---|---|
-| `mod + 1…7` | Switch to group |
-| `mod + Shift + 1…7` | Move focused window to group |
+| `mod + 1` | Switch to group 1 |
+| `mod + Shift + 1` | Move focused window to group 1 |
+| `mod + 2` | Switch to group 2 |
+| `mod + Shift + 2` | Move focused window to group 2 |
+| `mod + 3` | Switch to group 3 |
+| `mod + Shift + 3` | Move focused window to group 3 |
+| `mod + 4` | Switch to group 4 |
+| `mod + Shift + 4` | Move focused window to group 4 |
+| `mod + 5` | Switch to group 5 |
+| `mod + Shift + 5` | Move focused window to group 5 |
+| `mod + 6` | Switch to group 6 |
+| `mod + Shift + 6` | Move focused window to group 6 |
+| `mod + 7` | Switch to group 7 |
+| `mod + Shift + 7` | Move focused window to group 7 |
 
 ### Monitors
 
 | Keys | Action |
 |---|---|
-| `mod + w` / `mod + e` / `mod + r` | Focus monitor 1 / 2 / 3 |
-| `mod + period` / `mod + comma` | Focus next / previous monitor |
+| `mod + w` | Keyboard focus to primary monitor |
+| `mod + e` | Keyboard focus to secondary monitor |
+| `mod + r` | Keyboard focus to tertiary monitor |
+| `mod + period` | Move focus to next monitor |
+| `mod + comma` | Move focus to previous monitor |
 
 ### Launchers
 
 | Keys | Action |
 |---|---|
-| `mod + Return` | Terminal (`kitty`) |
-| `mod + Shift + Return` | `dmenu` run prompt |
-| `Menu` | App launcher (`rofi`) |
-| `mod + Alt + <key>` | Quick-launch apps (browser, files, editor, Spotify, screenshots…) |
+| `mod + Return` | Launches My Terminal |
+| `mod + Alt + Return` | Launches Virtual Kitty |
+| `mod + Shift + Return` | Dmenu Run Launcher |
+| `Menu` | Rofi App Launcher |
+| `XF86Favorites` | Rofi App Launcher |
+| `XF86HomePage` | Rofi App Launcher |
+| `XF86Explorer` | Private Brave window |
+| `Ctrl + Alt + p` | Passmenu |
+| `Ctrl + Alt + t` | Open Trash |
+| `mod + Alt + n` | Take Notes |
+| `mod + Alt + a` | AnyDesk Remote Desktop |
+| `mod + Alt + r` | Remmina Remote Desktop Client |
+| `mod + Alt + t` | RustDesk Remote Desktop |
+| `mod + Alt + e` | Spotify Music Player |
+| `mod + Alt + m` | Microsoft Edge Developer |
+| `mod + Alt + f` | Flameshot Screenshot Tool |
+| `mod + Alt + p` | Volume Control Utility |
+| `mod + Alt + s` | Visual Studio Code Insiders |
+| `mod + Alt + v` | VMware Workstation Player |
+| `mod + Alt + w` | WPS Office Suite |
+| `mod + Shift + s` | Flameshot GUI |
+| `Ctrl + 1` | Zoom |
 
 ### Scratchpad keys
 
 | Keys | Action |
 |---|---|
-| `mod + º` | Toggle the dropdown terminal (`term`; the key below `Esc` on a Spanish layout) |
-| `mod + s`, then `n` / `b` / `c` | Toggle Files / Private browser / Calculator |
-| `XF86Calculator` | Toggle the calculator |
-| `mod + Ctrl + l` / `mod + Ctrl + h` | Grow / shrink the focused scratchpad (cycles [size presets](#size-presets)) |
-
-> The `mod + s` sub-keys come from `scratchpads.toml`. See [Scratchpads](#scratchpads) to add your own.
+| `mod + º` | Toggle floating dropdown terminal (key below Esc, es layout) |
+| `XF86Calculator` | Toggle calculator scratchpad |
+| `mod + Ctrl + l` | Grow focused scratchpad (cycle size presets) |
+| `mod + Ctrl + h` | Shrink focused scratchpad (cycle size presets) |
+| `mod + s` | Scratchpad chord: press a sub-key to toggle a dropdown |
+| `mod + s, then n` | Toggle Scratchpad Files |
+| `mod + s, then b` | Toggle Scratchpad Private Browser |
+| `mod + s, then c` | Toggle Scratchpad Calculator |
 
 ### Media, audio & brightness
 
 | Keys | Action |
 |---|---|
-| `XF86AudioRaise/Lower/Mute` | Volume via `pamixer` |
-| `XF86AudioPlay/Next/Prev/Stop` | Playback via `playerctl` |
-| `XF86MonBrightnessUp/Down` | Brightness via `brightnessctl` |
-| `Ctrl + Alt + l` | Lock screen (`i3lock`) |
+| `XF86AudioMute` | Toggle Mute |
+| `XF86AudioLowerVolume` | Lower Volume |
+| `XF86AudioRaiseVolume` | Raise Volume |
+| `XF86AudioPlay` | Play/Pause |
+| `XF86AudioNext` | Next Track |
+| `XF86AudioPrev` | Previous Track |
+| `XF86AudioStop` | Stop Playback |
+| `XF86MonBrightnessUp` | Increase Brightness |
+| `XF86MonBrightnessDown` | Decrease Brightness |
 
-> The full, authoritative list lives in [`src/modules/keys.py`](src/modules/keys.py).
+### Session
+
+| Keys | Action |
+|---|---|
+| `mod + Shift + r` | Reload Qtile |
+| `mod + Shift + q` | Shutdown Qtile |
+| `Ctrl + Alt + l` | Lock screen |
+
+<!-- END GENERATED KEYBINDINGS -->
+
+> The tables above are generated from each binding's `desc` in [`src/modules/keys.py`](src/modules/keys.py) and [`src/modules/groups.py`](src/modules/groups.py). After changing a binding, run `.venv/bin/python tools/generate_keybindings.py`; CI fails while they are out of date.
+>
+> The `mod + s` sub-keys come from the shipped `scratchpads.toml`, so entries from your `scratchpads.local.toml` are not listed here. See [Scratchpads](#scratchpads) to add your own and [Size presets](#size-presets) for the grow/shrink keys.
 
 ---
 
