@@ -58,19 +58,19 @@ key_sections: dict[str, list[Key]] = {
             lazy.layout.decrease_nmaster(),
             desc="Shrink window (MonadTall), decrease number in master pane (Tile)",
         ),
-        Key([mod], "n", lazy.layout.normalize(), desc="normalize window size ratios"),
+        Key([mod], "n", lazy.layout.normalize(), desc="Normalize window size ratios"),
         Key(
             [mod],
             "m",
             lazy.layout.maximize(),
-            desc="toggle window between minimum and maximum sizes",
+            desc="Toggle window between minimum and maximum sizes",
         ),
-        Key([mod, "shift"], "f", lazy.window.toggle_floating(), desc="toggle floating"),
+        Key([mod, "shift"], "f", lazy.window.toggle_floating(), desc="Toggle floating"),
         Key(
             [mod, "shift"],
             "m",
             lazy.window.toggle_fullscreen(),
-            desc="toggle fullscreen",
+            desc="Toggle fullscreen",
         ),
         Key(
             [mod, "shift"],
@@ -110,7 +110,7 @@ key_sections: dict[str, list[Key]] = {
         Key([mod], "e", lazy.to_screen(1), desc="Keyboard focus to secondary monitor"),
         Key([mod], "r", lazy.to_screen(2), desc="Keyboard focus to tertiary monitor"),
         Key([mod], "period", lazy.next_screen(), desc="Move focus to next monitor"),
-        Key([mod], "comma", lazy.prev_screen(), desc="Move focus to prev monitor"),
+        Key([mod], "comma", lazy.prev_screen(), desc="Move focus to previous monitor"),
     ],
     "Launchers": [
         Key([mod], "Return", lazy.spawn("kitty"), desc="Launches My Terminal"),

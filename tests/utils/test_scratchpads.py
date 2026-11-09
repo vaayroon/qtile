@@ -1024,8 +1024,8 @@ def test_chord_maps_each_keyed_entry_to_its_toggle() -> None:
         ("mod4",),
         "s",
         (
-            ("key", (), "n", "toggle:files", "Toggle files scratchpad"),
-            ("key", (), "c", "toggle:calc", "Toggle calc scratchpad"),
+            ("key", (), "n", "toggle:files", "Toggle files"),
+            ("key", (), "c", "toggle:calc", "Toggle calc"),
         ),
         "scratchpad",
         "Scratchpad chord: press a sub-key to toggle a dropdown",
@@ -1281,3 +1281,12 @@ def test_ignored_override_is_not_order_checked(tmp_path: Path, caplog) -> None:
         app = _load_one(tmp_path, "width = 0.5\nsmall_width = 1.5")
     assert app.small_width is None
     assert not [m for m in caplog.messages if "non-monotonic" in m]
+
+
+def test_chord_sub_key_desc_uses_the_entry_label() -> None:
+    app = ScratchpadApp(name="files", command="nautilus", key="n", label="My Files")
+
+    chord = _build([app])
+
+    assert chord is not None
+    assert chord[3][0][4] == "Toggle My Files"

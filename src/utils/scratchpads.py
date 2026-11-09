@@ -881,7 +881,7 @@ def build_scratchpad_chord[K, C](
             [],
             app.key,
             make_action(app.name),
-            desc=f"Toggle {app.name} scratchpad",
+            desc=f"Toggle {app.label or app.name}",
         )
         for app in dedupe_chord_keys(apps)
         if app.key is not None
