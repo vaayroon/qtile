@@ -39,6 +39,8 @@ def _env(tmp_path: Path) -> dict[str, str]:
         "QTILE_SCREEN_PORT_ORDER",
     ):
         env.pop(name, None)
+    # widgets.py reads USER on import.
+    env["USER"] = "tester"
     return env
 
 
