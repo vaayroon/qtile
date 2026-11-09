@@ -14,7 +14,8 @@ import pytest
 
 pytest.importorskip("libqtile.config")
 
-SRC = Path(__file__).resolve().parent.parent / "src"
+ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "src"
 
 
 @pytest.fixture
@@ -27,10 +28,20 @@ def load_keys(monkeypatch):
     monkeypatch.setitem(sys.modules, "settings", stub)
     before = set(sys.modules)
 
-    def load(registry=None):
+    def load(registry=None, launchers=None):
         if registry is not None:
             scratchpads = importlib.import_module("utils.scratchpads")
             monkeypatch.setattr(scratchpads, "load_scratchpads", lambda: registry)
+        # Shipped launchers.toml only, unless a test passes its own provider,
+        # so a developer's launchers.local.toml never changes the result.
+        launcher_module = importlib.import_module("utils.launchers")
+        if launchers is None:
+            shipped = ROOT / "launchers.toml"
+
+            def launchers(mod):
+                return launcher_module.load_launchers_from(shipped, None, mod=mod)
+
+        monkeypatch.setattr(launcher_module, "load_launchers", launchers)
         spec = importlib.util.spec_from_file_location(
             "_keys_under_test", SRC / "modules" / "keys.py"
         )
@@ -135,6 +146,99 @@ def test_scratchpad_chord_is_listed_under_the_scratchpad_section(keys_module):
         if hasattr(b, "submappings")
     ]
     assert [(c.modifiers, c.key) for c in chords] == [(["mod4"], "s")]
+
+
+# ---------------------------------------------------------------------------
+# Launcher registry
+# ---------------------------------------------------------------------------
+
+
+def _spawned(key):
+    (command,) = key.commands
+    assert command.name == "spawn"
+    return command.args[0]
+
+
+def _shipped_launchers():
+    import tomllib
+
+    with (ROOT / "launchers.toml").open("rb") as handle:
+        return tomllib.load(handle)["launcher"]
+
+
+def test_every_shipped_launcher_is_bound(keys_module):
+    from utils.launchers import parse_combo
+
+    bound = {_combo(k): k for k in keys_module.init_keys()}
+    entries = _shipped_launchers()
+    assert entries
+    for entry in entries:
+        for text in entry["keys"]:
+            combo = parse_combo(text, "mod4")
+            assert combo is not None, text
+            key = bound[combo.identity]
+            assert _spawned(key) == entry["command"]
+            assert key.desc == entry["desc"]
+
+
+def test_core_launchers_stay_hard_coded(keys_module):
+    core = keys_module.key_sections[keys_module.LAUNCHERS_SECTION]
+    assert {_combo(k): _spawned(k) for k in core} == {
+        (frozenset({"mod4"}), "Return"): "kitty",
+        (frozenset({"mod4", "shift"}), "Return"): "dmenu_run -p 'Run: '",
+        (frozenset(), "Menu"): "rofi -show drun",
+        (frozenset(), "XF86Favorites"): "rofi -show drun",
+        (frozenset(), "XF86HomePage"): "rofi -show drun",
+    }
+
+
+def test_registry_launchers_are_listed_under_the_launchers_section(keys_module):
+    sections = dict(keys_module.cheatsheet_sections())
+    listed = {_combo(k) for k in sections[keys_module.LAUNCHERS_SECTION]}
+    assert (frozenset({"mod4", "mod1"}), "e") in listed
+
+
+def test_launchers_cannot_take_hard_coded_keys_or_the_chord_leader(load_keys, caplog):
+    from utils.launchers import LauncherApp, parse_combo
+
+    def app(name, *combos):
+        parsed = tuple(parse_combo(c, "mod4") for c in combos)
+        return LauncherApp(name=name, command=name, combos=parsed, desc=name)
+
+    apps = [
+        app("terminal", "mod+Return"),
+        app("leader", "mod+s"),
+        app("group", "mod+1"),
+        app("both", "mod+Return", "mod+alt+F12"),
+    ]
+    keys = load_keys(launchers=lambda _mod: apps)()
+
+    by_combo = {_combo(k): k for k in keys}
+    assert _spawned(by_combo[(frozenset({"mod4"}), "Return")]) == "kitty"
+    assert _spawned(by_combo[(frozenset({"mod4", "mod1"}), "F12")]) == "both"
+    # The leader stays the scratchpad chord.
+    assert hasattr(by_combo[(frozenset({"mod4"}), "s")], "submappings")
+    spawned = {
+        _spawned(k)
+        for k in keys
+        if getattr(k, "commands", None) and k.commands[0].name == "spawn"
+    }
+    assert not {"terminal", "leader"} & spawned
+    assert any(
+        "mod4+s for entry 'leader' is already bound" in m for m in caplog.messages
+    )
+
+
+def test_a_failing_registry_keeps_the_rest_of_the_keys(load_keys, caplog):
+    def boom(_mod):
+        raise RuntimeError("boom")
+
+    keys = load_keys(launchers=boom)()
+
+    combos = {_combo(k) for k in keys}
+    assert (frozenset({"mod4"}), "Return") in combos
+    assert (frozenset({"mod4", "mod1"}), "e") not in combos
+    assert any("failed to build the launcher keys" in m for m in caplog.messages)
 
 
 def test_groups_section_starts_empty_for_modules_groups_to_fill(keys_module):

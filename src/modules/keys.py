@@ -7,6 +7,7 @@ from libqtile.log_utils import logger
 
 from settings import mod
 from utils.cheatsheet import build_sections, popup_input_path, rofi_command, to_lines
+from utils.launchers import bindable_launchers, load_launchers
 from utils.scratchpad_size import cycle_focused_dropdown
 from utils.scratchpads import build_scratchpad_chord, has_entry, load_scratchpads
 
@@ -39,7 +40,11 @@ def show_cheatsheet(qtile: Any) -> None:
 
 
 GROUPS_SECTION = "Groups (workspaces)"
+LAUNCHERS_SECTION = "Launchers"
 SCRATCHPADS_SECTION = "Scratchpad keys"
+# The `mod + s` scratchpad chord leader. Reserved, so a launcher combo can
+# never take it.
+SCRATCHPAD_LEADER = "s"
 
 # Top-level bindings, by cheat sheet section. The section titles are the
 # headings of the generated README "Keybindings" tables, and the order here
@@ -132,14 +137,11 @@ key_sections: dict[str, list[Key]] = {
         Key([mod], "period", lazy.next_screen(), desc="Move focus to next monitor"),
         Key([mod], "comma", lazy.prev_screen(), desc="Move focus to previous monitor"),
     ],
-    "Launchers": [
+    # Core launchers only: a broken launchers.toml must never take the
+    # terminal or the app menus away. Every other app launcher lives in the
+    # registry (see `_registry_launcher_keys`).
+    LAUNCHERS_SECTION: [
         Key([mod], "Return", lazy.spawn("kitty"), desc="Launches My Terminal"),
-        Key(
-            [mod, "mod1"],
-            "Return",
-            lazy.spawn("kitty --title virtual-shell"),
-            desc="Launches Virtual Kitty",
-        ),
         Key(
             [mod, "shift"],
             "Return",
@@ -153,55 +155,6 @@ key_sections: dict[str, list[Key]] = {
         Key(
             [], "XF86HomePage", lazy.spawn("rofi -show drun"), desc="Rofi App Launcher"
         ),
-        Key(
-            [],
-            "XF86Explorer",
-            lazy.spawn("brave-browser-stable --new-window --incognito"),
-            desc="Private Brave window",
-        ),
-        Key(["mod1", "control"], "p", lazy.spawn("passmenu"), desc="Passmenu"),
-        Key(
-            ["mod1", "control"],
-            "t",
-            lazy.spawn("nautilus trash:///"),
-            desc="Open Trash",
-        ),
-        # My applications launched with SUPER + ALT + KEY
-        Key([mod, "mod1"], "n", lazy.spawn("gnome-todo"), desc="Take Notes"),
-        Key([mod, "mod1"], "a", lazy.spawn("anydesk"), desc="AnyDesk Remote Desktop"),
-        Key(
-            [mod, "mod1"],
-            "r",
-            lazy.spawn("remmina"),
-            desc="Remmina Remote Desktop Client",
-        ),
-        Key([mod, "mod1"], "t", lazy.spawn("rustdesk"), desc="RustDesk Remote Desktop"),
-        Key([mod, "mod1"], "e", lazy.spawn("spotify"), desc="Spotify Music Player"),
-        Key(
-            [mod, "mod1"],
-            "m",
-            lazy.spawn("microsoft-edge-dev"),
-            desc="Microsoft Edge Developer",
-        ),
-        Key(
-            [mod, "mod1"],
-            "f",
-            lazy.spawn("flameshot"),
-            desc="Flameshot Screenshot Tool",
-        ),
-        Key(
-            [mod, "mod1"], "p", lazy.spawn("pavucontrol"), desc="Volume Control Utility"
-        ),
-        Key(
-            [mod, "mod1"],
-            "s",
-            lazy.spawn("code-insiders"),
-            desc="Visual Studio Code Insiders",
-        ),
-        Key([mod, "mod1"], "v", lazy.spawn("vmware"), desc="VMware Workstation Player"),
-        Key([mod, "mod1"], "w", lazy.spawn("wps"), desc="WPS Office Suite"),
-        Key(["shift", mod], "s", lazy.spawn("flameshot gui"), desc="Flameshot GUI"),
-        Key(["control"], "1", lazy.spawn("boomer -w"), desc="Zoom"),
     ],
     SCRATCHPADS_SECTION: [
         *_dropdown_key(
@@ -281,20 +234,50 @@ key_sections: dict[str, list[Key]] = {
 }
 
 
-def top_level_keys() -> list[Key]:
-    """Every top-level `Key`, flattened from `key_sections` in order."""
+def _hard_coded_keys() -> list[Key]:
+    """Every `Key` in `key_sections`, flattened in order."""
     return [key for section in key_sections.values() for key in section]
+
+
+def _combo(key: Key) -> tuple[frozenset[str], str]:
+    return (frozenset(key.modifiers), str(key.key))
+
+
+@functools.cache
+def _registry_launcher_keys() -> list[Key]:
+    """One `Key` per free combo of each `launchers.toml` entry. Built once,
+    after `modules.groups` filled its section, so the hard-coded keys (which
+    always win) and the scratchpad chord leader are all known as taken."""
+    try:
+        taken = {_combo(key) for key in _hard_coded_keys()}
+        taken.add((frozenset([mod]), SCRATCHPAD_LEADER))
+        return [
+            Key(
+                list(combo.modifiers), combo.key, lazy.spawn(app.command), desc=app.desc
+            )
+            for app in bindable_launchers(load_launchers(mod), taken)
+            for combo in app.combos
+        ]
+    except Exception:
+        # Never let a bad registry entry take down the whole config.
+        logger.exception("launcher registry: failed to build the launcher keys")
+        return []
+
+
+def top_level_keys() -> list[Key]:
+    """Every top-level `Key`: the hard-coded ones, then the registry's."""
+    return [*_hard_coded_keys(), *_registry_launcher_keys()]
 
 
 def _scratchpad_chord() -> KeyChord | None:
     """`Super+s` chord generated from the scratchpad registry. Built after
     every top-level key exists so the leader collision check sees them all."""
-    taken = {(frozenset(k.modifiers), str(k.key)) for k in top_level_keys()}
+    taken = {_combo(k) for k in top_level_keys()}
     return build_scratchpad_chord(
         load_scratchpads(),
         taken,
         [mod],
-        "s",
+        SCRATCHPAD_LEADER,
         make_key=Key,
         make_chord=KeyChord,
         make_action=lambda name: lazy.group["scratchpad"].dropdown_toggle(name),
@@ -322,12 +305,14 @@ def init_keys() -> list[Key | KeyChord]:
 
 
 def cheatsheet_sections() -> list[tuple[str, list[Key | KeyChord]]]:
-    """`key_sections` with the scratchpad chord appended to its section:
-    the input of `utils.cheatsheet`."""
+    """`key_sections` with the registry launchers and the scratchpad chord
+    appended to their sections: the input of `utils.cheatsheet`."""
     chord = _safe_scratchpad_chord()
     sections: list[tuple[str, list[Key | KeyChord]]] = []
     for title, bindings in key_sections.items():
         merged: list[Key | KeyChord] = [*bindings]
+        if title == LAUNCHERS_SECTION:
+            merged.extend(_registry_launcher_keys())
         if title == SCRATCHPADS_SECTION and chord is not None:
             merged.append(chord)
         sections.append((title, merged))

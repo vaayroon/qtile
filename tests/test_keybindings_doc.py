@@ -67,6 +67,7 @@ def repo(tmp_path: Path) -> Path:
     (repo / "tools").mkdir()
     shutil.copy(ROOT / TOOL, repo / TOOL)
     shutil.copy(ROOT / "scratchpads.toml", repo / "scratchpads.toml")
+    shutil.copy(ROOT / "launchers.toml", repo / "launchers.toml")
     shutil.copy(ROOT / "README.md", repo / "README.md")
     return repo
 
@@ -135,3 +136,17 @@ def test_local_scratchpad_overrides_stay_out_of_the_readme(
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "localonly" not in (repo / "README.md").read_text()
+
+
+def test_local_launcher_overrides_stay_out_of_the_readme(
+    repo: Path, tmp_path: Path
+) -> None:
+    (repo / "launchers.local.toml").write_text(
+        '[[launcher]]\nname = "localonly"\ncommand = "xterm"\n'
+        'keys = ["mod+alt+F12"]\ndesc = "Local only launcher"\n'
+    )
+
+    result = _run(repo, tmp_path, "--check")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Local only launcher" not in (repo / "README.md").read_text()

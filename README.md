@@ -295,11 +295,11 @@ Colors, borders, and fonts are defined in [`src/settings.py`](src/settings.py):
 | Keys | Action |
 |---|---|
 | `mod + Return` | Launches My Terminal |
-| `mod + Alt + Return` | Launches Virtual Kitty |
 | `mod + Shift + Return` | Dmenu Run Launcher |
 | `Menu` | Rofi App Launcher |
 | `XF86Favorites` | Rofi App Launcher |
 | `XF86HomePage` | Rofi App Launcher |
+| `mod + Alt + Return` | Launches Virtual Kitty |
 | `XF86Explorer` | Private Brave window |
 | `Ctrl + Alt + p` | Passmenu |
 | `Ctrl + Alt + t` | Open Trash |

@@ -1,0 +1,120 @@
+# App launcher registry: apps spawned by a key combo.
+#
+# Each `[[launcher]]` table binds one command to one or more combos:
+#   name     required, unique: a letter or digit, then letters, digits, . _ -
+#   command  required, run without a shell (split like a command line)
+#   keys     required, combos such as "mod+alt+e", "ctrl+1" or "XF86Explorer";
+#            modifiers: mod (the config's mod key), alt, ctrl, shift
+#   desc     optional, shown in the README tables and the mod+F1 cheat sheet
+#
+# The terminal (mod+Return), dmenu (mod+Shift+Return) and the rofi app menu
+# stay hard-coded in src/modules/keys.py, so a broken registry never takes
+# them away. A combo some other key already uses is skipped with a warning
+# in qtile.log, and so is the mod+s scratchpad chord leader.
+#
+# Add your own launchers in `launchers.local.toml` (gitignored) instead of
+# editing this file. A local entry with a shipped name REPLACES it in full,
+# `enabled = false` removes it, and a new name adds a launcher. Reload with
+# mod+Shift+r. See README.md > Launchers.
+
+[[launcher]]
+name = "virtual-shell"
+command = "kitty --title virtual-shell"
+keys = ["mod+alt+Return"]
+desc = "Launches Virtual Kitty"
+
+[[launcher]]
+name = "private-browser"
+command = "brave-browser-stable --new-window --incognito"
+keys = ["XF86Explorer"]
+desc = "Private Brave window"
+
+[[launcher]]
+name = "passmenu"
+command = "passmenu"
+keys = ["ctrl+alt+p"]
+desc = "Passmenu"
+
+[[launcher]]
+name = "trash"
+command = "nautilus trash:///"
+keys = ["ctrl+alt+t"]
+desc = "Open Trash"
+
+[[launcher]]
+name = "notes"
+command = "gnome-todo"
+keys = ["mod+alt+n"]
+desc = "Take Notes"
+
+[[launcher]]
+name = "anydesk"
+command = "anydesk"
+keys = ["mod+alt+a"]
+desc = "AnyDesk Remote Desktop"
+
+[[launcher]]
+name = "remmina"
+command = "remmina"
+keys = ["mod+alt+r"]
+desc = "Remmina Remote Desktop Client"
+
+[[launcher]]
+name = "rustdesk"
+command = "rustdesk"
+keys = ["mod+alt+t"]
+desc = "RustDesk Remote Desktop"
+
+[[launcher]]
+name = "spotify"
+command = "spotify"
+keys = ["mod+alt+e"]
+desc = "Spotify Music Player"
+
+[[launcher]]
+name = "edge"
+command = "microsoft-edge-dev"
+keys = ["mod+alt+m"]
+desc = "Microsoft Edge Developer"
+
+[[launcher]]
+name = "flameshot"
+command = "flameshot"
+keys = ["mod+alt+f"]
+desc = "Flameshot Screenshot Tool"
+
+[[launcher]]
+name = "pavucontrol"
+command = "pavucontrol"
+keys = ["mod+alt+p"]
+desc = "Volume Control Utility"
+
+[[launcher]]
+name = "vscode"
+command = "code-insiders"
+keys = ["mod+alt+s"]
+desc = "Visual Studio Code Insiders"
+
+[[launcher]]
+name = "vmware"
+command = "vmware"
+keys = ["mod+alt+v"]
+desc = "VMware Workstation Player"
+
+[[launcher]]
+name = "wps"
+command = "wps"
+keys = ["mod+alt+w"]
+desc = "WPS Office Suite"
+
+[[launcher]]
+name = "flameshot-gui"
+command = "flameshot gui"
+keys = ["mod+shift+s"]
+desc = "Flameshot GUI"
+
+[[launcher]]
+name = "zoom"
+command = "boomer -w"
+keys = ["ctrl+1"]
+desc = "Zoom"
