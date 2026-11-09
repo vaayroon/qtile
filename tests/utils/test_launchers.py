@@ -71,6 +71,11 @@ def test_parse_combo_uses_the_given_mod() -> None:
     assert parse_combo("mod+e", "mod1") == Combo(("mod1",), "e")
 
 
+def test_combo_identity_ignores_key_case() -> None:
+    assert Combo((), "XF86Explorer").identity == Combo((), "xf86explorer").identity
+    assert parse_combo("mod+E", "mod4") == Combo(("mod4",), "E")
+
+
 def test_combo_identity_ignores_modifier_order() -> None:
     assert (
         Combo(("shift", "mod4"), "s").identity == Combo(("mod4", "shift"), "s").identity
@@ -112,6 +117,8 @@ def test_desc_defaults_to_launch_name(tmp_path: Path) -> None:
         ('name = "a"\ncommand = "  "\nkeys = ["F9"]', "missing required field"),
         ('name = "-a"\ncommand = "a"\nkeys = ["F9"]', "name must be"),
         ('name = "a b"\ncommand = "a"\nkeys = ["F9"]', "name must be"),
+        ('name = "a"\ncommand = "a \'b"\nkeys = ["F9"]', "cannot be split"),
+        ('name = "a"\ncommand = "a\\u0000b"\nkeys = ["F9"]', "cannot be split"),
         ('name = "a"\ncommand = "a"', "needs 'keys'"),
         ('name = "a"\ncommand = "a"\nkeys = "F9"', "needs 'keys'"),
         ('name = "a"\ncommand = "a"\nkeys = []', "needs 'keys'"),
@@ -133,14 +140,14 @@ def test_invalid_and_repeated_combos_are_dropped_alone(
     base = _write(
         tmp_path,
         '[[launcher]]\nname = "a"\ncommand = "a"\n'
-        'keys = ["mod+alt+e", "bogus+e", "alt+mod+e", 7]\n',
+        'keys = ["mod+alt+e", "bogus+e", "alt+mod+E", 7]\n',
     )
     with caplog.at_level(logging.WARNING, logger="libqtile"):
         [app] = load_launchers_from(base)
     assert app.combos == (ALT_E,)
     assert "invalid combo 'bogus+e'" in caplog.text
     assert "invalid combo 7" in caplog.text
-    assert "lists combo 'alt+mod+e' twice" in caplog.text
+    assert "lists combo 'alt+mod+E' twice" in caplog.text
 
 
 @pytest.mark.parametrize("desc", ['""', "3"])
@@ -274,3 +281,19 @@ def test_bindable_launchers_does_not_mutate_taken() -> None:
     taken: set[tuple[frozenset[str], str]] = set()
     bindable_launchers([_app("a", ALT_E)], taken)
     assert taken == set()
+
+
+def test_unknown_keys_are_dropped_and_taken_ignores_case(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    taken = {(frozenset({"mod4"}), "return")}
+    apps = [
+        _app(
+            "a", Combo(("mod4",), "Return"), Combo(("mod4",), "Bogus"), Combo((), "F9")
+        )
+    ]
+    with caplog.at_level(logging.WARNING, logger="libqtile"):
+        result = bindable_launchers(apps, taken, known_keys={"return", "f9"})
+    assert result == [_app("a", Combo((), "F9"), desc="a")]
+    assert "mod4+Bogus for entry 'a' is not a known key name" in caplog.text
+    assert "mod4+Return for entry 'a' is already bound" in caplog.text

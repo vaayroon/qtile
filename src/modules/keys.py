@@ -1,6 +1,7 @@
 import functools
 from typing import Any
 
+from libqtile.backend.x11.xkeysyms import keysyms
 from libqtile.config import Key, KeyChord
 from libqtile.lazy import lazy
 from libqtile.log_utils import logger
@@ -240,7 +241,8 @@ def _hard_coded_keys() -> list[Key]:
 
 
 def _combo(key: Key) -> tuple[frozenset[str], str]:
-    return (frozenset(key.modifiers), str(key.key))
+    # Lowercased, as Qtile looks keysyms up: `S` and `s` are the same grab.
+    return (frozenset(key.modifiers), str(key.key).lower())
 
 
 @functools.cache
@@ -255,7 +257,7 @@ def _registry_launcher_keys() -> list[Key]:
             Key(
                 list(combo.modifiers), combo.key, lazy.spawn(app.command), desc=app.desc
             )
-            for app in bindable_launchers(load_launchers(mod), taken)
+            for app in bindable_launchers(load_launchers(mod), taken, keysyms)
             for combo in app.combos
         ]
     except Exception:

@@ -169,7 +169,7 @@ def _shipped_launchers():
 def test_every_shipped_launcher_is_bound(keys_module):
     from utils.launchers import parse_combo
 
-    bound = {_combo(k): k for k in keys_module.init_keys()}
+    bound = {keys_module._combo(k): k for k in keys_module.init_keys()}
     entries = _shipped_launchers()
     assert entries
     for entry in entries:
@@ -208,7 +208,7 @@ def test_launchers_cannot_take_hard_coded_keys_or_the_chord_leader(load_keys, ca
     apps = [
         app("terminal", "mod+Return"),
         app("leader", "mod+s"),
-        app("group", "mod+1"),
+        app("shouted", "mod+RETURN", "mod+S"),
         app("both", "mod+Return", "mod+alt+F12"),
     ]
     keys = load_keys(launchers=lambda _mod: apps)()
@@ -223,7 +223,7 @@ def test_launchers_cannot_take_hard_coded_keys_or_the_chord_leader(load_keys, ca
         for k in keys
         if getattr(k, "commands", None) and k.commands[0].name == "spawn"
     }
-    assert not {"terminal", "leader"} & spawned
+    assert not {"terminal", "leader", "shouted"} & spawned
     assert any(
         "mod4+s for entry 'leader' is already bound" in m for m in caplog.messages
     )
@@ -287,3 +287,46 @@ def test_show_cheatsheet_logs_and_skips_rofi_when_the_file_fails(
 
     assert qtile.spawned == []
     assert any("cheat sheet" in m for m in caplog.messages)
+
+
+def test_launchers_cannot_take_group_keys(load_keys):
+    from libqtile.config import Key
+    from libqtile.lazy import lazy
+
+    from utils.launchers import LauncherApp, parse_combo
+
+    group = parse_combo("mod+1", "mod4")
+    apps = [LauncherApp(name="g", command="g", combos=(group,), desc="g")]
+    init_keys = load_keys(launchers=lambda _mod: apps)
+    # What modules.groups does on import, before init_keys runs.
+    module = types.SimpleNamespace(**init_keys.__globals__)
+    module.key_sections[module.GROUPS_SECTION].append(
+        Key(["mod4"], "1", lazy.group["1"].toscreen(), desc="Switch to group 1")
+    )
+
+    keys = [k for k in init_keys() if _combo(k) == (frozenset({"mod4"}), "1")]
+
+    assert len(keys) == 1
+    assert keys[0].desc == "Switch to group 1"
+
+
+def test_unknown_keysyms_are_not_bound(load_keys, caplog):
+    from utils.launchers import LauncherApp, parse_combo
+
+    combos = (
+        parse_combo("mod+alt+bogus_key", "mod4"),
+        parse_combo("mod+alt+F11", "mod4"),
+    )
+    apps = [LauncherApp(name="typo", command="typo", combos=combos, desc="typo")]
+
+    keys = load_keys(launchers=lambda _mod: apps)()
+
+    spawning = [
+        k
+        for k in keys
+        if getattr(k, "commands", None)
+        and k.commands[0].name == "spawn"
+        and _spawned(k) == "typo"
+    ]
+    assert [_combo(k) for k in spawning] == [(frozenset({"mod4", "mod1"}), "F11")]
+    assert any("not a known key name" in m for m in caplog.messages)

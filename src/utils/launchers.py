@@ -20,6 +20,8 @@ already taken.
 import functools
 import logging
 import re
+import shlex
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -61,7 +63,8 @@ class Combo:
 
     @property
     def identity(self) -> ComboId:
-        return (frozenset(self.modifiers), self.key)
+        # Qtile looks keysyms up lowercased, so `E` and `e` grab the same key.
+        return (frozenset(self.modifiers), self.key.lower())
 
     def __str__(self) -> str:
         return "+".join([*self.modifiers, self.key])
@@ -85,7 +88,9 @@ def parse_combo(text: str, mod: str) -> Combo | None:
     """`"mod+alt+e"` -> `Combo(("mod4", "mod1"), "e")` with `mod="mod4"`.
 
     Modifiers are case-insensitive; the key (the last `+`-separated part)
-    is a keysym and keeps its case. Returns None for a blank part,
+    is a keysym and keeps its case for display (Qtile ignores it, and so
+    does `Combo.identity`). Whether the keysym exists is checked by
+    `bindable_launchers`, given the known names. Returns None for a blank part,
     whitespace, an unknown or repeated modifier. Write `plus` for the `+`
     key itself."""
     if not text or any(character.isspace() for character in text):
@@ -181,6 +186,20 @@ def _build_entry(
             )
             raise _SkipEntry
         command = _require_str(raw_entry, "command", identity)
+        try:
+            # What Qtile's spawn does with a string; fail here, not on keypress.
+            split_ok = "\0" not in command and bool(shlex.split(command))
+        except ValueError:
+            split_ok = False
+        if not split_ok:
+            logger.warning(
+                "%s: entry %s has a 'command' that cannot be split into "
+                "arguments (unbalanced quotes?): %r; skipping",
+                _LABEL,
+                identity,
+                command,
+            )
+            raise _SkipEntry
         combos = _parse_combos(raw_entry, identity, mod)
         desc = raw_entry.get("desc", f"Launch {name}")
         if not isinstance(desc, str) or not desc.strip():
@@ -232,18 +251,31 @@ def load_launchers(mod: str) -> list[LauncherApp]:
 
 
 def bindable_launchers(
-    apps: list[LauncherApp], taken: set[ComboId]
+    apps: list[LauncherApp],
+    taken: set[ComboId],
+    known_keys: Collection[str] | None = None,
 ) -> list[LauncherApp]:
-    """`apps` without the combos that are already bound.
+    """`apps` without the combos that cannot or must not be bound.
 
-    A combo in `taken` (the hard-coded keys, which always win) or used by an
-    earlier entry is dropped with a warning naming both. An entry left with
-    no combo is dropped too, since it could not be launched by key."""
+    `taken` holds the hard-coded combos, which always win; compare keys
+    lowercased, as `Combo.identity` does. A combo in `taken` or used by an
+    earlier entry is dropped with a warning naming both. With `known_keys`
+    (lowercase keysym names), a combo whose key is not one of them is
+    dropped too: Qtile rejects the whole config over a single unknown key.
+    An entry left with no combo is dropped, since no key could launch it."""
     used = set(taken)
     result: list[LauncherApp] = []
     for app in apps:
         free: list[Combo] = []
         for combo in app.combos:
+            if known_keys is not None and combo.key.lower() not in known_keys:
+                logger.warning(
+                    "%s: %s for entry %r is not a known key name; combo skipped",
+                    _LABEL,
+                    combo,
+                    app.name,
+                )
+                continue
             if combo.identity in used:
                 logger.warning(
                     "%s: %s for entry %r is already bound; combo skipped",

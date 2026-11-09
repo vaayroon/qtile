@@ -385,7 +385,7 @@ desc = "Spotify Music Player"
 | `keys` | required | One or more combos, such as `"mod+alt+e"`, `"ctrl+1"` or `"XF86Explorer"`. Modifiers are `mod` (the config's mod key), `alt`, `ctrl` and `shift`, in any order and any case; the last part is the key, as an X keysym (write `plus` for `+`). |
 | `desc` | `Launch <name>` | Text shown in the [Keybindings](#keybindings) tables and the `mod + F1` cheat sheet. |
 
-- An invalid combo is ignored with a warning; the entry keeps its other combos. An entry with no valid combo, or a missing or wrong `name` or `command`, is skipped.
+- An invalid combo, or one whose key is not a known X keysym name (Qtile would reject the whole config for it), is ignored with a warning; the entry keeps its other combos. Key names ignore case, so `mod+S` is the same combo as `mod+s`. An entry with no valid combo, or a missing or wrong `name` or `command` (such as unbalanced quotes), is skipped.
 - A combo another binding already uses is skipped with a warning: the keys in `src/modules/keys.py` and `src/modules/groups.py` always win, and so does the `mod + s` scratchpad chord. Between two launchers, the first one wins.
 - An unknown field is ignored with a warning. The loader never raises, and an empty registry is valid.
 
@@ -601,7 +601,7 @@ Validate the config without an X server: `.venv/bin/qtile check -c src/config.py
 | Only a plain terminal scratchpad exists | `scratchpad registry: no valid entries found, falling back to the built-in terminal` | Every entry failed validation. Read the warnings above that line. |
 | `mod + Ctrl + l` / `mod + Ctrl + h` do nothing | Nothing at the default log level | The focused window must be a scratchpad. Focus one first. Start Qtile with `-l DEBUG` to see `scratchpad size: focused window is not a dropdown`. |
 | A bar widget stays on after you set its `QTILE_WIDGET_*` toggle | `env: QTILE_WIDGET_...=... is not a boolean` | The value was not recognised, so the widget kept its default (`true`). Use one of the values listed in [Bar widgets](#bar-widgets). No warning means the new `.env` has not been loaded yet: reload with `mod + Shift + r`. |
-| A launcher key does nothing | `launcher registry: ... is already bound; combo skipped`, `... invalid combo`, `... missing required field`, `... skipping` | Another binding uses the combo, or the entry was skipped. Pick a free combo or fix the field the message names (see [App launchers](#app-launchers)). |
+| A launcher key does nothing | `launcher registry: ... is already bound; combo skipped`, `... is not a known key name`, `... invalid combo`, `... missing required field`, `... skipping` | Another binding uses the combo, or the entry was skipped. Pick a free combo or fix the field the message names (see [App launchers](#app-launchers)). |
 | Autostart apps did not start | `startup: autostart: script not found` or `script not executable` | Run `chmod +x autostart.sh`, or check `QTILE_AUTOSTART_PATH`. If the script ran, read `autostart.log`. |
 | `Can't grab <Key (['mod4'], masculine)> (unknown keysym: ba)` at startup | The line itself | Harmless. The Spanish layout is applied after Qtile starts; when the keymap changes, Qtile re-grabs every key, so `mod + º` works. |
 
