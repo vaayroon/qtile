@@ -725,10 +725,10 @@ src/
 ├── modules/         # groups · hooks · keys · layouts · mouse · screens · widgets
 ├── widgets/         # Custom widgets (PhoneMirrorWidget)
 ├── assets/          # scratchpad/ — kitty.conf and the rofi/script toggle script
-└── utils/           # desktop_entries · network · scratchpads · scratchpad_size · startup · system helpers
+└── utils/           # cheatsheet · desktop_entries · network · scratchpads · scratchpad_size · startup · system helpers
 scratchpads.toml     # Scratchpad registry (personal overrides go in scratchpads.local.toml, gitignored)
 .github/             # CI workflow (workflows/ci.yml) and Dependabot config
-tools/               # check_junit.py (CI gate on test count and skips) · generate_scratchpad_desktops.py (rofi launchers)
+tools/               # check_junit.py (CI gate on test count and skips) · generate_keybindings.py (README keybinding tables) · generate_scratchpad_desktops.py (rofi launchers)
 .pre-commit-config.yaml  # Local hooks (ruff, uv lock --check, mypy)
 pyproject.toml       # Project metadata + dependency declarations (source of truth)
 uv.lock              # Generated uv lock file (exact versions of every package)

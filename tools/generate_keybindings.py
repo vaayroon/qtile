@@ -10,7 +10,7 @@ Usage: ``.venv/bin/python tools/generate_keybindings.py [--check] [README]``
 
 ``--check`` writes nothing and exits 1 when the README is out of date (CI
 runs it through ``tests/test_keybindings_doc.py``). Exit code 2 means the
-markers are missing.
+markers are missing or duplicated.
 """
 
 import argparse
@@ -46,11 +46,14 @@ def render() -> str:
 
 
 def replace_block(text: str, body: str) -> str:
-    """`text` with everything between the markers replaced by `body`."""
+    """`text` with everything between the markers replaced by `body`.
+    Exactly one marker pair is required, BEGIN first."""
     start = text.find(BEGIN)
-    end = text.find(END)
-    if start == -1 or end == -1 or end < start:
+    end = text.find(END, start + len(BEGIN)) if start != -1 else -1
+    if start == -1 or end == -1:
         raise ValueError(f"README markers not found: {BEGIN!r} ... {END!r}")
+    if text.count(BEGIN) > 1 or text.count(END) > 1:
+        raise ValueError(f"README markers appear more than once: {BEGIN!r}")
     head = text[: start + len(BEGIN)]
     return f"{head}\n\n{body}\n{text[end:]}"
 

@@ -27,7 +27,11 @@ def show_cheatsheet(qtile: Any) -> None:
         path = popup_input_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         lines = to_lines(build_sections(cheatsheet_sections()))
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        # Write then rename, so a rofi still reading the previous file
+        # never sees a half-written one.
+        partial = path.with_name(path.name + ".part")
+        partial.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        partial.replace(path)
     except OSError:
         logger.exception("cheat sheet: could not write the rofi input file")
         return

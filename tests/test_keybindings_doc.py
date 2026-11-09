@@ -18,6 +18,9 @@ pytest.importorskip("libqtile.config")
 ROOT = Path(__file__).resolve().parent.parent
 TOOL = Path("tools") / "generate_keybindings.py"
 
+BEGIN = "<!-- BEGIN GENERATED KEYBINDINGS: tools/generate_keybindings.py -->"
+END = "<!-- END GENERATED KEYBINDINGS -->"
+
 LOCAL_ENTRY = """\
 [[scratchpad]]
 name = "localonly"
@@ -100,6 +103,27 @@ def test_missing_markers_exit_2(repo: Path, tmp_path: Path) -> None:
     assert result.returncode == 2
     assert "markers not found" in result.stderr
     assert readme.read_text() == "# No markers\n"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "{end}\nprose\n{begin}\n{end}\n",
+        "{begin}\n{end}\n{begin}\n{end}\n",
+    ],
+    ids=["stray-end-in-prose", "duplicated-pair"],
+)
+def test_misplaced_or_duplicated_markers_exit_2(
+    repo: Path, tmp_path: Path, text: str
+) -> None:
+    readme = repo / "README.md"
+    original = text.format(begin=BEGIN, end=END)
+    readme.write_text(original)
+
+    result = _run(repo, tmp_path)
+
+    assert result.returncode == 2
+    assert readme.read_text() == original
 
 
 def test_local_scratchpad_overrides_stay_out_of_the_readme(
