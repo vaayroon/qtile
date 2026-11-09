@@ -139,3 +139,47 @@ def test_scratchpad_chord_is_listed_under_the_scratchpad_section(keys_module):
 
 def test_groups_section_starts_empty_for_modules_groups_to_fill(keys_module):
     assert keys_module.key_sections[keys_module.GROUPS_SECTION] == []
+
+
+class _FakeQtile:
+    def __init__(self):
+        self.spawned = []
+
+    def spawn(self, command):
+        self.spawned.append(command)
+
+
+def test_mod_f1_opens_the_cheat_sheet(init_keys):
+    (binding,) = [k for k in init_keys() if _combo(k) == (frozenset({"mod4"}), "F1")]
+    (command,) = binding.commands
+    assert command.name == "function"
+    assert command.args[0].__name__ == "show_cheatsheet"
+
+
+def test_show_cheatsheet_writes_every_row_and_spawns_rofi(
+    keys_module, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "run"))
+    qtile = _FakeQtile()
+
+    keys_module.show_cheatsheet(qtile)
+
+    path = tmp_path / "run" / "qtile-keybindings.txt"
+    lines = path.read_text().splitlines()
+    assert any(line.startswith("mod + F1 ") for line in lines)
+    assert any(line.startswith("mod + s, then n ") for line in lines)
+    assert qtile.spawned == [keys_module.rofi_command(path)]
+
+
+def test_show_cheatsheet_logs_and_skips_rofi_when_the_file_fails(
+    keys_module, monkeypatch, tmp_path, caplog
+):
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("")
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(blocker))
+    qtile = _FakeQtile()
+
+    keys_module.show_cheatsheet(qtile)
+
+    assert qtile.spawned == []
+    assert any("cheat sheet" in m for m in caplog.messages)

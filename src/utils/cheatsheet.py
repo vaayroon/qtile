@@ -6,12 +6,15 @@ rows come out as ``mod + s``, then ``mod + s, then n`` for each sub-key. A
 key without commands is the ``Escape`` that ``KeyChord`` appends itself and
 is skipped.
 
-``modules.keys.cheatsheet_sections`` provides the input; ``to_markdown``
-and ``to_lines`` render it.
+``modules.keys.cheatsheet_sections`` provides the input. ``to_markdown``
+renders the README tables (``tools/generate_keybindings.py``); ``to_lines``,
+``popup_input_path`` and ``rofi_command`` back the ``mod + F1`` rofi popup.
 """
 
-from collections.abc import Iterable, Sequence
+import os
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 # Display order and label of the X11 modifiers this config uses. Any other
@@ -94,4 +97,35 @@ def to_lines(sections: Sequence[Section]) -> list[str]:
         f"{row.keys.ljust(width)}  {row.desc}  [{section.title}]"
         for section in sections
         for row in section.rows
+    ]
+
+
+POPUP_FILE_NAME = "qtile-keybindings.txt"
+
+
+def popup_input_path(environ: Mapping[str, str] = os.environ) -> Path:
+    """Where the popup's lines are written for rofi to read: the per-user
+    `$XDG_RUNTIME_DIR`, else `$XDG_CACHE_HOME/qtile`, else `~/.cache/qtile`.
+    Never a shared directory such as /tmp, where a fixed file name could be
+    a planted symlink. Relative values are ignored, as the XDG spec says."""
+    runtime_dir = environ.get("XDG_RUNTIME_DIR", "")
+    if os.path.isabs(runtime_dir):
+        return Path(runtime_dir) / POPUP_FILE_NAME
+    cache_home = environ.get("XDG_CACHE_HOME", "")
+    if not os.path.isabs(cache_home):
+        cache_home = str(Path.home() / ".cache")
+    return Path(cache_home) / "qtile" / POPUP_FILE_NAME
+
+
+def rofi_command(input_path: Path) -> list[str]:
+    """A read-only, case-insensitive rofi list over the file's lines."""
+    return [
+        "rofi",
+        "-dmenu",
+        "-i",
+        "-no-custom",
+        "-p",
+        "Keys",
+        "-input",
+        str(input_path),
     ]

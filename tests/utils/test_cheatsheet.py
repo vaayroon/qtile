@@ -13,6 +13,8 @@ from src.utils.cheatsheet import (
     binding_rows,
     build_sections,
     format_combo,
+    popup_input_path,
+    rofi_command,
     to_lines,
     to_markdown,
 )
@@ -144,3 +146,38 @@ def test_to_lines_aligns_the_keys_column() -> None:
 
 def test_to_lines_of_nothing_is_empty() -> None:
     assert to_lines([]) == []
+
+
+def test_popup_input_path_prefers_the_runtime_dir() -> None:
+    environ = {"XDG_RUNTIME_DIR": "/run/user/1000", "XDG_CACHE_HOME": "/c"}
+
+    assert popup_input_path(environ) == Path("/run/user/1000/qtile-keybindings.txt")
+
+
+@pytest.mark.parametrize("runtime_dir", [None, "", "relative/run"])
+def test_popup_input_path_falls_back_to_the_cache_home(runtime_dir) -> None:
+    environ = {"XDG_CACHE_HOME": "/c"}
+    if runtime_dir is not None:
+        environ["XDG_RUNTIME_DIR"] = runtime_dir
+
+    assert popup_input_path(environ) == Path("/c/qtile/qtile-keybindings.txt")
+
+
+@pytest.mark.parametrize("cache_home", [None, "", "relative/cache"])
+def test_popup_input_path_falls_back_to_dot_cache(
+    monkeypatch: pytest.MonkeyPatch, cache_home
+) -> None:
+    monkeypatch.setenv("HOME", "/home/tester")
+    environ = {} if cache_home is None else {"XDG_CACHE_HOME": cache_home}
+
+    assert popup_input_path(environ) == Path(
+        "/home/tester/.cache/qtile/qtile-keybindings.txt"
+    )
+
+
+def test_rofi_command_reads_the_file_without_custom_input() -> None:
+    command = rofi_command(Path("/run/user/1000/k.txt"))
+
+    assert command[:2] == ["rofi", "-dmenu"]
+    assert "-no-custom" in command
+    assert command[-2:] == ["-input", "/run/user/1000/k.txt"]

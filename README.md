@@ -17,6 +17,7 @@ A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11
 - **11 layouts** — MonadTall, MonadWide, Max, Tile, Stack, TreeTab, Matrix, and more.
 - **Powerline status bar** — system updates, crypto ticker, CPU/GPU temps, memory, network, clock, and a system tray.
 - **Phone mirroring widget** — start/stop scrcpy, reconnect ADB, and control phone volume straight from the bar.
+- **Keybinding cheat sheet** — `mod + F1` lists every binding in rofi; the [Keybindings](#keybindings) tables are generated from the same `desc` strings.
 - **`.env`-driven** — runtime behavior (monitor ordering, phone mirror, optional bar widgets) is configured through environment variables, not hardcoded.
 - **Reproducible deps** — managed and locked with [uv](https://docs.astral.sh/uv/) (`uv.lock`, exact installs); linted, formatted and type-checked with `ruff` and `mypy`, gated by GitHub Actions CI and local pre-commit hooks.
 
@@ -350,12 +351,13 @@ Colors, borders, and fonts are defined in [`src/settings.py`](src/settings.py):
 | `mod + Shift + r` | Reload Qtile |
 | `mod + Shift + q` | Shutdown Qtile |
 | `Ctrl + Alt + l` | Lock screen |
+| `mod + F1` | Show this keybinding cheat sheet |
 
 <!-- END GENERATED KEYBINDINGS -->
 
 > The tables above are generated from each binding's `desc` in [`src/modules/keys.py`](src/modules/keys.py) and [`src/modules/groups.py`](src/modules/groups.py). After changing a binding, run `.venv/bin/python tools/generate_keybindings.py`; CI fails while they are out of date.
 >
-> The `mod + s` sub-keys come from the shipped `scratchpads.toml`, so entries from your `scratchpads.local.toml` are not listed here. See [Scratchpads](#scratchpads) to add your own and [Size presets](#size-presets) for the grow/shrink keys.
+> The `mod + s` sub-keys come from the shipped `scratchpads.toml`, so entries from your `scratchpads.local.toml` are not listed here. `mod + F1` shows the live list, local entries included, in a rofi popup. See [Scratchpads](#scratchpads) to add your own and [Size presets](#size-presets) for the grow/shrink keys.
 
 ---
 

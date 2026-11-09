@@ -1,10 +1,12 @@
 import functools
+from typing import Any
 
 from libqtile.config import Key, KeyChord
 from libqtile.lazy import lazy
 from libqtile.log_utils import logger
 
 from settings import mod
+from utils.cheatsheet import build_sections, popup_input_path, rofi_command, to_lines
 from utils.scratchpad_size import cycle_focused_dropdown
 from utils.scratchpads import build_scratchpad_chord, has_entry, load_scratchpads
 
@@ -16,6 +18,20 @@ def _dropdown_key(modifiers: list[str], key: str, name: str, desc: str) -> list[
         return []
     toggle = lazy.group["scratchpad"].dropdown_toggle(name)
     return [Key(modifiers, key, toggle, desc=desc)]
+
+
+def show_cheatsheet(qtile: Any) -> None:
+    """`mod + F1`: list every binding in a rofi popup. Built from the live
+    sections, so local scratchpad overrides show up (the README cannot)."""
+    try:
+        path = popup_input_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = to_lines(build_sections(cheatsheet_sections()))
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError:
+        logger.exception("cheat sheet: could not write the rofi input file")
+        return
+    qtile.spawn(rofi_command(path))
 
 
 GROUPS_SECTION = "Groups (workspaces)"
@@ -250,6 +266,12 @@ key_sections: dict[str, list[Key]] = {
             "l",
             lazy.spawn("i3lock -ufc 000000"),
             desc="Lock screen",
+        ),
+        Key(
+            [mod],
+            "F1",
+            lazy.function(show_cheatsheet),
+            desc="Show this keybinding cheat sheet",
         ),
     ],
 }
