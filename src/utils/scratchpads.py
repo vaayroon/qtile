@@ -22,11 +22,12 @@ import logging
 import math
 import os
 import re
-import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
+
+from .toml_registry import load_raw_entries
 
 # Use the "libqtile" logger by name rather than importing
 # `libqtile.log_utils.logger` directly. `logging.getLogger` returns the same
@@ -145,10 +146,6 @@ class _SkipEntry(Exception):
     must be skipped. Always caught within this module; never escapes it."""
 
 
-# A raw TOML entry carries its source file alongside it through the pipeline
-# so warnings can name the offending file (Observability requirement).
-_RawEntry = tuple[dict[str, Any], str]
-
 _KNOWN_FIELDS = {
     "name",
     "command",
@@ -184,159 +181,6 @@ def _entry_identity(raw_entry: dict[str, Any], index: int, source: str) -> str:
     if isinstance(name, str) and name.strip():
         return f"{name!r} ({source})"
     return f"#{index} ({source})"
-
-
-# ---------------------------------------------------------------------------
-# Discover + parse stage
-# ---------------------------------------------------------------------------
-
-
-def _parse_toml_file(path: Path, source: str) -> list[_RawEntry]:
-    """Parse one already-existing TOML file into raw entry dicts.
-
-    Never raises: any failure (not a regular file, malformed TOML, an
-    unanticipated exception from `tomllib.load`) degrades to "this file
-    contributes zero entries" plus a logged warning/exception.
-    """
-    if not path.is_file():
-        logger.warning(
-            "scratchpad registry: %s is not a regular file, skipping", source
-        )
-        return []
-
-    try:
-        with path.open("rb") as handle:
-            data = tomllib.load(handle)
-    except tomllib.TOMLDecodeError as error:
-        logger.warning("scratchpad registry: %s has invalid TOML: %s", source, error)
-        return []
-    except Exception:
-        # Catches anything else tomllib (or the filesystem) can throw:
-        # UnicodeDecodeError, OSError family, RecursionError, MemoryError,
-        # or an exception type nobody anticipated (see the monkeypatch test).
-        logger.exception("scratchpad registry: unexpected error reading %s", source)
-        return []
-
-    if not isinstance(data, dict):
-        logger.warning("scratchpad registry: %s root is not a table, skipping", source)
-        return []
-
-    raw_entries = data.get("scratchpad", [])
-    if not isinstance(raw_entries, list):
-        logger.warning(
-            "scratchpad registry: %s 'scratchpad' key is not an array of "
-            "tables, skipping",
-            source,
-        )
-        return []
-
-    entries: list[_RawEntry] = []
-    for index, raw_entry in enumerate(raw_entries):
-        if not isinstance(raw_entry, dict):
-            logger.warning(
-                "scratchpad registry: %s entry #%d is not a table, skipping",
-                source,
-                index,
-            )
-            continue
-        entries.append((raw_entry, source))
-    return entries
-
-
-def _read_registry_file(path: Path | None, *, required: bool) -> list[_RawEntry]:
-    """Discover stage: catches a missing file, a directory, or an unreadable
-    path. `required` controls whether a missing file is worth a warning
-    (the base file should always exist; the local override file is
-    optional and its absence is the normal case)."""
-    if path is None:
-        return []
-
-    source = str(path)
-    try:
-        exists = path.exists()
-    except OSError:
-        logger.warning("scratchpad registry: could not stat %s", source)
-        return []
-
-    if not exists:
-        if required:
-            logger.warning(
-                "scratchpad registry: %s not found, treating as empty", source
-            )
-        return []
-
-    return _parse_toml_file(path, source)
-
-
-# ---------------------------------------------------------------------------
-# Merge stage
-# ---------------------------------------------------------------------------
-
-
-def _dedupe_named(entries: list[_RawEntry], file_label: str) -> list[_RawEntry]:
-    """Keep the first entry per `name` within a single file; entries with a
-    missing/blank name pass through untouched (the validate stage handles
-    the missing-name case with the right identity)."""
-    seen: set[str] = set()
-    result: list[_RawEntry] = []
-    for raw_entry, source in entries:
-        name = raw_entry.get("name")
-        if not (isinstance(name, str) and name.strip()):
-            result.append((raw_entry, source))
-            continue
-        if name in seen:
-            logger.warning(
-                "scratchpad registry: duplicate entry name=%r in %s, keeping "
-                "first occurrence",
-                name,
-                file_label,
-            )
-            continue
-        seen.add(name)
-        result.append((raw_entry, source))
-    return result
-
-
-def _merge_raw_entries(
-    base_entries: list[_RawEntry], local_entries: list[_RawEntry]
-) -> list[_RawEntry]:
-    """Merge the local override file into the base registry by `name`.
-
-    A local entry sharing a `name` with a base entry REPLACES it in full
-    (whole-entry override, not per-field merge). A local entry with a new
-    `name` is appended. A local entry with `enabled = false` removes the
-    matching base entry entirely.
-    """
-    base = _dedupe_named(base_entries, "base file")
-    local = _dedupe_named(local_entries, "local file")
-
-    by_name: dict[str, _RawEntry] = {}
-    order: list[str] = []
-    unnamed: list[_RawEntry] = []
-
-    for raw_entry, source in base:
-        name = raw_entry.get("name")
-        if isinstance(name, str) and name.strip():
-            by_name[name] = (raw_entry, source)
-            order.append(name)
-        else:
-            unnamed.append((raw_entry, source))
-
-    for raw_entry, source in local:
-        name = raw_entry.get("name")
-        if not (isinstance(name, str) and name.strip()):
-            unnamed.append((raw_entry, source))
-            continue
-        if raw_entry.get("enabled") is False:
-            if name in by_name:
-                by_name.pop(name)
-                order.remove(name)
-            continue
-        if name not in by_name:
-            order.append(name)
-        by_name[name] = (raw_entry, source)  # whole-entry replace
-
-    return [by_name[name] for name in order] + unnamed
 
 
 # ---------------------------------------------------------------------------
@@ -741,9 +585,9 @@ def load_scratchpads_from(
     disappear.
     """
     try:
-        base_entries = _read_registry_file(base_path, required=True)
-        local_entries = _read_registry_file(local_path, required=False)
-        merged = _merge_raw_entries(base_entries, local_entries)
+        merged = load_raw_entries(
+            base_path, local_path, table="scratchpad", label="scratchpad registry"
+        )
 
         apps: list[ScratchpadApp] = []
         for index, (raw_entry, source) in enumerate(merged):
