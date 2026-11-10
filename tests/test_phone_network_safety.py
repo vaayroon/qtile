@@ -195,17 +195,105 @@ async def test_allowlisted_calls_are_spawned(
 # --- strict rofi / zenity templates ------------------------------------------
 
 
+RUNTIME = "/run/user/1000"
+QR_PNG = f"{RUNTIME}/qtile/pair-qr.png"
+QR_ARGV = [
+    "kitty",
+    "--class",
+    "phone-pair-qr",
+    "--title",
+    "Pair phone",
+    "kitty",
+    "+kitten",
+    "icat",
+    "--hold",
+    QR_PNG,
+]
+
+
+@pytest.fixture()
+def runtime_dir(monkeypatch: pytest.MonkeyPatch) -> str:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", RUNTIME)
+    return RUNTIME
+
+
+@pytest.mark.usefixtures("runtime_dir")
+async def test_kitty_runs_the_exact_qr_template(exec_mock: AsyncMock) -> None:
+    await runner.run(QR_ARGV)
+
+    exec_mock.assert_awaited_once()
+    assert exec_mock.await_args.args == tuple(QR_ARGV)
+
+
+@pytest.mark.usefixtures("runtime_dir")
+async def test_kitty_by_path_is_still_the_same_template(exec_mock: AsyncMock) -> None:
+    await runner.run(["/usr/bin/kitty", *QR_ARGV[1:]])
+
+    exec_mock.assert_awaited_once()
+
+
 @pytest.mark.parametrize(
     "argv",
     [
         ["kitty"],
         ["kitty", "--hold"],
         ["/usr/bin/kitty", "--class", "phone-pair-qr"],
+        # anything but the exact template
+        [*QR_ARGV[:-1]],  # no png
+        [*QR_ARGV, "extra"],
+        ["kitty", "-e", "true"],
+        ["kitty", "--class", "other", *QR_ARGV[3:]],
+        ["kitty", "--class", "phone-pair-qr", "--title", "Other", *QR_ARGV[5:]],
+        ["kitty", "--title", "Pair phone", "--class", "phone-pair-qr", *QR_ARGV[5:]],
+        [*QR_ARGV[:5], "kitty", "+kitten", "ssh", "--hold", QR_PNG],
+        [*QR_ARGV[:5], "kitty", "+kitten", "icat", QR_PNG],
+        [*QR_ARGV[:5], "kitty", "+kitten", "icat", "--hold", "--engine=magick", QR_PNG],
+        [*QR_ARGV[:5], "kitty", "+kitten", "icat", "--hold", "-n", QR_PNG],
+        [*QR_ARGV[:5], "sh", "+kitten", "icat", "--hold", QR_PNG],
+        [*QR_ARGV[:5], "python3", "-c", "x", "--hold", QR_PNG],
+        ["kitty", "--class", "phone-pair-qr", "--title", "Pair phone", "-o", "x=y"],
+        ["kitty", "--detach", *QR_ARGV[1:]],
+        ["kitty", "+kitten", "icat", "--hold", QR_PNG],
+        ["kitty", "@", "launch", "true"],
+        # the image must be the one file the code writes
+        [*QR_ARGV[:-1], "/etc/passwd"],
+        [*QR_ARGV[:-1], "/tmp/pair-qr.png"],
+        [*QR_ARGV[:-1], f"{RUNTIME}/qtile/other.png"],
+        [*QR_ARGV[:-1], f"{RUNTIME}/other/pair-qr.png"],
+        [*QR_ARGV[:-1], f"{RUNTIME}/qtile/../pair-qr.png"],
+        [*QR_ARGV[:-1], f"{RUNTIME}/qtile/sub/pair-qr.png"],
+        [*QR_ARGV[:-1], "qtile/pair-qr.png"],
+        [*QR_ARGV[:-1], f"{RUNTIME}-evil/qtile/pair-qr.png"],
+        [*QR_ARGV[:-1], f"{RUNTIME}/qtile/pair-qr.png.sh"],
+        [*QR_ARGV[:-1], "http://example.com/x.png"],
     ],
 )
-async def test_kitty_is_not_allowed(argv: list[str], exec_mock: AsyncMock) -> None:
+@pytest.mark.usefixtures("runtime_dir")
+async def test_kitty_rejects_anything_but_the_qr_template(
+    argv: list[str], exec_mock: AsyncMock
+) -> None:
     with pytest.raises(runner.ForbiddenCommand):
         await runner.run(argv)
+    with pytest.raises(runner.ForbiddenCommand):
+        await runner.spawn(argv)
+    exec_mock.assert_not_called()
+
+
+async def test_kitty_needs_a_runtime_dir(
+    monkeypatch: pytest.MonkeyPatch, exec_mock: AsyncMock
+) -> None:
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+
+    with pytest.raises(runner.ForbiddenCommand):
+        await runner.run(QR_ARGV)
+    exec_mock.assert_not_called()
+
+
+@pytest.mark.usefixtures("runtime_dir")
+async def test_kitty_cannot_wrap_a_forbidden_tool(exec_mock: AsyncMock) -> None:
+    for name in FORBIDDEN_EXECUTABLES:
+        with pytest.raises(runner.ForbiddenCommand):
+            await runner.run([*QR_ARGV[:5], name, "+kitten", "icat", "--hold", QR_PNG])
     exec_mock.assert_not_called()
 
 
@@ -357,6 +445,7 @@ def test_allowlist_is_exactly_the_expected_set() -> None:
         "scrcpy",
         "zenity",
         "rofi",
+        "kitty",
     }
     _assert_allowlist_is_safe(runner.ALLOWED_EXECUTABLES)
 
