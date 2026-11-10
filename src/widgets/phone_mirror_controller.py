@@ -109,6 +109,7 @@ class PhoneController:
         self._stop_requested: Any = None
         self._watcher: asyncio.Task[None] | None = None
         self._tail: deque[str] = deque(maxlen=TAIL_LINES)
+        self._labels: dict[str, str] = {}
         self._serial = ""  # device picked in the selector, kept for the session
         self._last_refresh: float | None = None
         self._listeners: list[Callable[[], None]] = []
@@ -215,7 +216,9 @@ class PhoneController:
         _rc, text = await self._exec(
             build_devices_argv(self.resolve("adb_path"), long=True)
         )
-        return parse_devices(text), text
+        devices = parse_devices(text)
+        self._labels = {d.serial: device_label(d) for d in devices}
+        return devices, text
 
     async def _select_device(self, devices: Sequence[Device]) -> str:
         """Ask which device to use; raises SelectionCancelled on dismissal."""
@@ -328,22 +331,41 @@ class PhoneController:
         self._stop()
 
     async def reconnect(self) -> None:
+        """Reconnect the wireless target, then pick the device again."""
         if self._lock.locked():
             logger.info("PhoneMirror: busy, click ignored")
             return
         async with self._lock:
             try:
+                if self.is_mirroring():
+                    logger.info("PhoneMirror: reconnect: stopping mirroring")
+                    self._stop()
+                self._serial = ""
                 adb = self.resolve("adb_path")
-                target = self.resolve("wireless_target") or self.resolve("device")
-                await self._exec(build_disconnect_argv(adb, target))
-                await self._connect()
+                # Never a bare `adb disconnect`: it drops every wireless device.
+                target = self.resolve("wireless_target")
+                if not target and ":" in self.resolve("device"):
+                    target = self.resolve("device")
+                if target:
+                    await self._exec(build_disconnect_argv(adb, target))
+                    await self._connect()
                 serial = await self._ensure_ready()
                 if serial is not None:
-                    self.notify("status", NOTIFY_TITLE, "Phone connected.")
+                    self._announce(serial)
             except Exception:
                 logger.exception("PhoneMirror: reconnect failed")
             finally:
                 self._changed()
+
+    def _announce(self, serial: str) -> None:
+        if self.resolve("device"):
+            message = (
+                f"Using {serial}: it is fixed by QTILE_PHONE_MIRROR_DEVICE, "
+                "so the device selector is skipped."
+            )
+        else:
+            message = f"Using {self._labels.get(serial, serial)}."
+        self.notify("status", NOTIFY_TITLE, message)
 
     async def volume(self, *, up: bool, _retry: bool = True) -> None:
         try:

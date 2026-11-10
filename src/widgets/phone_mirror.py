@@ -21,7 +21,7 @@ class PhoneMirrorWidget(base.BackgroundPoll):
     Mouse controls:
     - Left click: start/stop scrcpy mirroring
     - Middle click: toggle mirror mode (screen on/off)
-    - Right click: force wireless reconnect with ADB
+    - Right click: reconnect / switch device
     - Scroll up/down: phone volume up/down
     """
 

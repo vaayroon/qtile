@@ -640,3 +640,113 @@ async def test_middle_click_when_idle_stays_silent(
 ) -> None:
     controller.toggle_screen_off()
     notes.assert_not_called()
+
+
+# --- right click: reconnect / switch device (slice 1e) -----------------------
+
+
+async def _remember(controller: PhoneController, fake: FakeRunner, index: str) -> None:
+    fake.devices = [TWO]
+    fake.rofi = runner.Result(0, f"{index}\n", "")
+    await controller.volume(up=True)
+    fake.calls.clear()
+    fake.rofi_input.clear()
+
+
+async def test_reconnect_clears_the_remembered_device_and_asks_again(
+    controller: PhoneController, fake: FakeRunner, notes: MagicMock
+) -> None:
+    await _remember(controller, fake, "0")
+    fake.rofi = runner.Result(0, "1\n", "")
+
+    await controller.reconnect()
+
+    assert len(fake.rofi_input) == 1
+    assert any("sdk_gphone64_x86_64 (emulator)" in b for b in _bodies(notes))
+    await controller.volume(up=True)
+    assert _keyevents(fake)[-1][2] == "emulator-5554"
+
+
+async def test_reconnect_with_one_device_picks_it_and_names_it(
+    controller: PhoneController, fake: FakeRunner, notes: MagicMock
+) -> None:
+    fake.devices = [ONE]
+
+    await controller.reconnect()
+
+    assert not any(call[0] == "rofi" for call in fake.calls)
+    assert any("Pixel_10 (usb)" in body for body in _bodies(notes))
+
+
+async def test_reconnect_without_wireless_target_never_disconnects(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    fake.devices = [ONE]
+    await controller.reconnect()
+    assert not any("disconnect" in call for call in fake.calls)
+
+
+async def test_reconnect_ignores_a_usb_serial_for_disconnect(
+    controller: PhoneController,
+    fake: FakeRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_DEVICE", "56201FDCR0077W")
+    fake.devices = [ONE]
+    await controller.reconnect()
+    assert not any("disconnect" in call for call in fake.calls)
+
+
+@pytest.mark.usefixtures("notes")
+async def test_reconnect_stops_active_mirroring_without_restarting(
+    controller: PhoneController,
+    fake: FakeRunner,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    await controller.toggle()
+    assert controller.is_mirroring()
+
+    with caplog.at_level("INFO"):
+        await controller.reconnect()
+
+    fake.process.terminate.assert_called_once()
+    assert not controller.is_mirroring()
+    assert len(fake.spawned) == 1
+    assert "stopping mirroring" in caplog.text
+
+
+async def test_reconnect_with_env_device_says_the_env_wins(
+    controller: PhoneController,
+    fake: FakeRunner,
+    notes: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_DEVICE", "emulator-5554")
+    fake.devices = [TWO]
+
+    await controller.reconnect()
+
+    assert not any(call[0] == "rofi" for call in fake.calls)
+    body = " ".join(_bodies(notes))
+    assert "QTILE_PHONE_MIRROR_DEVICE" in body
+    assert "emulator-5554" in body
+
+
+async def test_reconnect_cancel_leaves_no_device_selected(
+    controller: PhoneController,
+    fake: FakeRunner,
+    notes: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    await _remember(controller, fake, "0")
+    fake.rofi = runner.Result(1, "", "")
+    notes.reset_mock()
+
+    with caplog.at_level("INFO"):
+        await controller.reconnect()
+
+    assert "selection cancelled" in caplog.text
+    assert not any("Using" in body for body in _bodies(notes))
+    fake.calls.clear()
+    await controller.volume(up=True)  # nothing remembered: asks again
+    assert any(call[0] == "rofi" for call in fake.calls)

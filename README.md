@@ -16,7 +16,7 @@ A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11
 - **Dynamic multi-monitor** — screens are detected at startup via `xrandr`; monitor order is configurable by serial or port.
 - **11 layouts** — MonadTall, MonadWide, Max, Tile, Stack, TreeTab, Matrix, and more.
 - **Powerline status bar** — system updates, crypto ticker, CPU/GPU temps, memory, network, clock, and a system tray.
-- **Phone mirroring widget** — start/stop scrcpy, reconnect ADB, and control phone volume straight from the bar.
+- **Phone mirroring widget** — start/stop scrcpy, reconnect or switch device, and control phone volume straight from the bar.
 - **App launcher registry** — the app keys live in [`launchers.toml`](launchers.toml), with personal additions in a gitignored local file; see [App launchers](#app-launchers).
 - **Keybinding cheat sheet** — `mod + F1` lists every binding in rofi; the [Keybindings](#keybindings) tables are generated from the same `desc` strings.
 - **`.env`-driven** — runtime behavior (monitor ordering, phone mirror, optional bar widgets) is configured through environment variables, not hardcoded.
@@ -553,13 +553,15 @@ A custom widget ([`src/widgets/phone_mirror.py`](src/widgets/phone_mirror.py)) t
 | Interaction | Action |
 |---|---|
 | **Left click** | Start / stop mirroring |
-| **Right click** | Force wireless ADB reconnect |
+| **Right click** | Reconnect / switch device |
 | **Middle click** | Toggle "phone screen off" mode for the next start |
 | **Scroll up / down** | Phone volume up / down |
 
 **`mod + p`** toggles mirroring from the keyboard. The bar has one widget per screen, but they all share a single controller ([`src/widgets/phone_mirror_controller.py`](src/widgets/phone_mirror_controller.py)), so only one scrcpy process ever runs. A click that arrives while an action is still in progress is ignored.
 
 **Device selection.** Every adb call that targets a device passes `-s <serial>`, so having several devices attached (for example a phone over USB plus an emulator) works. The device is chosen like this: if `QTILE_PHONE_MIRROR_DEVICE` is set, that serial is used. With exactly one ready device, it is used. With several, a `rofi -dmenu` selector titled "Phone" lists them with physical devices first and emulators (`emulator-*`) last, labelled by model and transport, such as `Pixel_10 (usb)`. Cancelling the selector aborts quietly with a log line. The choice is remembered for the session by the shared controller; if that device disappears, the next action asks again. The periodic status refresh never opens the selector.
+
+**Right click (reconnect / switch device)** forgets the remembered device, stops mirroring if it was running (it is not restarted), redoes `adb disconnect` + `adb connect` for `QTILE_PHONE_MIRROR_WIRELESS_TARGET` only when one is set (it never runs a bare `adb disconnect`), and then resolves the device again: the selector appears when several are ready, a single device is used directly, and a notification names the one now selected. If `QTILE_PHONE_MIRROR_DEVICE` is set it wins and the notification says so. Cancelling the selector leaves no device selected.
 
 **Middle click while mirroring** still flips the screen-off preference, which scrcpy only reads at start, so it applies on the next start. A notification says so and reminds you that `Alt+O` and `Alt+Shift+O` inside the scrcpy window turn the phone screen off and on right now.
 
