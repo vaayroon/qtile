@@ -32,6 +32,7 @@ class FakeController:
         self.detached: list[Any] = []
         self.actions: list[str] = []
         self.settings = {"device": "SER", "show_device": "false"}
+        self.countdown = "02:41"
 
     def configure(self, defaults: dict[str, str]) -> None:
         self.configured = dict(defaults)
@@ -53,6 +54,9 @@ class FakeController:
 
     def toggle_screen_off(self) -> None:
         self.actions.append("screen_off")
+
+    def pairing_countdown(self) -> str:
+        return self.countdown
 
     def attach(self, listener: Any) -> None:
         self.attached.append(listener)
@@ -133,6 +137,27 @@ async def test_apoll_text_per_state(
     assert await widget.apoll() == text
 
 
+async def test_apoll_shows_the_pairing_countdown(
+    widget: PhoneMirrorWidget, fake: FakeController
+) -> None:
+    fake.state = State.PAIRING
+    assert await widget.apoll() == "PHONE:PAIR 02:41"
+
+    fake.countdown = "00:07"
+    assert await widget.apoll() == "PHONE:PAIR 00:07"
+
+
+async def test_a_broken_pairing_format_falls_back_to_the_raw_text(
+    widget: PhoneMirrorWidget, fake: FakeController
+) -> None:
+    fake.state = State.PAIRING
+    widget.format_pairing = "PAIR {oops}"
+    assert await widget.apoll() == "PAIR {oops}"
+
+    widget.format_pairing = "PAIR"
+    assert await widget.apoll() == "PAIR"
+
+
 async def test_apoll_appends_the_device_when_enabled(
     widget: PhoneMirrorWidget, fake: FakeController
 ) -> None:
@@ -163,6 +188,7 @@ def test_constructor_hands_defaults_to_the_controller(
     assert fake.configured["adb_path"] == "/opt/genymobile/adb"
     assert fake.configured["turn_screen_off"] == "false"
     assert fake.configured["quality"] == "balanced"
+    assert fake.configured["pair_ttl"] == "180"
 
 
 def test_finalize_detaches_from_the_controller(

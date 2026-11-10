@@ -18,6 +18,7 @@ from typing import Any
 from libqtile.log_utils import logger
 from libqtile.utils import create_task, send_notification
 
+from . import phone_mirror_qr as qr
 from . import phone_mirror_runner as runner
 from .phone_mirror_commands import (
     Device,
@@ -36,6 +37,20 @@ from .phone_mirror_commands import (
     ready_device,
     ready_devices,
 )
+from .phone_mirror_pairing import (
+    DEFAULT_TTL,
+    MdnsEntry,
+    PairingSession,
+    build_mdns_argv,
+    build_pair_argv,
+    build_zenity_pair_argv,
+    find_connect,
+    find_pairing,
+    new_session,
+    parse_mdns,
+    parse_zenity_pair,
+    redact,
+)
 from .phone_mirror_reasons import Reason, map_exception, map_failure, message_for
 
 REFRESH_TTL = 2.0
@@ -45,7 +60,12 @@ VOLUME_STEP_MIN = 1
 VOLUME_STEP_MAX = 20
 TAIL_LINES = 20
 NOTIFY_TITLE = "Phone mirror"
-NOTIFY_IDS = {"status": 7101, "error": 7102}
+NOTIFY_IDS = {"status": 7101, "error": 7102, "pair": 7103}
+PAIR_POLL_INTERVAL = 2.0  # seconds between `adb mdns services` queries
+PAIR_TTL_MIN = 120.0
+PAIR_TTL_MAX = 300.0
+PAIR_TIMEOUT = 20.0  # seconds allowed for `adb pair`
+CONNECT_WAIT = 10.0  # seconds to wait for the phone's connect entry after pairing
 
 ENV_KEYS = {
     "adb_path": "QTILE_PHONE_MIRROR_ADB_PATH",
@@ -58,6 +78,7 @@ ENV_KEYS = {
     "quality": "QTILE_PHONE_MIRROR_QUALITY",
     "audio": "QTILE_PHONE_MIRROR_AUDIO",
     "restart_on_switch": "QTILE_PHONE_MIRROR_RESTART_ON_SWITCH",
+    "pair_ttl": "QTILE_PHONE_MIRROR_PAIR_TTL",
 }
 
 DEFAULTS = {
@@ -71,6 +92,7 @@ DEFAULTS = {
     "quality": "balanced",
     "audio": "false",
     "restart_on_switch": "true",
+    "pair_ttl": "180",
 }
 
 _TRUE = {"1", "true", "yes", "on"}
@@ -78,6 +100,36 @@ _USER_BLOCKED = {Reason.UNAUTHORIZED, Reason.OFFLINE}
 
 RunFn = Callable[..., Awaitable[runner.Result]]
 SpawnFn = Callable[[Sequence[str]], Awaitable[Any]]
+OpenQrFn = Callable[..., Awaitable[Any]]
+
+_QR_MISSING = {
+    "segno": (
+        "The QR library (segno) is not installed. Install it with "
+        "'uv sync --extra phone'. Pairing manually instead."
+    ),
+    "kitty": "kitty is not available, so the QR cannot be shown. Pairing manually.",
+    "runtime": (
+        "XDG_RUNTIME_DIR is not set, so the QR cannot be shown. Pairing manually."
+    ),
+}
+_DISCOVERY_FAILED = (
+    "The phone was not found. Likely causes: it is on a different network than "
+    "this computer, the router isolates Wi-Fi clients (AP isolation), a firewall "
+    "blocks mDNS (multicast DNS), or a VPN is active. Nothing was changed on this "
+    "computer. Enter the pairing details manually instead."
+)
+_MDNS_DOWN = (
+    "Automatic discovery (mDNS) is not available. Enter the pairing details manually."
+)
+_MANUAL_INVALID = (
+    "Invalid pairing details. Enter the host:port and the 6-digit code shown "
+    "on the phone."
+)
+_NO_CONNECT_ENTRY = (
+    "Paired, but the phone's connect address was not found. Open Wireless "
+    "debugging on the phone, then left-click the widget and enter the host:port "
+    "shown there."
+)
 
 
 class SelectionCancelled(Exception):
@@ -89,6 +141,7 @@ class State(Enum):
     MIRROR = "mirror"
     DISCONNECTED = "disconnected"
     ERROR = "error"
+    PAIRING = "pairing"
 
 
 def to_bool(value: str) -> bool:
@@ -103,7 +156,11 @@ class PhoneController:
         spawn: SpawnFn = runner.spawn,
         which: Callable[[str], str | None] = shutil.which,
         clock: Callable[[], float] = time.monotonic,
+        open_qr: OpenQrFn = qr.open_window,
     ) -> None:
+        self._open_qr = open_qr
+        self._pairing: PairingSession | None = None
+        self._pair_cancel = asyncio.Event()
         self._run = run
         self._spawn = spawn
         self._which = which
@@ -215,10 +272,16 @@ class PhoneController:
             self._which(self.resolve("scrcpy_path")) is None
         )
 
-    async def _exec(self, argv: Sequence[str], timeout: float = 5.0) -> tuple[int, str]:
+    async def _exec(
+        self,
+        argv: Sequence[str],
+        timeout: float = 5.0,
+        input_text: str | None = None,
+    ) -> tuple[int, str]:
         """Run an allowlisted command; never raises, returns (rc, text)."""
+        extra = {} if input_text is None else {"input_text": input_text}
         try:
-            result = await self._run(argv, timeout=timeout)
+            result = await self._run(argv, timeout=timeout, **extra)
         except FileNotFoundError:
             return 127, "command not found"
         except (OSError, runner.ForbiddenCommand) as exc:
@@ -451,6 +514,192 @@ class PhoneController:
             message += " Mirroring not restarted."
         self.notify("status", NOTIFY_TITLE, message)
 
+    # -- wireless pairing ---------------------------------------------------
+
+    def pairing_countdown(self) -> str:
+        """`mm:ss` left on the pairing code, or an empty string."""
+        return self._pairing.countdown(self._clock()) if self._pairing else ""
+
+    def cancel_pairing(self) -> bool:
+        """Stop a pairing in its waiting phase; False if none is waiting."""
+        if self._pairing is None:
+            return False
+        logger.info("PhoneMirror: pairing cancelled")
+        self._pair_cancel.set()
+        return True
+
+    async def pair_toggle(self) -> None:
+        """The key: cancel a waiting pairing, otherwise start one."""
+        if not self.cancel_pairing():
+            await self.pair()
+
+    async def pair(self) -> None:
+        """Pair over Wi-Fi with a QR code, or by hand when that is not possible."""
+        if self._lock.locked():
+            logger.info("PhoneMirror: busy, pairing ignored")
+            return
+        async with self._lock:
+            self._touch()
+            self._pair_cancel = asyncio.Event()
+            try:
+                await self._pair_flow()
+            except Exception:
+                logger.exception("PhoneMirror: pairing failed")
+                self.state = State.DISCONNECTED
+                self._fail(Reason.UNKNOWN)
+            finally:
+                self._pairing = None
+                self._changed()
+
+    def _pair_ttl(self) -> float:
+        raw = self.resolve("pair_ttl")
+        try:
+            wanted = float(raw)
+        except ValueError:
+            logger.warning("PhoneMirror: bad pairing expiry %r, using the default", raw)
+            return DEFAULT_TTL
+        ttl = min(max(wanted, PAIR_TTL_MIN), PAIR_TTL_MAX)
+        if ttl != wanted:
+            logger.info(
+                "PhoneMirror: pairing expiry %.0f s clamped to %.0f", wanted, ttl
+            )
+        return ttl
+
+    async def _pair_flow(self) -> None:
+        adb = self.resolve("adb_path")
+        if self._which(adb) is None:
+            self.state = State.ERROR
+            self._fail(Reason.MISSING_BINARY)
+            return
+        _rc, text = await self._exec(build_mdns_argv(adb, "check"))
+        if map_failure(text) is Reason.MDNS_UNAVAILABLE:
+            self.notify("pair", NOTIFY_TITLE, _MDNS_DOWN)
+            await self._manual_pair()
+            return
+        session = new_session(self._clock(), self._pair_ttl())
+        try:
+            window = await self._open_qr(
+                session.payload, spawn=self._spawn, which=self._which
+            )
+        except qr.QrUnavailable as exc:
+            logger.info("PhoneMirror: QR unavailable (%s)", exc.missing)
+            self.notify("pair", NOTIFY_TITLE, _QR_MISSING.get(exc.missing, str(exc)))
+            await self._manual_pair()
+            return
+        self._pairing = session
+        self.state = State.PAIRING
+        self._changed()
+        left = session.countdown(self._clock())
+        self.notify(
+            "pair",
+            NOTIFY_TITLE,
+            "Scan the QR with the phone: Developer options, Wireless debugging, "
+            f"Pair device with QR code. It expires in {left}. "
+            "Press the same key again to cancel.",
+        )
+        try:
+            entry, outcome = await self._await_pairing(session, window)
+        finally:
+            await window.close()
+            self._pairing = None
+            self.state = State.DISCONNECTED
+        if outcome == "cancelled":
+            self.notify("pair", NOTIFY_TITLE, "Pairing cancelled.")
+        elif entry is None:
+            self.notify("error", NOTIFY_TITLE, _DISCOVERY_FAILED, urgent=True)
+            await self._manual_pair()
+        elif not session.consume(self._clock()):
+            self._fail(Reason.EXPIRED)
+        else:
+            await self._pair_and_connect(entry.address, session.password)
+
+    async def _pause(self, seconds: float) -> None:
+        """Sleep, waking early when the pairing is cancelled."""
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self._pair_cancel.wait(), seconds)
+
+    async def _await_pairing(
+        self, session: PairingSession, window: Any
+    ) -> tuple[MdnsEntry | None, str]:
+        """Poll mDNS until the phone shows up under our name, or give up."""
+        adb = self.resolve("adb_path")
+        while True:
+            if self._pair_cancel.is_set() or not window.is_open():
+                return None, "cancelled"
+            if session.expired(self._clock()):
+                return None, "expired"
+            _rc, text = await self._exec(build_mdns_argv(adb, "services"))
+            entry = find_pairing(parse_mdns(text), session.name)
+            if entry is not None:
+                return entry, "found"
+            self._changed()  # moves the countdown in the bar
+            await self._pause(PAIR_POLL_INTERVAL)
+
+    async def _manual_pair(self) -> None:
+        """Ask for the phone's pairing address and code, then pair."""
+        try:
+            result = await self._run(build_zenity_pair_argv(), timeout=120)
+        except (OSError, runner.ForbiddenCommand):
+            logger.warning("PhoneMirror: zenity unavailable for manual pairing")
+            self.notify(
+                "error",
+                NOTIFY_TITLE,
+                "The manual pairing prompt (zenity) is not available.",
+                urgent=True,
+            )
+            return
+        if result.rc != 0:
+            logger.info("PhoneMirror: manual pairing cancelled")
+            return
+        parsed = parse_zenity_pair(result.stdout)
+        if parsed is None:
+            self.notify("error", NOTIFY_TITLE, _MANUAL_INVALID, urgent=True)
+            return
+        endpoint, code = parsed
+        await self._pair_and_connect(endpoint, code)
+
+    async def _pair_and_connect(self, endpoint: str, secret: str) -> None:
+        adb = self.resolve("adb_path")
+        # The code goes through stdin so it never shows up in argv or `ps`.
+        rc, text = await self._exec(
+            build_pair_argv(adb, endpoint),
+            timeout=PAIR_TIMEOUT,
+            input_text=f"{secret}\n",
+        )
+        text = redact(text, secret)
+        logger.info("PhoneMirror: adb pair %s: %s", endpoint, text.strip())
+        if rc != 0 or "successfully paired" not in text.lower():
+            reason = map_failure(text)
+            self.state = State.DISCONNECTED
+            self._fail(Reason.PAIR_REJECTED if reason is Reason.UNKNOWN else reason)
+            return
+        host = endpoint.rpartition(":")[0].strip("[]")
+        address = await self._find_connect_address(host)
+        if address is None:
+            self.notify("error", NOTIFY_TITLE, _NO_CONNECT_ENTRY, urgent=True)
+            return
+        rc, text = await self._exec(build_connect_argv(adb, address))
+        lowered = text.lower()
+        if rc == 0 and "connected to" in lowered and "failed" not in lowered:
+            self.state = State.READY
+            self.notify("pair", NOTIFY_TITLE, f"Paired and connected to {address}.")
+            return
+        self.state = State.DISCONNECTED
+        self._fail(map_failure(text))
+
+    async def _find_connect_address(self, host: str) -> str | None:
+        """The phone's connect address: same host, whatever the instance name."""
+        adb = self.resolve("adb_path")
+        deadline = self._clock() + CONNECT_WAIT
+        while True:
+            _rc, text = await self._exec(build_mdns_argv(adb, "services"))
+            entry = find_connect(parse_mdns(text), host)
+            if entry is not None:
+                return entry.address
+            if self._clock() >= deadline:
+                return None
+            await asyncio.sleep(PAIR_POLL_INTERVAL)
+
     def _volume_step(self) -> int:
         raw = self.resolve("volume_step") or str(VOLUME_STEP_DEFAULT)
         try:
@@ -607,6 +856,12 @@ def get_controller() -> PhoneController:
     if _controller is None:
         _controller = PhoneController()
     return _controller
+
+
+def phone_pair_toggle(qtile: Any = None) -> None:
+    """`lazy.function` target: start a pairing, or cancel the one in progress."""
+    del qtile
+    create_task(get_controller().pair_toggle())
 
 
 def phone_toggle(qtile: Any = None) -> None:
