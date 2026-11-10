@@ -190,6 +190,7 @@ Runtime behavior is controlled through `.env` (loaded by `python-dotenv` at star
 | `QTILE_PHONE_MIRROR_QUALITY` | `balanced` | Video preset: `low` (1024 px, 4M, 30 fps), `balanced` (1600 px, 8M, 60 fps) or `high` (native size, 16M, 60 fps). |
 | `QTILE_PHONE_MIRROR_AUDIO` | `false` | Forward the phone audio to the computer (`--no-audio` when off). |
 | `QTILE_PHONE_MIRROR_RESTART_ON_SWITCH` | `true` | Reopen mirroring on the new device after a right-click switch, only if it was running. |
+| `QTILE_PHONE_MIRROR_PAIR_TTL` | `180` | Seconds the Wi-Fi pairing QR stays valid (clamped to 120-300). |
 | `QTILE_PHONE_MIRROR_SHOW_DEVICE` | `false` | Append the device serial to the bar status text. |
 | `QTILE_PHONE_MIRROR_VOLUME_STEP` | `5` | ADB volume key-events sent per scroll tick. |
 
@@ -353,6 +354,7 @@ Colors, borders, and fonts are defined in [`src/settings.py`](src/settings.py):
 | Keys | Action |
 |---|---|
 | `mod + p` | Toggle phone mirroring |
+| `mod + Shift + p` | Pair phone over Wi-Fi |
 
 ### Session
 
@@ -566,13 +568,26 @@ A custom widget ([`src/widgets/phone_mirror.py`](src/widgets/phone_mirror.py)) t
 
 **Middle click while mirroring** still flips the screen-off preference, which scrcpy only reads at start, so it applies on the next start. A notification says so and reminds you that `Alt+O` and `Alt+Shift+O` inside the scrcpy window turn the phone screen off and on right now.
 
-Status text: `PHONE:READY` (connected, idle) · `PHONE:MIRROR` (running) · `PHONE:DISC` (no device) · `PHONE:ERR` (adb/scrcpy not found). If no device can be reached it opens a `zenity` dialog to fix paths and targets on the fly.
+Status text: `PHONE:READY` (connected, idle) · `PHONE:MIRROR` (running) · `PHONE:DISC` (no device) · `PHONE:ERR` (adb/scrcpy not found) · `PHONE:PAIR 02:41` (pairing, with the time left). If no device can be reached it opens a `zenity` dialog to fix paths and targets on the fly.
 
 Start and failure messages are sent as desktop notifications that name the reason (unauthorized, offline, unreachable, missing binary), and scrcpy's output goes to the qtile log (`~/.local/share/qtile/qtile.log`).
 
 **Config reload.** A config reload (`mod + Shift + r`) stops a running mirror on purpose: the widgets are rebuilt, and the last one to go away shuts scrcpy down. Start it again with `mod + p`. Stopping sends SIGTERM and, if scrcpy has not exited after a few seconds, SIGKILL.
 
-**Host network safety.** Every process the phone mirror code starts goes through one allowlisted runner ([`src/widgets/phone_mirror_runner.py`](src/widgets/phone_mirror_runner.py)): only `adb`, `scrcpy`, `zenity` (the setup form) and `rofi` (the device selector) may run, the last two with only the exact flags the code builds, and `adb` is limited to `devices`, `connect`, `disconnect`, `pair`, `mdns`, `shell input keyevent`, `tcpip` and `version`. It never touches NetworkManager, firewall rules, routes, DNS or any system service. Tests enforce this.
+**Wireless pairing.** `mod + Shift + p` pairs the phone over Wi-Fi (Android 11 or newer), with no cable:
+
+1. A floating kitty window shows a QR code and the widget reads `PHONE:PAIR mm:ss`.
+2. On the phone open **Developer options, Wireless debugging, Pair device with QR code** and scan it.
+3. The code polls `adb mdns services` every 2 seconds until the phone advertises its pairing entry under the random name inside the QR. It then runs `adb pair host:port`, finds the phone's `_adb-tls-connect._tcp` entry **on the same host** (its instance name is the device's own, not ours) and runs `adb connect`. A notification reports the result.
+4. Press `mod + Shift + p` again, or close the QR window, to cancel.
+
+Each attempt has a fresh random name and password (Python's `secrets`) and expires after `QTILE_PHONE_MIRROR_PAIR_TTL` seconds (default 180); an expired password is never used. The password is never logged, never put in a notification or a file, and reaches `adb pair` through stdin, so it does not show up in `ps`. The QR PNG is a private (`0600`) file under `$XDG_RUNTIME_DIR/qtile/`, deleted when pairing ends, is cancelled or expires.
+
+QR support is optional: it needs [`segno`](https://pypi.org/project/segno/) (the `phone` extra) and `kitty`. Install it with `uv sync --locked --extra phone` (add `--no-dev` for a runtime-only install). A later `uv sync` without `--extra phone` removes segno again.
+
+**Manual fallback.** If segno or kitty is missing, `adb mdns` is unavailable, or the phone is not found before the code expires, a notification explains the likely causes and a `zenity` form asks for the pairing address (`host:port`) and the 6-digit code shown by **Pair device with pairing code** on the phone. It then runs `adb pair` and `adb connect` the same way. Cancelling the form runs nothing. The usual causes of a failed discovery are: the phone and the computer are on different networks, the router isolates Wi-Fi clients (AP isolation), a firewall blocks mDNS (multicast DNS), or a VPN is active. The code only reports this and never changes network settings. `adb tcpip` is never run by any pairing or reconnect flow.
+
+**Host network safety.** Every process the phone mirror code starts goes through one allowlisted runner ([`src/widgets/phone_mirror_runner.py`](src/widgets/phone_mirror_runner.py)): only `adb`, `scrcpy`, `zenity` (the setup and pairing forms), `rofi` (the device selector) and `kitty` (the pairing QR window) may run, the last three with only the exact flags the code builds (`kitty` runs one argv template that shows `$XDG_RUNTIME_DIR/qtile/pair-qr.png`, nothing else), and `adb` is limited to `devices`, `connect`, `disconnect`, `pair`, `mdns`, `shell input keyevent`, `tcpip` and `version`. It never touches NetworkManager, firewall rules, routes, DNS or any system service. Tests enforce this.
 
 ---
 

@@ -53,6 +53,7 @@ floating_layout = layout.Floating(
         Match(wm_class="Dnieremotewizard"),
         Match(wm_class="endeavour"),
         Match(wm_class="Nm-connection-editor"),
+        Match(wm_class="phone-pair-qr"),  # QR window of the phone pairing
         Match(wm_class="Todoist"),
         Match(wm_class="gnome-todo"),
         Match(wm_class="Xfce4-appfinder"),

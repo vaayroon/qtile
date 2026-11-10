@@ -11,7 +11,7 @@ from utils.cheatsheet import build_sections, popup_input_path, rofi_command, to_
 from utils.launchers import bindable_launchers, load_launchers
 from utils.scratchpad_size import cycle_focused_dropdown
 from utils.scratchpads import build_scratchpad_chord, has_entry, load_scratchpads
-from widgets.phone_mirror_controller import phone_toggle
+from widgets.phone_mirror_controller import phone_pair_toggle, phone_toggle
 
 
 def _dropdown_key(modifiers: list[str], key: str, name: str, desc: str) -> list[Key]:
@@ -224,6 +224,12 @@ key_sections: dict[str, list[Key]] = {
             "p",
             lazy.function(phone_toggle),
             desc="Toggle phone mirroring",
+        ),
+        Key(
+            [mod, "shift"],
+            "p",
+            lazy.function(phone_pair_toggle),
+            desc="Pair phone over Wi-Fi",
         ),
     ],
     "Session": [
