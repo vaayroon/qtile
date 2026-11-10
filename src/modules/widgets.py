@@ -211,6 +211,7 @@ def _phone_mirror(background: Any) -> list[Any]:
             turn_screen_off=True,
             quality="balanced",
             audio=False,
+            restart_on_switch=True,
             show_device=False,
             update_interval=8,
         ),

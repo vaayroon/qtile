@@ -702,7 +702,9 @@ async def test_reconnect_stops_active_mirroring_without_restarting(
     controller: PhoneController,
     fake: FakeRunner,
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_RESTART_ON_SWITCH", "false")
     await controller.toggle()
     assert controller.is_mirroring()
 
@@ -750,3 +752,92 @@ async def test_reconnect_cancel_leaves_no_device_selected(
     fake.calls.clear()
     await controller.volume(up=True)  # nothing remembered: asks again
     assert any(call[0] == "rofi" for call in fake.calls)
+
+
+# --- restart mirroring after a switch ------------------------------------------
+
+
+async def _mirror_on_pixel(controller: PhoneController, fake: FakeRunner) -> None:
+    fake.devices = [TWO]
+    fake.rofi = runner.Result(0, "0\n", "")
+    await controller.toggle()
+    assert controller.is_mirroring()
+    fake.spawned.clear()
+    fake.process = FakeProcess()  # a fresh process for the restart
+
+
+async def test_restart_on_switch_defaults_to_true(
+    controller: PhoneController,
+) -> None:
+    assert controller.resolve("restart_on_switch") == "true"
+
+
+async def test_switch_while_mirroring_restarts_on_the_new_serial(
+    controller: PhoneController, fake: FakeRunner, notes: MagicMock
+) -> None:
+    await _mirror_on_pixel(controller, fake)
+    fake.rofi = runner.Result(0, "1\n", "")
+
+    await controller.reconnect()
+
+    assert len(fake.spawned) == 1
+    argv = fake.spawned[0]
+    assert argv[argv.index("-s") + 1] == "emulator-5554"
+    assert controller.is_mirroring()
+    assert any("restarted" in body.lower() for body in _bodies(notes))
+
+
+async def test_switch_while_mirroring_does_not_restart_when_disabled(
+    controller: PhoneController,
+    fake: FakeRunner,
+    notes: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_RESTART_ON_SWITCH", "false")
+    await _mirror_on_pixel(controller, fake)
+    fake.rofi = runner.Result(0, "1\n", "")
+
+    await controller.reconnect()
+
+    assert fake.spawned == []
+    assert not controller.is_mirroring()
+    assert any("not restarted" in body.lower() for body in _bodies(notes))
+
+
+async def test_switch_never_starts_mirroring_when_it_was_not_active(
+    controller: PhoneController, fake: FakeRunner, notes: MagicMock
+) -> None:
+    fake.devices = [TWO]
+    fake.rofi = runner.Result(0, "1\n", "")
+
+    await controller.reconnect()
+
+    assert fake.spawned == []
+    assert not any("restarted" in body.lower() for body in _bodies(notes))
+
+
+async def test_cancelled_switch_does_not_restart(
+    controller: PhoneController,
+    fake: FakeRunner,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    await _mirror_on_pixel(controller, fake)
+    fake.rofi = runner.Result(1, "", "")
+
+    with caplog.at_level("INFO"):
+        await controller.reconnect()
+
+    assert fake.spawned == []
+    assert not controller.is_mirroring()
+    assert "selection cancelled" in caplog.text
+
+
+async def test_restart_is_logged(
+    controller: PhoneController,
+    fake: FakeRunner,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    await _mirror_on_pixel(controller, fake)
+    with caplog.at_level("INFO"):
+        await controller.reconnect()
+    assert "restarting mirroring" in caplog.text

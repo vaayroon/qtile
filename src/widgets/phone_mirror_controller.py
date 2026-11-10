@@ -52,6 +52,7 @@ ENV_KEYS = {
     "volume_step": "QTILE_PHONE_MIRROR_VOLUME_STEP",
     "quality": "QTILE_PHONE_MIRROR_QUALITY",
     "audio": "QTILE_PHONE_MIRROR_AUDIO",
+    "restart_on_switch": "QTILE_PHONE_MIRROR_RESTART_ON_SWITCH",
 }
 
 DEFAULTS = {
@@ -64,6 +65,7 @@ DEFAULTS = {
     "volume_step": "5",
     "quality": "balanced",
     "audio": "false",
+    "restart_on_switch": "true",
 }
 
 _TRUE = {"1", "true", "yes", "on"}
@@ -337,7 +339,8 @@ class PhoneController:
             return
         async with self._lock:
             try:
-                if self.is_mirroring():
+                was_mirroring = self.is_mirroring()
+                if was_mirroring:
                     logger.info("PhoneMirror: reconnect: stopping mirroring")
                     self._stop()
                 self._serial = ""
@@ -351,13 +354,20 @@ class PhoneController:
                     await self._connect()
                 serial = await self._ensure_ready()
                 if serial is not None:
-                    self._announce(serial)
+                    restarted = False
+                    if was_mirroring and to_bool(self.resolve("restart_on_switch")):
+                        logger.info("PhoneMirror: restarting mirroring on %s", serial)
+                        await self._start(serial)
+                        restarted = self.is_mirroring()
+                    elif was_mirroring:
+                        logger.info("PhoneMirror: mirroring not restarted (disabled)")
+                    self._announce(serial, restarted=restarted, was=was_mirroring)
             except Exception:
                 logger.exception("PhoneMirror: reconnect failed")
             finally:
                 self._changed()
 
-    def _announce(self, serial: str) -> None:
+    def _announce(self, serial: str, *, restarted: bool, was: bool) -> None:
         if self.resolve("device"):
             message = (
                 f"Using {serial}: it is fixed by QTILE_PHONE_MIRROR_DEVICE, "
@@ -365,6 +375,10 @@ class PhoneController:
             )
         else:
             message = f"Using {self._labels.get(serial, serial)}."
+        if restarted:
+            message += " Mirroring restarted."
+        elif was:
+            message += " Mirroring not restarted."
         self.notify("status", NOTIFY_TITLE, message)
 
     async def volume(self, *, up: bool, _retry: bool = True) -> None:

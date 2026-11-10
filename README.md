@@ -189,6 +189,7 @@ Runtime behavior is controlled through `.env` (loaded by `python-dotenv` at star
 | `QTILE_PHONE_MIRROR_SCREEN_OFF` | `true` | Start scrcpy with the phone screen off (`-S`). |
 | `QTILE_PHONE_MIRROR_QUALITY` | `balanced` | Video preset: `low` (1024 px, 4M, 30 fps), `balanced` (1600 px, 8M, 60 fps) or `high` (native size, 16M, 60 fps). |
 | `QTILE_PHONE_MIRROR_AUDIO` | `false` | Forward the phone audio to the computer (`--no-audio` when off). |
+| `QTILE_PHONE_MIRROR_RESTART_ON_SWITCH` | `true` | Reopen mirroring on the new device after a right-click switch, only if it was running. |
 | `QTILE_PHONE_MIRROR_SHOW_DEVICE` | `false` | Append the device serial to the bar status text. |
 | `QTILE_PHONE_MIRROR_VOLUME_STEP` | `5` | ADB volume key-events sent per scroll tick. |
 
@@ -561,7 +562,7 @@ A custom widget ([`src/widgets/phone_mirror.py`](src/widgets/phone_mirror.py)) t
 
 **Device selection.** Every adb call that targets a device passes `-s <serial>`, so having several devices attached (for example a phone over USB plus an emulator) works. The device is chosen like this: if `QTILE_PHONE_MIRROR_DEVICE` is set, that serial is used. With exactly one ready device, it is used. With several, a `rofi -dmenu` selector titled "Phone" lists them with physical devices first and emulators (`emulator-*`) last, labelled by model and transport, such as `Pixel_10 (usb)`. Cancelling the selector aborts quietly with a log line. The choice is remembered for the session by the shared controller; if that device disappears, the next action asks again. The periodic status refresh never opens the selector.
 
-**Right click (reconnect / switch device)** forgets the remembered device, stops mirroring if it was running (it is not restarted), redoes `adb disconnect` + `adb connect` for `QTILE_PHONE_MIRROR_WIRELESS_TARGET` only when one is set (it never runs a bare `adb disconnect`), and then resolves the device again: the selector appears when several are ready, a single device is used directly, and a notification names the one now selected. If `QTILE_PHONE_MIRROR_DEVICE` is set it wins and the notification says so. Cancelling the selector leaves no device selected.
+**Right click (reconnect / switch device)** forgets the remembered device, stops mirroring if it was running, redoes `adb disconnect` + `adb connect` for `QTILE_PHONE_MIRROR_WIRELESS_TARGET` only when one is set (it never runs a bare `adb disconnect`), and then resolves the device again: the selector appears when several are ready, a single device is used directly, and a notification names the one now selected. If `QTILE_PHONE_MIRROR_DEVICE` is set it wins and the notification says so. If mirroring was running and `QTILE_PHONE_MIRROR_RESTART_ON_SWITCH` is `true` (the default), it reopens on the new device and the notification says so; with `false` it stays stopped. Mirroring that was not running is never started by a switch. Cancelling the selector leaves no device selected and does not restart anything.
 
 **Middle click while mirroring** still flips the screen-off preference, which scrcpy only reads at start, so it applies on the next start. A notification says so and reminds you that `Alt+O` and `Alt+Shift+O` inside the scrcpy window turn the phone screen off and on right now.
 

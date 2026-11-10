@@ -21,7 +21,7 @@ class PhoneMirrorWidget(base.BackgroundPoll):
     Mouse controls:
     - Left click: start/stop scrcpy mirroring
     - Middle click: toggle mirror mode (screen on/off)
-    - Right click: reconnect / switch device
+    - Right click: reconnect / switch device (reopens mirroring if it was on)
     - Scroll up/down: phone volume up/down
     """
 
@@ -48,6 +48,11 @@ class PhoneMirrorWidget(base.BackgroundPoll):
         ("turn_screen_off", True, "Start scrcpy with phone display off (-S)."),
         ("quality", "balanced", "Video preset: low, balanced or high."),
         ("audio", False, "Forward the phone audio to the computer."),
+        (
+            "restart_on_switch",
+            True,
+            "Reopen mirroring after a right-click device switch if it was running.",
+        ),
         ("show_device", False, "Show selected device in widget text."),
         ("format_ready", "PHONE:READY", "Text when a device is connected."),
         ("format_disconnected", "PHONE:DISC", "Text when no device is connected."),
@@ -64,6 +69,7 @@ class PhoneMirrorWidget(base.BackgroundPoll):
         "turn_screen_off",
         "quality",
         "audio",
+        "restart_on_switch",
         "show_device",
         "volume_step",
     )
