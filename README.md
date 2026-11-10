@@ -554,16 +554,20 @@ A custom widget ([`src/widgets/phone_mirror.py`](src/widgets/phone_mirror.py)) t
 |---|---|
 | **Left click** | Start / stop mirroring |
 | **Right click** | Force wireless ADB reconnect |
-| **Middle click** | Toggle "phone screen off" mode |
+| **Middle click** | Toggle "phone screen off" mode for the next start |
 | **Scroll up / down** | Phone volume up / down |
 
 **`mod + p`** toggles mirroring from the keyboard. The bar has one widget per screen, but they all share a single controller ([`src/widgets/phone_mirror_controller.py`](src/widgets/phone_mirror_controller.py)), so only one scrcpy process ever runs. A click that arrives while an action is still in progress is ignored.
+
+**Device selection.** Every adb call that targets a device passes `-s <serial>`, so having several devices attached (for example a phone over USB plus an emulator) works. The device is chosen like this: if `QTILE_PHONE_MIRROR_DEVICE` is set, that serial is used. With exactly one ready device, it is used. With several, a `rofi -dmenu` selector titled "Phone" lists them with physical devices first and emulators (`emulator-*`) last, labelled by model and transport, such as `Pixel_10 (usb)`. Cancelling the selector aborts quietly with a log line. The choice is remembered for the session by the shared controller; if that device disappears, the next action asks again. The periodic status refresh never opens the selector.
+
+**Middle click while mirroring** still flips the screen-off preference, which scrcpy only reads at start, so it applies on the next start. A notification says so and reminds you that `Alt+O` and `Alt+Shift+O` inside the scrcpy window turn the phone screen off and on right now.
 
 Status text: `PHONE:READY` (connected, idle) · `PHONE:MIRROR` (running) · `PHONE:DISC` (no device) · `PHONE:ERR` (adb/scrcpy not found). If no device can be reached it opens a `zenity` dialog to fix paths and targets on the fly.
 
 Start and failure messages are sent as desktop notifications that name the reason (unauthorized, offline, unreachable, missing binary), and scrcpy's output goes to the qtile log (`~/.local/share/qtile/qtile.log`).
 
-**Host network safety.** Every process the phone mirror code starts goes through one allowlisted runner ([`src/widgets/phone_mirror_runner.py`](src/widgets/phone_mirror_runner.py)): only `adb`, `scrcpy`, `zenity` and `kitty` may run, and `adb` is limited to `devices`, `connect`, `disconnect`, `pair`, `mdns`, `shell input keyevent`, `tcpip` and `version`. It never touches NetworkManager, firewall rules, routes, DNS or any system service. Tests enforce this.
+**Host network safety.** Every process the phone mirror code starts goes through one allowlisted runner ([`src/widgets/phone_mirror_runner.py`](src/widgets/phone_mirror_runner.py)): only `adb`, `scrcpy`, `zenity`, `kitty` and `rofi` (the device selector) may run, and `adb` is limited to `devices`, `connect`, `disconnect`, `pair`, `mdns`, `shell input keyevent`, `tcpip` and `version`. It never touches NetworkManager, firewall rules, routes, DNS or any system service. Tests enforce this.
 
 ---
 

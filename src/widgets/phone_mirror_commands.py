@@ -1,7 +1,7 @@
 """Pure builders and parsers for the phone mirror: no I/O, no subprocesses."""
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 DEFAULT_QUALITY = "balanced"
 
@@ -26,6 +26,9 @@ class MirrorOptions:
 class Device:
     serial: str
     state: str
+    # Extra `adb devices -l` details; ignored by equality so plain lines compare.
+    model: str = field(default="", compare=False)
+    transport: str = field(default="", compare=False)
 
 
 def normalize_quality(value: str) -> str:
@@ -57,8 +60,13 @@ def build_adb_argv(adb_path: str, args: Sequence[str], serial: str = "") -> list
     return [*argv, *args]
 
 
-def build_devices_argv(adb_path: str) -> list[str]:
-    return build_adb_argv(adb_path, ["devices"])
+def build_devices_argv(adb_path: str, long: bool = False) -> list[str]:
+    return build_adb_argv(adb_path, ["devices", *(["-l"] if long else [])])
+
+
+def build_rofi_argv(prompt: str) -> list[str]:
+    """A rofi menu fed through stdin that prints the selected line index."""
+    return ["rofi", "-dmenu", "-i", "-p", prompt, "-format", "i"]
 
 
 def build_connect_argv(adb_path: str, target: str) -> list[str]:
@@ -75,8 +83,16 @@ def build_keyevent_argv(adb_path: str, keycode: int, serial: str = "") -> list[s
     )
 
 
+def _transport(serial: str, details: dict[str, str]) -> str:
+    if serial.startswith("emulator-"):
+        return "emulator"
+    if "usb" in details:
+        return "usb"
+    return "wifi" if ":" in serial else ""
+
+
 def parse_devices(output: str) -> list[Device]:
-    """Parse `adb devices` output into (serial, state) pairs."""
+    """Parse `adb devices [-l]` output into devices."""
     devices: list[Device] = []
     for raw in output.splitlines():
         line = raw.strip()
@@ -84,8 +100,29 @@ def parse_devices(output: str) -> list[Device]:
             continue
         parts = line.split()
         if len(parts) >= 2:
-            devices.append(Device(parts[0], parts[1]))
+            details = dict(p.split(":", 1) for p in parts[2:] if ":" in p)
+            devices.append(
+                Device(
+                    parts[0],
+                    parts[1],
+                    model=details.get("model", ""),
+                    transport=_transport(parts[0], details),
+                )
+            )
     return devices
+
+
+def ready_devices(devices: Sequence[Device]) -> list[Device]:
+    """Usable devices, physical ones first and emulators last (stable by serial)."""
+    usable = [d for d in devices if d.state == "device"]
+    return sorted(usable, key=lambda d: (d.serial.startswith("emulator-"), d.serial))
+
+
+def device_label(device: Device) -> str:
+    """Human label for a selector, e.g. `Pixel_10 (usb)`."""
+    if not device.model:
+        return device.serial
+    return f"{device.model} ({device.transport})" if device.transport else device.model
 
 
 def ready_device(devices: Sequence[Device], expected: str = "") -> str | None:

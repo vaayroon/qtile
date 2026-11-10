@@ -11,12 +11,15 @@ from src.widgets.phone_mirror_commands import (
     build_devices_argv,
     build_disconnect_argv,
     build_keyevent_argv,
+    build_rofi_argv,
     build_scrcpy_argv,
     build_zenity_argv,
+    device_label,
     normalize_quality,
     parse_devices,
     parse_zenity_values,
     ready_device,
+    ready_devices,
 )
 
 
@@ -203,3 +206,56 @@ def test_parse_zenity_values_fills_blanks_from_initial() -> None:
 
 def test_parse_zenity_values_rejects_short_output() -> None:
     assert parse_zenity_values("only|two", INITIAL) is None
+
+
+# --- `adb devices -l`, ordering and labels --------------------------------
+
+LONG_OUT = (
+    "List of devices attached\n"
+    "emulator-5554          device product:sdk_gphone64_x86_64 "
+    "model:sdk_gphone64_x86_64 device:emu64xa transport_id:3\n"
+    "56201FDCR0077W         device usb:3-2 product:frankel model:Pixel_10 "
+    "device:frankel transport_id:4\n"
+    "192.168.1.10:5555      device product:p model:Galaxy_S9 device:d transport_id:5\n"
+    "ZZZ                    unauthorized usb:1-1 transport_id:6\n"
+)
+
+
+def test_devices_long_argv() -> None:
+    assert build_devices_argv("adb", long=True) == ["adb", "devices", "-l"]
+
+
+def test_parse_devices_long_reads_model_and_transport() -> None:
+    devices = {d.serial: d for d in parse_devices(LONG_OUT)}
+    assert devices["56201FDCR0077W"].model == "Pixel_10"
+    assert devices["56201FDCR0077W"].transport == "usb"
+    assert devices["emulator-5554"].model == "sdk_gphone64_x86_64"
+    assert devices["emulator-5554"].transport == "emulator"
+    assert devices["192.168.1.10:5555"].transport == "wifi"
+    assert devices["ZZZ"].state == "unauthorized"
+    assert devices["ZZZ"].model == ""
+
+
+def test_ready_devices_puts_physical_first_and_emulators_last() -> None:
+    serials = [d.serial for d in ready_devices(parse_devices(LONG_OUT))]
+    assert serials == ["192.168.1.10:5555", "56201FDCR0077W", "emulator-5554"]
+
+
+def test_ready_devices_is_independent_of_adb_order() -> None:
+    devices = parse_devices(LONG_OUT)
+    assert ready_devices(devices) == ready_devices(list(reversed(devices)))
+
+
+def test_device_labels() -> None:
+    devices = {d.serial: d for d in parse_devices(LONG_OUT)}
+    assert device_label(devices["56201FDCR0077W"]) == "Pixel_10 (usb)"
+    assert device_label(devices["emulator-5554"]) == "sdk_gphone64_x86_64 (emulator)"
+    assert device_label(Device("ABC", "device")) == "ABC"
+
+
+def test_rofi_argv_returns_the_selected_index() -> None:
+    argv = build_rofi_argv("Phone")
+    assert argv[:2] == ["rofi", "-dmenu"]
+    assert argv[argv.index("-p") + 1] == "Phone"
+    assert argv[argv.index("-format") + 1] == "i"
+    runner.validate(argv)

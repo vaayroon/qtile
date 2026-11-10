@@ -74,6 +74,26 @@ async def test_run_spawns_allowed_command(exec_mock: AsyncMock) -> None:
     assert result.stderr == "err"
 
 
+async def test_rofi_is_allowed_and_receives_stdin(exec_mock: AsyncMock) -> None:
+    proc = exec_mock.return_value
+    await runner.run(["rofi", "-dmenu", "-p", "Phone"], input_text="a\nb")
+
+    exec_mock.assert_awaited_once()
+    assert exec_mock.await_args.args[0] == "rofi"
+    proc.communicate.assert_awaited_once_with(input=b"a\nb")
+
+
+@pytest.mark.parametrize("name", FORBIDDEN_EXECUTABLES)
+async def test_rofi_does_not_open_the_door_to_forbidden_tools(
+    name: str, exec_mock: AsyncMock
+) -> None:
+    with pytest.raises(runner.ForbiddenCommand):
+        await runner.run([name, "-dmenu"], input_text="x")
+    with pytest.raises(runner.ForbiddenCommand):
+        await runner.run(["rofi", "-dmenu", "-p", name])
+    exec_mock.assert_not_called()
+
+
 async def test_basename_of_a_path_is_resolved(exec_mock: AsyncMock) -> None:
     await runner.run(["/opt/genymobile/adb", "devices"])
     exec_mock.assert_awaited_once()
@@ -174,7 +194,13 @@ def _assert_allowlist_is_safe(allowed: frozenset[str] | set[str]) -> None:
 
 
 def test_allowlist_is_exactly_the_expected_set() -> None:
-    assert set(runner.ALLOWED_EXECUTABLES) == {"adb", "scrcpy", "zenity", "kitty"}
+    assert set(runner.ALLOWED_EXECUTABLES) == {
+        "adb",
+        "scrcpy",
+        "zenity",
+        "kitty",
+        "rofi",
+    }
     _assert_allowlist_is_safe(runner.ALLOWED_EXECUTABLES)
 
 

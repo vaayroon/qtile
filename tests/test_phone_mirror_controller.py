@@ -50,6 +50,8 @@ class FakeRunner:
         self.devices: list[str] = [DEVICE_OK]
         self.connect_text = "connected to 192.168.1.20:5555"
         self.zenity: runner.Result | Exception = runner.Result(1, "", "")
+        self.rofi = runner.Result(1, "", "")
+        self.rofi_input: list[str] = []
         self.spawned: list[list[str]] = []
         self.process = FakeProcess()
         self.spawn_error: Exception | None = None
@@ -58,14 +60,21 @@ class FakeRunner:
         self,
         argv: Sequence[str],
         timeout: float = 10.0,  # noqa: ARG002
+        input_text: str | None = None,
     ) -> runner.Result:
         argv = list(argv)
         self.calls.append(argv)
         runner.validate(argv)
+        if argv[0] == "rofi":
+            self.rofi_input.append(input_text or "")
+            return self.rofi
         if argv[0] == "zenity":
             if isinstance(self.zenity, Exception):
                 raise self.zenity
             return self.zenity
+        if "keyevent" in argv and "-s" in argv:
+            if argv[argv.index("-s") + 1] not in self.devices[0]:
+                return runner.Result(1, "", "error: device not found")
         if "devices" in argv:
             text = self.devices.pop(0) if len(self.devices) > 1 else self.devices[0]
             return runner.Result(0, text, "")
@@ -367,6 +376,7 @@ async def test_refresh_survives_runner_errors(
     async def boom(
         _argv: Sequence[str],
         timeout: float = 10.0,  # noqa: ARG001
+        input_text: str | None = None,  # noqa: ARG001
     ) -> runner.Result:
         raise OSError("nope")
 
@@ -472,3 +482,161 @@ def test_phone_toggle_schedules_a_task_and_is_synchronous(
     assert not asyncio.iscoroutinefunction(ctl.phone_toggle)
     ctl.phone_toggle(None)
     assert len(scheduled) == 1
+
+
+# --- device resolution (slice 1d) --------------------------------------------
+
+PIXEL = (
+    "56201FDCR0077W         device usb:3-2 product:frankel model:Pixel_10 "
+    "device:frankel transport_id:4\n"
+)
+EMU = (
+    "emulator-5554          device product:sdk_gphone64_x86_64 "
+    "model:sdk_gphone64_x86_64 device:emu64xa transport_id:3\n"
+)
+TWO = f"List of devices attached\n{EMU}{PIXEL}"
+ONE = f"List of devices attached\n{PIXEL}"
+
+
+def _keyevents(fake: FakeRunner) -> list[list[str]]:
+    return [call for call in fake.calls if "keyevent" in call]
+
+
+@pytest.mark.usefixtures("notes")
+async def test_volume_with_two_devices_passes_the_selected_serial(
+    controller: PhoneController, fake: FakeRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_VOLUME_STEP", "2")
+    fake.devices = [TWO]
+    fake.rofi = runner.Result(0, "0\n", "")  # physical device sorts first
+
+    await controller.volume(up=True)
+
+    events = _keyevents(fake)
+    assert len(events) == 2
+    assert all(call[:3] == ["adb", "-s", "56201FDCR0077W"] for call in events)
+
+
+@pytest.mark.usefixtures("notes")
+async def test_selector_lists_physical_devices_first_with_labels(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    fake.devices = [TWO]
+    fake.rofi = runner.Result(0, "1\n", "")
+
+    await controller.toggle()
+
+    assert fake.rofi_input == ["Pixel_10 (usb)\nsdk_gphone64_x86_64 (emulator)"]
+    rofi = next(call for call in fake.calls if call[0] == "rofi")
+    assert rofi[rofi.index("-p") + 1] == "Phone"
+    argv = fake.spawned[0]
+    assert argv[argv.index("-s") + 1] == "emulator-5554"
+
+
+@pytest.mark.usefixtures("notes")
+async def test_single_device_skips_the_selector(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    fake.devices = [ONE]
+    await controller.toggle()
+    assert not any(call[0] == "rofi" for call in fake.calls)
+    assert fake.spawned[0][fake.spawned[0].index("-s") + 1] == "56201FDCR0077W"
+
+
+@pytest.mark.usefixtures("notes")
+async def test_env_override_skips_the_selector(
+    controller: PhoneController, fake: FakeRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_DEVICE", "emulator-5554")
+    fake.devices = [TWO]
+    await controller.toggle()
+    assert not any(call[0] == "rofi" for call in fake.calls)
+    assert fake.spawned[0][fake.spawned[0].index("-s") + 1] == "emulator-5554"
+
+
+async def test_cancelled_selection_aborts_quietly(
+    controller: PhoneController,
+    fake: FakeRunner,
+    notes: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    fake.devices = [TWO]
+    fake.rofi = runner.Result(1, "", "")
+
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+        await controller.volume(up=True)
+
+    assert fake.spawned == []
+    assert _keyevents(fake) == []
+    notes.assert_not_called()
+    assert not any(call[0] == "zenity" for call in fake.calls)
+    assert "selection cancelled" in caplog.text
+
+
+@pytest.mark.usefixtures("notes")
+async def test_choice_is_remembered_for_the_session(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    fake.devices = [TWO]
+    fake.rofi = runner.Result(0, "0\n", "")
+
+    await controller.volume(up=True)
+    await controller.volume(up=False)
+
+    assert sum(call[0] == "rofi" for call in fake.calls) == 1
+    assert {call[2] for call in _keyevents(fake)} == {"56201FDCR0077W"}
+
+
+@pytest.mark.usefixtures("notes")
+async def test_vanished_remembered_serial_is_resolved_again(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    fake.devices = [TWO]
+    fake.rofi = runner.Result(0, "0\n", "")
+    await controller.volume(up=True)
+
+    fake.devices = [f"List of devices attached\n{EMU}"]  # the phone is unplugged
+    fake.calls.clear()
+    await controller.volume(up=True)
+
+    assert not any(call[0] == "rofi" for call in fake.calls)  # single device left
+    assert _keyevents(fake)[0][2] == "56201FDCR0077W"  # fails: device gone
+    assert _keyevents(fake)[-1][2] == "emulator-5554"
+
+    fake.devices = [TWO]  # phone back: remembered serial was cleared, ask again
+    await controller.volume(up=True)
+    assert any(call[0] == "rofi" for call in fake.calls)
+
+
+async def test_refresh_never_opens_the_selector(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    fake.devices = [TWO]
+    assert await controller.refresh() is State.READY
+    assert not any(call[0] == "rofi" for call in fake.calls)
+
+
+# --- middle click while mirroring --------------------------------------------
+
+
+async def test_middle_click_while_mirroring_explains_when_it_applies(
+    controller: PhoneController, notes: MagicMock
+) -> None:
+    await controller.toggle()
+    notes.reset_mock()
+
+    controller.toggle_screen_off()
+
+    assert controller.resolve("turn_screen_off") == "false"
+    body = _bodies(notes)[0]
+    assert "next start" in body
+    assert "Alt+O" in body
+    assert "Alt+Shift+O" in body
+
+
+async def test_middle_click_when_idle_stays_silent(
+    controller: PhoneController, notes: MagicMock
+) -> None:
+    controller.toggle_screen_off()
+    notes.assert_not_called()

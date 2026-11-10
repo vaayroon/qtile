@@ -19,17 +19,21 @@ from libqtile.utils import create_task, send_notification
 
 from . import phone_mirror_runner as runner
 from .phone_mirror_commands import (
+    Device,
     MirrorOptions,
     build_connect_argv,
     build_devices_argv,
     build_disconnect_argv,
     build_keyevent_argv,
+    build_rofi_argv,
     build_scrcpy_argv,
     build_zenity_argv,
+    device_label,
     normalize_quality,
     parse_devices,
     parse_zenity_values,
     ready_device,
+    ready_devices,
 )
 from .phone_mirror_reasons import Reason, map_exception, map_failure, message_for
 
@@ -69,6 +73,10 @@ RunFn = Callable[..., Awaitable[runner.Result]]
 SpawnFn = Callable[[Sequence[str]], Awaitable[Any]]
 
 
+class SelectionCancelled(Exception):
+    """The user dismissed the device selector."""
+
+
 class State(Enum):
     READY = "ready"
     MIRROR = "mirror"
@@ -101,6 +109,7 @@ class PhoneController:
         self._stop_requested: Any = None
         self._watcher: asyncio.Task[None] | None = None
         self._tail: deque[str] = deque(maxlen=TAIL_LINES)
+        self._serial = ""  # device picked in the selector, kept for the session
         self._last_refresh: float | None = None
         self._listeners: list[Callable[[], None]] = []
 
@@ -134,6 +143,15 @@ class PhoneController:
     def toggle_screen_off(self) -> None:
         current = to_bool(self.resolve("turn_screen_off"))
         self._session["turn_screen_off"] = "false" if current else "true"
+        if self.is_mirroring():
+            wanted = "on" if current is False else "off"
+            self.notify(
+                "status",
+                NOTIFY_TITLE,
+                f"Screen-off mode is now {wanted}. It applies on the next start. "
+                "To turn the phone screen off or on now, press Alt+O or "
+                "Alt+Shift+O in the scrcpy window.",
+            )
 
     # -- listeners ---------------------------------------------------------
 
@@ -193,9 +211,48 @@ class PhoneController:
             return 1, "timed out"
         return result.rc, f"{result.stdout}\n{result.stderr}"
 
-    async def _find_device(self) -> tuple[str | None, str]:
-        _rc, text = await self._exec(build_devices_argv(self.resolve("adb_path")))
-        return ready_device(parse_devices(text), self.resolve("device")), text
+    async def _list_devices(self) -> tuple[list[Device], str]:
+        _rc, text = await self._exec(
+            build_devices_argv(self.resolve("adb_path"), long=True)
+        )
+        return parse_devices(text), text
+
+    async def _select_device(self, devices: Sequence[Device]) -> str:
+        """Ask which device to use; raises SelectionCancelled on dismissal."""
+        stdin = "\n".join(device_label(d) for d in devices)
+        try:
+            result = await self._run(
+                build_rofi_argv("Phone"), timeout=120, input_text=stdin
+            )
+        except (OSError, runner.ForbiddenCommand) as exc:
+            logger.warning("PhoneMirror: device selector unavailable: %s", exc)
+            raise SelectionCancelled from exc
+        try:
+            index = int(result.stdout.strip())
+        except ValueError:
+            index = -1
+        if result.rc != 0 or not 0 <= index < len(devices):
+            raise SelectionCancelled
+        return devices[index].serial
+
+    async def _find_device(self, interactive: bool = True) -> tuple[str | None, str]:
+        """Pick the target serial: env, remembered, the only one, or ask."""
+        devices, text = await self._list_devices()
+        expected = self.resolve("device")
+        if expected:
+            return ready_device(devices, expected), text
+        ready = ready_devices(devices)
+        if self._serial and self._serial not in {d.serial for d in ready}:
+            logger.info("PhoneMirror: device %s is gone, resolving again", self._serial)
+            self._serial = ""
+        if self._serial:
+            return self._serial, text
+        if len(ready) <= 1:
+            return (ready[0].serial if ready else None), text
+        if not interactive:
+            return ready[0].serial, text
+        self._serial = await self._select_device(ready)
+        return self._serial, text
 
     async def _connect(self) -> str:
         target = self.resolve("wireless_target")
@@ -225,10 +282,10 @@ class PhoneController:
             return State.ERROR
         if self.is_mirroring():
             return State.MIRROR
-        serial, _text = await self._find_device()
+        serial, _text = await self._find_device(interactive=False)
         if serial is None and self.resolve("wireless_target"):
             await self._connect()
-            serial, _text = await self._find_device()
+            serial, _text = await self._find_device(interactive=False)
         return State.READY if serial else State.DISCONNECTED
 
     # -- actions -----------------------------------------------------------
@@ -288,16 +345,33 @@ class PhoneController:
             finally:
                 self._changed()
 
-    async def volume(self, *, up: bool) -> None:
+    async def volume(self, *, up: bool, _retry: bool = True) -> None:
         try:
             step = max(1, int(self.resolve("volume_step") or "5"))
         except ValueError:
             step = 5
-        argv = build_keyevent_argv(
-            self.resolve("adb_path"), 24 if up else 25, serial=self.resolve("device")
-        )
-        for _ in range(step):
-            await self._exec(argv)
+        serial = self.resolve("device") or self._serial
+        if not serial:
+            if self._lock.locked():
+                logger.info("PhoneMirror: busy, volume ignored")
+                return
+            async with self._lock:
+                try:
+                    found, _text = await self._find_device()
+                except SelectionCancelled:
+                    logger.info("PhoneMirror: device selection cancelled")
+                    return
+            if not found:
+                return
+            serial = found
+        argv = build_keyevent_argv(self.resolve("adb_path"), 24 if up else 25, serial)
+        for index in range(step):
+            rc, _text = await self._exec(argv)
+            if rc != 0 and index == 0 and serial == self._serial and _retry:
+                logger.info("PhoneMirror: device %s is gone, resolving again", serial)
+                self._serial = ""
+                await self.volume(up=up, _retry=False)
+                return
 
     async def _prompt(self) -> bool:
         initial = self._settings()
@@ -316,6 +390,13 @@ class PhoneController:
 
     async def _ensure_ready(self) -> str | None:
         """A usable serial, or None after notifying the reason."""
+        try:
+            return await self._ensure_ready_inner()
+        except SelectionCancelled:
+            logger.info("PhoneMirror: device selection cancelled")
+            return None
+
+    async def _ensure_ready_inner(self) -> str | None:
         if self._missing_binaries() and not (
             await self._prompt() and not self._missing_binaries()
         ):

@@ -10,7 +10,9 @@ import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-ALLOWED_EXECUTABLES: frozenset[str] = frozenset({"adb", "scrcpy", "zenity", "kitty"})
+ALLOWED_EXECUTABLES: frozenset[str] = frozenset(
+    {"adb", "scrcpy", "zenity", "kitty", "rofi"}
+)
 
 ALLOWED_ADB_SUBCOMMANDS: frozenset[str] = frozenset(
     {"devices", "connect", "disconnect", "pair", "mdns", "shell", "tcpip", "version"}
@@ -119,16 +121,20 @@ def validate(argv: Sequence[str]) -> None:
         _validate_adb(argv[1:])
 
 
-async def run(argv: Sequence[str], timeout: float = 10.0) -> Result:
+async def run(
+    argv: Sequence[str], timeout: float = 10.0, input_text: str | None = None
+) -> Result:
     """Run an allowlisted command to completion and capture its output."""
     validate(argv)
     proc = await asyncio.create_subprocess_exec(
         *argv,
+        stdin=asyncio.subprocess.PIPE if input_text is not None else None,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
+    data = input_text.encode() if input_text is not None else None
     try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        out, err = await asyncio.wait_for(proc.communicate(input=data), timeout=timeout)
     except TimeoutError:
         proc.kill()
         await proc.wait()
