@@ -1,318 +1,203 @@
-"""Unit tests for PhoneMirrorWidget.
+"""PhoneMirrorWidget is a thin view over the shared controller (R1.1, R1.7, R1.8).
 
-These tests do not require a running Qtile session. The widget is constructed
-by bypassing the full Qtile widget __init__ chain (which requires a bar/qtile
-object) and setting the required attributes directly.
+The widget is built through the real constructor (no bar needed) and given a
+fake controller, so nothing here touches adb, scrcpy or the network.
 """
 
 import asyncio
-import subprocess
+import inspect
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
+from src.widgets import phone_mirror
+from src.widgets.phone_mirror import PhoneMirrorWidget
+from src.widgets.phone_mirror_controller import State
 
-# ---------------------------------------------------------------------------
-# Widget source path helpers (static checks)
-# ---------------------------------------------------------------------------
+SOURCE = Path(phone_mirror.__file__).read_text()
 
-_WIDGET_SOURCE = (
-    Path(__file__).parent.parent / "src" / "widgets" / "phone_mirror.py"
-).read_text()
+PREVIOUS_SPANISH_STRINGS = (
+    "Ingresa solo lo minimo",
+    "telefono",
+    "opcional",
+)
 
 
-# ---------------------------------------------------------------------------
-# Fixture: widget instance without a live Qtile bar
-# ---------------------------------------------------------------------------
+class FakeController:
+    def __init__(self, state: State = State.READY) -> None:
+        self.state = state
+        self.configured: dict[str, str] = {}
+        self.attached: list[Any] = []
+        self.detached: list[Any] = []
+        self.actions: list[str] = []
+        self.settings = {"device": "SER", "show_device": "false"}
+
+    def configure(self, defaults: dict[str, str]) -> None:
+        self.configured = dict(defaults)
+
+    def resolve(self, key: str) -> str:
+        return self.settings.get(key, "")
+
+    async def refresh(self) -> State:
+        return self.state
+
+    async def toggle(self) -> None:
+        self.actions.append("toggle")
+
+    async def reconnect(self) -> None:
+        self.actions.append("reconnect")
+
+    async def volume(self, *, up: bool) -> None:
+        self.actions.append("volume_up" if up else "volume_down")
+
+    def toggle_screen_off(self) -> None:
+        self.actions.append("screen_off")
+
+    def attach(self, listener: Any) -> None:
+        self.attached.append(listener)
+
+    def detach(self, listener: Any) -> None:
+        self.detached.append(listener)
 
 
 @pytest.fixture()
-def widget():
-    """Return a PhoneMirrorWidget instance with Qtile init bypassed."""
-    from src.widgets.phone_mirror import PhoneMirrorWidget
+def fake() -> FakeController:
+    return FakeController()
 
-    w = object.__new__(PhoneMirrorWidget)
-    # Minimal attributes the widget logic depends on
-    w._scrcpy_process = None
-    w._session_values = {}
-    w._fallback_values = {
-        "adb_path": "adb",
-        "scrcpy_path": "scrcpy",
-        "wireless_target": "",
-        "device": "",
-        "turn_screen_off": "true",
-        "show_device": "false",
-        "volume_step": "5",
-    }
-    w.format_error = "PHONE:ERR"
-    w.format_ready = "PHONE:READY"
-    w.format_disconnected = "PHONE:DISC"
-    w.format_mirroring = "PHONE:MIRROR"
+
+@pytest.fixture()
+def widget(fake: FakeController) -> PhoneMirrorWidget:
+    w = PhoneMirrorWidget()
+    w._controller = fake  # type: ignore[assignment]
     return w
 
 
-# ---------------------------------------------------------------------------
-# Phase 4 static checks (R4-B, R2-B)
-# ---------------------------------------------------------------------------
+# --- R1.1: callbacks are synchronous ---------------------------------------------
 
 
-def test_no_tkinter_import():
-    """R4-B: tkinter must not be imported anywhere in the widget source."""
-    assert "import tkinter" not in _WIDGET_SOURCE
-    assert "tkinter.Tk" not in _WIDGET_SOURCE
+def test_callbacks_are_not_coroutine_functions(widget: PhoneMirrorWidget) -> None:
+    callbacks = widget.mouse_callbacks
+    assert set(callbacks) >= {"Button1", "Button2", "Button3", "Button4", "Button5"}
+    for name, callback in callbacks.items():
+        assert not inspect.iscoroutinefunction(callback), name
 
 
-def test_no_tick_call():
-    """R2-B: self.tick() must not appear anywhere in the widget source."""
-    assert "self.tick()" not in _WIDGET_SOURCE
+async def test_left_click_schedules_the_toggle(
+    widget: PhoneMirrorWidget, fake: FakeController, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tasks: list[asyncio.Future[Any]] = []
 
+    def fake_create_task(coro: Any) -> None:
+        tasks.append(asyncio.ensure_future(coro))
 
-# ---------------------------------------------------------------------------
-# Phase 6: settings resolution (R6-A, R6-B)
-# ---------------------------------------------------------------------------
+    monkeypatch.setattr(phone_mirror, "create_task", fake_create_task)
 
+    widget.mouse_callbacks["Button1"]()
+    widget.mouse_callbacks["Button3"]()
+    widget.mouse_callbacks["Button4"]()
+    widget.mouse_callbacks["Button5"]()
+    await asyncio.gather(*tasks)
 
-def test_resolve_value_env_priority(widget, monkeypatch):
-    """R6-A: env var is used when no session override exists."""
-    monkeypatch.setenv("QTILE_PHONE_MIRROR_WIRELESS_TARGET", "10.0.0.1:5555")
-    widget._session_values.pop("wireless_target", None)
+    assert fake.actions == ["toggle", "reconnect", "volume_up", "volume_down"]
 
-    assert widget._resolve_value("wireless_target") == "10.0.0.1:5555"
 
+def test_middle_click_flips_screen_off(
+    widget: PhoneMirrorWidget, fake: FakeController
+) -> None:
+    widget.mouse_callbacks["Button2"]()
+    assert fake.actions == ["screen_off"]
 
-def test_resolve_value_session_priority(widget, monkeypatch):
-    """R6-B: session value takes priority over env var."""
-    monkeypatch.setenv("QTILE_PHONE_MIRROR_WIRELESS_TARGET", "10.0.0.1:5555")
-    widget._session_values["wireless_target"] = "192.168.1.99:5555"
 
-    assert widget._resolve_value("wireless_target") == "192.168.1.99:5555"
+def test_sync_poll_is_gone() -> None:
+    assert PhoneMirrorWidget.poll is phone_mirror.base.BackgroundPoll.poll
+    assert inspect.iscoroutinefunction(PhoneMirrorWidget.apoll)
 
 
-def test_resolve_value_fallback(widget, monkeypatch):
-    """Fallback value is used when session and env are both absent."""
-    monkeypatch.delenv("QTILE_PHONE_MIRROR_ADB_PATH", raising=False)
-    widget._session_values.pop("adb_path", None)
+# --- R1.8: widget text -------------------------------------------------------------
 
-    assert widget._resolve_value("adb_path") == "adb"
 
+@pytest.mark.parametrize(
+    ("state", "text"),
+    [
+        (State.READY, "PHONE:READY"),
+        (State.DISCONNECTED, "PHONE:DISC"),
+        (State.MIRROR, "PHONE:MIRROR"),
+        (State.ERROR, "PHONE:ERR"),
+    ],
+)
+async def test_apoll_text_per_state(
+    widget: PhoneMirrorWidget, fake: FakeController, state: State, text: str
+) -> None:
+    fake.state = state
+    assert await widget.apoll() == text
 
-# ---------------------------------------------------------------------------
-# Phase 2: _adb_call_async (R3-B)
-# ---------------------------------------------------------------------------
 
+async def test_apoll_appends_the_device_when_enabled(
+    widget: PhoneMirrorWidget, fake: FakeController
+) -> None:
+    fake.settings["show_device"] = "true"
+    assert await widget.apoll() == "PHONE:READY:SER"
 
-async def test_adb_call_async_success(widget):
-    """R3-B: rc=0 stdout is returned decoded."""
-    mock_proc = AsyncMock()
-    mock_proc.returncode = 0
-    mock_proc.communicate = AsyncMock(return_value=(b"List of devices attached\n", b""))
 
-    with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-        result = await widget._adb_call_async("adb", ["devices"])
+async def test_apoll_survives_a_controller_error(
+    widget: PhoneMirrorWidget, fake: FakeController
+) -> None:
+    async def boom() -> State:
+        raise RuntimeError("x")
 
-    assert result == "List of devices attached\n"
+    fake.refresh = boom  # type: ignore[method-assign]
+    assert await widget.apoll() == "PHONE:ERR"
 
 
-async def test_adb_call_async_nonzero(widget):
-    """R3-B: non-zero returncode returns None."""
-    mock_proc = AsyncMock()
-    mock_proc.returncode = 1
-    mock_proc.communicate = AsyncMock(return_value=(b"", b"error"))
+# --- configuration and lifecycle -----------------------------------------------------
 
-    with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-        result = await widget._adb_call_async("adb", ["devices"])
 
-    assert result is None
+def test_constructor_hands_defaults_to_the_controller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeController()
+    monkeypatch.setattr(phone_mirror, "get_controller", lambda: fake)
+    PhoneMirrorWidget(adb_path="/opt/genymobile/adb", turn_screen_off=False)
 
+    assert fake.configured["adb_path"] == "/opt/genymobile/adb"
+    assert fake.configured["turn_screen_off"] == "false"
+    assert fake.configured["quality"] == "balanced"
 
-async def test_adb_call_async_timeout(widget):
-    """R3-B: TimeoutError returns None and kills the process."""
-    mock_proc = AsyncMock()
-    mock_proc.returncode = None
-    mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError)
-    mock_proc.kill = MagicMock()
-    mock_proc.wait = AsyncMock()
 
-    with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-        result = await widget._adb_call_async("adb", ["devices"])
+def test_finalize_detaches_from_the_controller(
+    widget: PhoneMirrorWidget, fake: FakeController, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(phone_mirror.base.BackgroundPoll, "finalize", MagicMock())
+    listener = widget.force_update
+    widget._listener = listener
+    widget.finalize()
+    assert fake.detached == [listener]
+    assert widget._listener is None
 
-    assert result is None
-    mock_proc.kill.assert_called_once()
-    mock_proc.wait.assert_awaited_once()
 
+def test_configuring_twice_attaches_the_listener_once(
+    widget: PhoneMirrorWidget, fake: FakeController, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(phone_mirror.base.BackgroundPoll, "_configure", MagicMock())
 
-async def test_adb_call_async_oserror(widget):
-    """OSError from create_subprocess_exec returns None."""
-    with patch("asyncio.create_subprocess_exec", side_effect=OSError("no binary")):
-        result = await widget._adb_call_async("adb", ["devices"])
+    widget._configure(MagicMock(), MagicMock())
+    widget._configure(MagicMock(), MagicMock())
 
-    assert result is None
+    assert len(fake.attached) == 1
+    assert fake.attached[0] == widget.force_update
 
 
-# ---------------------------------------------------------------------------
-# Phase 2: _has_connected_device_async parsing (R6)
-# ---------------------------------------------------------------------------
+# --- R1.7: English only, no direct process handling ------------------------
 
 
-async def test_has_connected_device_async_parses_output_found(widget):
-    """Device found in adb devices output returns True."""
-    adb_output = "List of devices attached\n192.168.1.10:5555\tdevice\n"
+@pytest.mark.parametrize("fragment", PREVIOUS_SPANISH_STRINGS)
+def test_no_spanish_strings(fragment: str) -> None:
+    assert fragment not in SOURCE
 
-    async def fake_adb(_adb_path, _args):
-        return adb_output
 
-    widget._adb_call_async = fake_adb  # type: ignore[method-assign]
-    result = await widget._has_connected_device_async("adb", "")
-    assert result is True
-
-
-async def test_has_connected_device_async_parses_output_not_found(widget):
-    """No connected device returns False."""
-    adb_output = "List of devices attached\n"
-
-    async def fake_adb(_adb_path, _args):
-        return adb_output
-
-    widget._adb_call_async = fake_adb  # type: ignore[method-assign]
-    result = await widget._has_connected_device_async("adb", "")
-    assert result is False
-
-
-async def test_has_connected_device_async_none_output(widget):
-    """None output from _adb_call_async returns False."""
-
-    async def fake_adb(_adb_path, _args):
-        return None
-
-    widget._adb_call_async = fake_adb  # type: ignore[method-assign]
-    result = await widget._has_connected_device_async("adb", "")
-    assert result is False
-
-
-async def test_has_connected_device_async_device_filter(widget):
-    """When expected_device is set, only matching serial returns True."""
-    adb_output = (
-        "List of devices attached\n"
-        "192.168.1.10:5555\tdevice\n"
-        "192.168.1.20:5555\tdevice\n"
-    )
-
-    async def fake_adb(_adb_path, _args):
-        return adb_output
-
-    widget._adb_call_async = fake_adb  # type: ignore[method-assign]
-    assert await widget._has_connected_device_async("adb", "192.168.1.10:5555") is True
-    assert await widget._has_connected_device_async("adb", "192.168.1.99:5555") is False
-
-
-# ---------------------------------------------------------------------------
-# Phase 4: _prompt_with_zenity_async graceful degrade (R4-A)
-# ---------------------------------------------------------------------------
-
-
-async def test_prompt_with_zenity_async_absent_degrades(widget):
-    """R4-A: when zenity is not installed, the prompt returns None without
-    spawning a subprocess, so the event loop is never blocked."""
-    initial = {
-        "wireless_target": "",
-        "device": "",
-        "adb_path": "adb",
-        "scrcpy_path": "scrcpy",
-    }
-    spawn = MagicMock()
-
-    with (
-        patch("shutil.which", return_value=None),
-        patch("asyncio.create_subprocess_exec", spawn),
-    ):
-        result = await widget._prompt_with_zenity_async(initial)
-
-    assert result is None
-    spawn.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Phase 5: finalize (R5-A, R5-B)
-# ---------------------------------------------------------------------------
-
-
-def test_finalize_terminates_scrcpy(widget):
-    """R5-A: finalize calls terminate() on a running scrcpy process."""
-    mock_proc = MagicMock(spec=subprocess.Popen)
-    mock_proc.poll.return_value = None  # process is alive
-    widget._scrcpy_process = mock_proc
-
-    with patch.object(type(widget).__mro__[1], "finalize", create=True) as mock_super:
-        widget.finalize()
-
-    mock_proc.terminate.assert_called_once()
-    mock_super.assert_called_once()
-
-
-def test_finalize_no_process(widget):
-    """R5-B: finalize does not raise when _scrcpy_process is None."""
-    widget._scrcpy_process = None
-
-    with patch.object(type(widget).__mro__[1], "finalize", create=True):
-        # Must not raise
-        widget.finalize()
-
-
-# ---------------------------------------------------------------------------
-# Phase 3: poll() status format (R6-C)
-# ---------------------------------------------------------------------------
-
-
-def test_poll_status_format_connected(widget):
-    """R6-C: poll() returns format_ready when a device is connected."""
-
-    def fake_adb_call(_adb_path, args):
-        if args == ["devices"]:
-            return "List of devices attached\n192.168.1.10:5555\tdevice\n"
-        return None
-
-    widget._adb_call = fake_adb_call  # type: ignore[method-assign]
-    widget._fallback_values["adb_path"] = "adb"
-    widget._fallback_values["scrcpy_path"] = "scrcpy"
-
-    with (
-        patch("shutil.which", return_value="/usr/bin/adb"),
-    ):
-        result = widget.poll()
-
-    assert result == "PHONE:READY"
-
-
-def test_poll_status_format_disconnected(widget):
-    """poll() returns format_disconnected when no device is connected."""
-
-    def fake_adb_call(_adb_path, _args):
-        return "List of devices attached\n"
-
-    widget._adb_call = fake_adb_call  # type: ignore[method-assign]
-    widget._fallback_values["wireless_target"] = ""
-
-    with patch("shutil.which", return_value="/usr/bin/adb"):
-        result = widget.poll()
-
-    assert result == "PHONE:DISC"
-
-
-def test_poll_status_format_error(widget):
-    """poll() returns format_error when required binaries are missing."""
-    with patch("shutil.which", return_value=None):
-        result = widget.poll()
-
-    assert result == "PHONE:ERR"
-
-
-def test_poll_status_format_mirroring(widget):
-    """poll() returns format_mirroring when scrcpy is running."""
-    mock_proc = MagicMock(spec=subprocess.Popen)
-    mock_proc.poll.return_value = None  # process alive
-    widget._scrcpy_process = mock_proc
-
-    with patch("shutil.which", return_value="/usr/bin/adb"):
-        result = widget.poll()
-
-    assert result == "PHONE:MIRROR"
+def test_source_contract() -> None:
+    assert "import tkinter" not in SOURCE
+    assert "self.tick()" not in SOURCE
+    assert "subprocess" not in SOURCE
+    assert "shell=True" not in SOURCE

@@ -16,7 +16,7 @@ A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11
 - **Dynamic multi-monitor** — screens are detected at startup via `xrandr`; monitor order is configurable by serial or port.
 - **11 layouts** — MonadTall, MonadWide, Max, Tile, Stack, TreeTab, Matrix, and more.
 - **Powerline status bar** — system updates, crypto ticker, CPU/GPU temps, memory, network, clock, and a system tray.
-- **Phone mirroring widget** — start/stop scrcpy, reconnect ADB, and control phone volume straight from the bar.
+- **Phone mirroring widget** — start/stop scrcpy, reconnect or switch device, and control phone volume straight from the bar.
 - **App launcher registry** — the app keys live in [`launchers.toml`](launchers.toml), with personal additions in a gitignored local file; see [App launchers](#app-launchers).
 - **Keybinding cheat sheet** — `mod + F1` lists every binding in rofi; the [Keybindings](#keybindings) tables are generated from the same `desc` strings.
 - **`.env`-driven** — runtime behavior (monitor ordering, phone mirror, optional bar widgets) is configured through environment variables, not hardcoded.
@@ -187,6 +187,9 @@ Runtime behavior is controlled through `.env` (loaded by `python-dotenv` at star
 | `QTILE_PHONE_MIRROR_ADB_PATH` | `/opt/genymobile/adb` | Path to the `adb` binary. |
 | `QTILE_PHONE_MIRROR_SCRCPY_PATH` | `/opt/genymobile/scrcpy` | Path to the `scrcpy` binary. |
 | `QTILE_PHONE_MIRROR_SCREEN_OFF` | `true` | Start scrcpy with the phone screen off (`-S`). |
+| `QTILE_PHONE_MIRROR_QUALITY` | `balanced` | Video preset: `low` (1024 px, 4M, 30 fps), `balanced` (1600 px, 8M, 60 fps) or `high` (native size, 16M, 60 fps). |
+| `QTILE_PHONE_MIRROR_AUDIO` | `false` | Forward the phone audio to the computer (`--no-audio` when off). |
+| `QTILE_PHONE_MIRROR_RESTART_ON_SWITCH` | `true` | Reopen mirroring on the new device after a right-click switch, only if it was running. |
 | `QTILE_PHONE_MIRROR_SHOW_DEVICE` | `false` | Append the device serial to the bar status text. |
 | `QTILE_PHONE_MIRROR_VOLUME_STEP` | `5` | ADB volume key-events sent per scroll tick. |
 
@@ -344,6 +347,12 @@ Colors, borders, and fonts are defined in [`src/settings.py`](src/settings.py):
 | `XF86AudioStop` | Stop Playback |
 | `XF86MonBrightnessUp` | Increase Brightness |
 | `XF86MonBrightnessDown` | Decrease Brightness |
+
+### Phone
+
+| Keys | Action |
+|---|---|
+| `mod + p` | Toggle phone mirroring |
 
 ### Session
 
@@ -545,11 +554,25 @@ A custom widget ([`src/widgets/phone_mirror.py`](src/widgets/phone_mirror.py)) t
 | Interaction | Action |
 |---|---|
 | **Left click** | Start / stop mirroring |
-| **Right click** | Force wireless ADB reconnect |
-| **Middle click** | Toggle "phone screen off" mode |
+| **Right click** | Reconnect / switch device |
+| **Middle click** | Toggle "phone screen off" mode for the next start |
 | **Scroll up / down** | Phone volume up / down |
 
-Status text: `PHONE:READY` (connected, idle) · `PHONE:MIRROR` (running) · `PHONE:DISC` (no device) · `PHONE:ERR` (adb/scrcpy not found). If a binary is missing it opens a `zenity`/`tkinter` dialog to fix paths and targets on the fly.
+**`mod + p`** toggles mirroring from the keyboard. The bar has one widget per screen, but they all share a single controller ([`src/widgets/phone_mirror_controller.py`](src/widgets/phone_mirror_controller.py)), so only one scrcpy process ever runs. A click that arrives while an action is still in progress is ignored.
+
+**Device selection.** Every adb call that targets a device passes `-s <serial>`, so having several devices attached (for example a phone over USB plus an emulator) works. The device is chosen like this: if `QTILE_PHONE_MIRROR_DEVICE` is set, that serial is used. With exactly one ready device, it is used. With several, a `rofi -dmenu` selector titled "Phone" lists them with physical devices first and emulators (`emulator-*`) last, labelled by model and transport, such as `Pixel_10 (usb)`. Cancelling the selector aborts quietly with a log line. The choice is remembered for the session by the shared controller; if that device disappears, the next action asks again. The periodic status refresh never opens the selector.
+
+**Right click (reconnect / switch device)** forgets the remembered device, stops mirroring if it was running, redoes `adb disconnect` + `adb connect` for `QTILE_PHONE_MIRROR_WIRELESS_TARGET` only when one is set (it never runs a bare `adb disconnect`), and then resolves the device again: the selector appears when several are ready, a single device is used directly, and a notification names the one now selected. If `QTILE_PHONE_MIRROR_DEVICE` is set it wins and the notification says so. If mirroring was running and `QTILE_PHONE_MIRROR_RESTART_ON_SWITCH` is `true` (the default), it reopens on the new device and the notification says so; with `false` it stays stopped. Mirroring that was not running is never started by a switch. Cancelling the selector leaves no device selected and does not restart anything.
+
+**Middle click while mirroring** still flips the screen-off preference, which scrcpy only reads at start, so it applies on the next start. A notification says so and reminds you that `Alt+O` and `Alt+Shift+O` inside the scrcpy window turn the phone screen off and on right now.
+
+Status text: `PHONE:READY` (connected, idle) · `PHONE:MIRROR` (running) · `PHONE:DISC` (no device) · `PHONE:ERR` (adb/scrcpy not found). If no device can be reached it opens a `zenity` dialog to fix paths and targets on the fly.
+
+Start and failure messages are sent as desktop notifications that name the reason (unauthorized, offline, unreachable, missing binary), and scrcpy's output goes to the qtile log (`~/.local/share/qtile/qtile.log`).
+
+**Config reload.** A config reload (`mod + Shift + r`) stops a running mirror on purpose: the widgets are rebuilt, and the last one to go away shuts scrcpy down. Start it again with `mod + p`. Stopping sends SIGTERM and, if scrcpy has not exited after a few seconds, SIGKILL.
+
+**Host network safety.** Every process the phone mirror code starts goes through one allowlisted runner ([`src/widgets/phone_mirror_runner.py`](src/widgets/phone_mirror_runner.py)): only `adb`, `scrcpy`, `zenity` (the setup form) and `rofi` (the device selector) may run, the last two with only the exact flags the code builds, and `adb` is limited to `devices`, `connect`, `disconnect`, `pair`, `mdns`, `shell input keyevent`, `tcpip` and `version`. It never touches NetworkManager, firewall rules, routes, DNS or any system service. Tests enforce this.
 
 ---
 

@@ -330,3 +330,13 @@ def test_unknown_keysyms_are_not_bound(load_keys, caplog):
     ]
     assert [_combo(k) for k in spawning] == [(frozenset({"mod4", "mod1"}), "F11")]
     assert any("not a known key name" in m for m in caplog.messages)
+
+
+def test_phone_toggle_binding(init_keys):
+    """R1.2: exactly one mod+p key, described, bound through lazy.function."""
+    keys = [k for k in init_keys() if _combo(k) == (frozenset({"mod4"}), "p")]
+
+    assert len(keys) == 1
+    assert keys[0].desc == "Toggle phone mirroring"
+    assert [c.name for c in keys[0].commands] == ["function"]
+    assert keys[0].commands[0].args[0].__name__ == "phone_toggle"
