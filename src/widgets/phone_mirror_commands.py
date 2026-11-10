@@ -1,5 +1,6 @@
 """Pure builders and parsers for the phone mirror: no I/O, no subprocesses."""
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -91,6 +92,11 @@ def _transport(serial: str, details: dict[str, str]) -> str:
     return "wifi" if ":" in serial else ""
 
 
+_SERIAL = re.compile(r"^[\w.:-]+$")
+_STATE = re.compile(r"^[a-z]+$")
+_ADB_NOISE = ("adb:", "error:")
+
+
 def parse_devices(output: str) -> list[Device]:
     """Parse `adb devices [-l]` output into devices."""
     devices: list[Device] = []
@@ -98,8 +104,10 @@ def parse_devices(output: str) -> list[Device]:
         line = raw.strip()
         if not line or line.startswith("*") or line.startswith("List of devices"):
             continue
+        if line.lower().startswith(_ADB_NOISE):
+            continue
         parts = line.split()
-        if len(parts) >= 2:
+        if len(parts) >= 2 and _SERIAL.match(parts[0]) and _STATE.match(parts[1]):
             details = dict(p.split(":", 1) for p in parts[2:] if ":" in p)
             devices.append(
                 Device(

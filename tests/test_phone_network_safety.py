@@ -5,11 +5,15 @@ allowlisted runner. These tests fail if a guard is removed or weakened.
 """
 
 import ast
+import asyncio
+import os
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from src.widgets import phone_mirror_runner as runner
+from src.widgets.phone_mirror_commands import build_rofi_argv, build_zenity_argv
 
 SRC = Path(__file__).resolve().parent.parent / "src"
 RUNNER_FILE = "phone_mirror_runner.py"
@@ -57,8 +61,6 @@ async def test_run_rejects_forbidden_executable(
 
 @pytest.mark.parametrize("name", FORBIDDEN_EXECUTABLES)
 def test_spawn_rejects_forbidden_executable(name: str, exec_mock: AsyncMock) -> None:
-    import asyncio
-
     with pytest.raises(runner.ForbiddenCommand):
         asyncio.run(runner.spawn([name, "x"]))
     exec_mock.assert_not_called()
@@ -119,6 +121,11 @@ async def test_empty_argv_is_rejected(exec_mock: AsyncMock) -> None:
         ["zenity", "--info", "systemctl"],
         ["scrcpy", "--tcpip=x", "iptables"],
         ["kitty", "--override=shell=bash"],
+        # a forbidden tool hidden inside one whitespace-separated argument
+        ["rofi", "-dmenu", "-run-command", "nmcli networking off"],
+        ["adb", "connect", "10.0.0.2:5555 iptables -F"],
+        ["scrcpy", "--window-title", "Phone /usr/sbin/ip link"],
+        ["zenity", "--forms", "--text=ok; sudo reboot"],
     ],
 )
 async def test_wrapped_forbidden_tokens_are_rejected(
@@ -175,7 +182,7 @@ async def test_non_allowlisted_adb_calls_are_rejected(
         ["adb", "shell", "input", "keyevent", "25"],
         ["scrcpy", "-S", "--no-audio", "--window-title=Phone"],
         ["zenity", "--forms", "--title=Phone"],
-        ["kitty", "--class", "phone-pair-qr", "--hold"],
+        ["rofi", "-dmenu", "-p", "Phone"],
     ],
 )
 async def test_allowlisted_calls_are_spawned(
@@ -183,6 +190,157 @@ async def test_allowlisted_calls_are_spawned(
 ) -> None:
     await runner.run(argv)
     exec_mock.assert_awaited_once()
+
+
+# --- strict rofi / zenity templates ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["kitty"],
+        ["kitty", "--hold"],
+        ["/usr/bin/kitty", "--class", "phone-pair-qr"],
+    ],
+)
+async def test_kitty_is_not_allowed(argv: list[str], exec_mock: AsyncMock) -> None:
+    with pytest.raises(runner.ForbiddenCommand):
+        await runner.run(argv)
+    exec_mock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["rofi", "-dmenu", "-run-command", "true"],
+        ["rofi", "-modi", "drun", "-show", "drun"],
+        ["rofi", "-show", "run"],
+        ["rofi", "-run"],
+        ["rofi", "-dmenu", "-p"],
+        ["rofi", "-p", "Phone"],
+        ["rofi", "-dmenu", "-format", "f"],
+        ["rofi", "-dmenu", "-p", "Phone", "extra"],
+        ["rofi"],
+    ],
+)
+async def test_rofi_only_accepts_the_flags_the_code_builds(
+    argv: list[str], exec_mock: AsyncMock
+) -> None:
+    with pytest.raises(runner.ForbiddenCommand):
+        await runner.run(argv)
+    exec_mock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["zenity", "--info", "--text=hi"],
+        ["zenity", "--file-selection"],
+        ["zenity", "--forms", "--list"],
+        ["zenity", "--forms", "--ok-label=x"],
+        ["zenity", "--forms", "--add-entry"],
+        ["zenity", "--forms", "--title=x", "extra"],
+        ["zenity", "--add-entry=x"],
+        ["zenity"],
+    ],
+)
+async def test_zenity_only_accepts_the_forms_the_code_builds(
+    argv: list[str], exec_mock: AsyncMock
+) -> None:
+    with pytest.raises(runner.ForbiddenCommand):
+        await runner.run(argv)
+    exec_mock.assert_not_called()
+
+
+def test_the_argv_the_code_builds_passes_validation() -> None:
+    initial = {
+        "wireless_target": "",
+        "device": "",
+        "adb_path": "adb",
+        "scrcpy_path": "scrcpy",
+    }
+    runner.validate(build_zenity_argv(initial))
+    runner.validate(build_rofi_argv("Phone"))
+
+
+# --- run(): timeout, cancellation and spawn ------------------------------------
+
+
+def _hanging_proc() -> MagicMock:
+    """A child whose communicate() never returns until it is killed."""
+    proc = MagicMock()
+    proc.returncode = None
+
+    async def communicate(**_kwargs: Any) -> tuple[bytes, bytes]:
+        await asyncio.Event().wait()
+        return b"", b""
+
+    proc.communicate = communicate
+    proc.kill = MagicMock(side_effect=lambda: setattr(proc, "returncode", -9))
+    proc.wait = AsyncMock(return_value=-9)
+    return proc
+
+
+async def test_run_kills_and_reaps_the_child_on_timeout(
+    exec_mock: AsyncMock,
+) -> None:
+    proc = _hanging_proc()
+    exec_mock.return_value = proc
+
+    result = await runner.run(["adb", "devices"], timeout=0.05)
+
+    assert result.timed_out is True
+    assert result.rc == -1
+    proc.kill.assert_called_once()
+    proc.wait.assert_awaited_once()
+
+
+async def test_run_kills_and_reaps_the_child_on_cancellation(
+    exec_mock: AsyncMock,
+) -> None:
+    proc = _hanging_proc()
+    exec_mock.return_value = proc
+
+    task = asyncio.ensure_future(runner.run(["adb", "devices"], timeout=30))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    proc.kill.assert_called_once()
+    proc.wait.assert_awaited_once()
+
+
+async def test_run_kills_the_child_on_an_unexpected_error(
+    exec_mock: AsyncMock,
+) -> None:
+    proc = _hanging_proc()
+    proc.communicate = AsyncMock(side_effect=RuntimeError("boom"))
+    exec_mock.return_value = proc
+
+    with pytest.raises(RuntimeError):
+        await runner.run(["adb", "devices"])
+
+    proc.kill.assert_called_once()
+    proc.wait.assert_awaited_once()
+
+
+async def test_spawn_returns_the_process_with_a_copied_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = object()
+    mock = AsyncMock(return_value=child)
+    monkeypatch.setattr(runner.asyncio, "create_subprocess_exec", mock)
+    monkeypatch.setenv("PHONE_RUNNER_TEST", "1")
+
+    proc = await runner.spawn(["scrcpy", "-S"])
+
+    assert proc is child
+    assert mock.await_args.args == ("scrcpy", "-S")
+    env = mock.await_args.kwargs["env"]
+    assert env is not os.environ
+    assert env["PHONE_RUNNER_TEST"] == "1"
+    assert "shell" not in mock.await_args.kwargs
 
 
 # --- allowlist shape and negative control ------------------------------------
@@ -198,7 +356,6 @@ def test_allowlist_is_exactly_the_expected_set() -> None:
         "adb",
         "scrcpy",
         "zenity",
-        "kitty",
         "rofi",
     }
     _assert_allowlist_is_safe(runner.ALLOWED_EXECUTABLES)
@@ -263,17 +420,52 @@ def test_scan_covers_the_runner_and_new_files() -> None:
     assert "phone_mirror.py" in names
 
 
+# adb error text that the failure mapper matches on; it is never executed.
+_KNOWN_PROSE = {"no route to host"}
+
+
+def _forbidden_words(text: str) -> list[str]:
+    """Every whitespace-separated word of `text` that names a forbidden tool."""
+    if text in _KNOWN_PROSE:
+        return []
+    found: list[str] = []
+    for word in text.split():
+        for part in (word, *word.split("=")):
+            name = part.strip(".,;:()[]{}'\"").rsplit("/", 1)[-1].lower()
+            if name in runner.FORBIDDEN_NAMES or name.startswith("avahi"):
+                found.append(word)
+                break
+    return found
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "nmcli networking off",
+        "echo hi && /usr/sbin/ip link",
+        "do this; sudo reboot",
+        "--opt=iptables",
+        "Mirroring started. (systemctl restart x)",
+    ],
+)
+def test_negative_control_word_scan_finds_hidden_tools(text: str) -> None:
+    assert _forbidden_words(text)
+
+
+@pytest.mark.parametrize(
+    "text", ["Mirroring started.", "Phone Mirror Setup", "--window-title", ""]
+)
+def test_word_scan_ignores_plain_text(text: str) -> None:
+    assert _forbidden_words(text) == []
+
+
 def test_no_forbidden_command_in_string_constants() -> None:
     offenders: list[str] = []
     for path in _phone_files():
         if path.name == RUNNER_FILE:  # the deny list itself lives there
             continue
         for text in _string_constants(path):
-            tokens = text.split()
-            if not tokens:
-                continue
-            first = tokens[0].rsplit("/", 1)[-1].lower()
-            if first in runner.FORBIDDEN_NAMES or first.startswith("avahi"):
+            if _forbidden_words(text):
                 offenders.append(f"{path.name}: {text!r}")
     assert not offenders, offenders
 
@@ -297,26 +489,122 @@ def test_runner_never_touches_network_config() -> None:
         assert word not in source
 
 
-def test_subprocess_is_only_used_by_the_runner() -> None:
-    offenders: list[str] = []
-    for path in _phone_files():
-        if path.name == RUNNER_FILE:
-            continue
-        tree = ast.parse(path.read_text())
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                names = [alias.name for alias in node.names]
-            elif isinstance(node, ast.ImportFrom):
-                names = [node.module or ""]
-            elif isinstance(node, ast.Attribute):
-                names = [node.attr]
-            else:
-                continue
-            if any(
-                n.split(".")[0] == "subprocess" or n == "create_subprocess_exec"
-                for n in names
+_SHELL_SPAWNERS = {"create_subprocess_shell"}
+_EXEC_PRIMITIVES = {"create_subprocess_exec", "subprocess"}
+_OS_BANNED_NAMES = {"system", "popen"}
+
+
+def _os_banned(name: str) -> bool:
+    return name in _OS_BANNED_NAMES or name.startswith(("exec", "spawn")) or name == "*"
+
+
+def _process_offenders(source: str, *, is_runner: bool = False) -> list[str]:
+    """Process-spawning primitives in `source`; the runner may use exec only."""
+    tree = ast.parse(source)
+    os_aliases = {"os"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            os_aliases |= {a.asname for a in node.names if a.name == "os" and a.asname}
+    found: list[str] = []
+    for node in ast.walk(tree):
+        line = getattr(node, "lineno", 0)
+        if isinstance(node, ast.Import):
+            found += [
+                f"{line}: import {a.name}"
+                for a in node.names
+                if a.name.split(".")[0] == "subprocess" and not is_runner
+            ]
+        elif isinstance(node, ast.ImportFrom):
+            module = (node.module or "").split(".")[0]
+            if module == "subprocess" and not is_runner:
+                found.append(f"{line}: from subprocess import")
+            for alias in node.names:
+                if alias.name in _SHELL_SPAWNERS:
+                    found.append(f"{line}: from-import {alias.name}")
+                elif alias.name in _EXEC_PRIMITIVES and not is_runner:
+                    found.append(f"{line}: from-import {alias.name}")
+                elif module == "os" and _os_banned(alias.name):
+                    found.append(f"{line}: from os import {alias.name}")
+        elif isinstance(node, ast.Attribute):
+            if node.attr in _SHELL_SPAWNERS:
+                found.append(f"{line}: .{node.attr}")
+            elif node.attr in _EXEC_PRIMITIVES and not is_runner:
+                found.append(f"{line}: .{node.attr}")
+            elif (
+                isinstance(node.value, ast.Name)
+                and node.value.id in os_aliases
+                and _os_banned(node.attr)
             ):
-                offenders.append(f"{path.name}:{node.lineno}")
+                found.append(f"{line}: os.{node.attr}")
+    return found
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from asyncio import create_subprocess_exec",
+        "from asyncio import create_subprocess_exec as spawn_it",
+        "from subprocess import Popen",
+        "from subprocess import *",
+        "import subprocess",
+        "import subprocess as sp",
+        "import asyncio\nasyncio.create_subprocess_exec('x')",
+        "import asyncio\nasyncio.subprocess.PIPE",
+        "import asyncio\nasyncio.create_subprocess_shell('x')",
+        "from asyncio import create_subprocess_shell",
+        "import os\nos.system('x')",
+        "import os\nos.popen('x')",
+        "import os\nos.execv('/bin/x', [])",
+        "import os\nos.execvp('x', [])",
+        "import os\nos.spawnl(0, 'x')",
+        "import os as o\no.system('x')",
+        "from os import system",
+        "from os import execv",
+        "from os import popen as p",
+        "from os import *",
+    ],
+)
+def test_negative_control_scan_finds_process_primitives(source: str) -> None:
+    assert _process_offenders(source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from asyncio import create_subprocess_shell",
+        "import asyncio\nasyncio.create_subprocess_shell('x')",
+        "import os\nos.system('x')",
+        "from os import popen",
+        "import os\nos.execv('/bin/x', [])",
+    ],
+)
+def test_runner_gets_no_exemption_for_shells_and_os_primitives(source: str) -> None:
+    assert _process_offenders(source, is_runner=True)
+
+
+def test_runner_may_use_exec_and_plain_os_helpers() -> None:
+    source = (
+        "import asyncio, os\n"
+        "asyncio.create_subprocess_exec('x', stdout=asyncio.subprocess.PIPE)\n"
+        "os.environ.copy()\nos.getenv('X')\n"
+    )
+    assert _process_offenders(source, is_runner=True) == []
+    assert _process_offenders(source)  # anywhere else it is an offender
+
+
+def test_plain_helpers_are_not_flagged() -> None:
+    source = "import os\nfrom asyncio import create_task\nos.getenv('X')\n"
+    assert _process_offenders(source) == []
+
+
+def test_process_primitives_are_banned_in_phone_code() -> None:
+    offenders = [
+        f"{path.name}:{hit}"
+        for path in _phone_files()
+        for hit in _process_offenders(
+            path.read_text(), is_runner=path.name == RUNNER_FILE
+        )
+    ]
     assert not offenders, offenders
 
 

@@ -16,13 +16,20 @@ DEVICE_UNAUTH = "List of devices attached\nABC123\tunauthorized\n"
 
 
 class FakeProcess:
-    def __init__(self, stderr: Sequence[str] = (), exit_rc: int | None = None) -> None:
+    def __init__(
+        self,
+        stderr: Sequence[str] = (),
+        exit_rc: int | None = None,
+        stubborn: bool = False,
+    ) -> None:
         self.returncode: int | None = None
         self.stdout = asyncio.StreamReader()
         self.stderr = asyncio.StreamReader()
         self._done = asyncio.Event()
         self.terminate = MagicMock(side_effect=lambda: self.finish(-15))
         self.kill = MagicMock(side_effect=lambda: self.finish(-9))
+        if stubborn:  # ignores SIGTERM, only SIGKILL ends it
+            self.terminate = MagicMock()
         for line in stderr:
             self.stderr.feed_data(f"{line}\n".encode())
         if exit_rc is not None:
@@ -394,6 +401,7 @@ async def test_volume_sends_step_keyevents(
 ) -> None:
     monkeypatch.setenv("QTILE_PHONE_MIRROR_VOLUME_STEP", "3")
     monkeypatch.setenv("QTILE_PHONE_MIRROR_DEVICE", "SER")
+    fake.devices = ["List of devices attached\nSER\tdevice\n"]
 
     await controller.volume(up=True)
 
@@ -841,3 +849,311 @@ async def test_restart_is_logged(
     with caplog.at_level("INFO"):
         await controller.reconnect()
     assert "restarting mirroring" in caplog.text
+
+
+# --- review fixes (slice 1g) ----------------------------------------------------
+
+
+async def _until(predicate: Callable[[], bool], timeout: float = 2.0) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout
+    while not predicate():
+        assert asyncio.get_running_loop().time() < deadline, "condition not met"
+        await asyncio.sleep(0.01)
+
+
+# race: a probe that started before a toggle must not overwrite the state
+
+
+@pytest.mark.usefixtures("notes")
+async def test_probe_started_before_a_toggle_does_not_overwrite_the_state(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    gate = asyncio.Event()
+    blocked = {"first": True}
+    real_run = fake.run
+
+    async def gated(argv: Sequence[str], **kwargs: Any) -> runner.Result:
+        if "devices" in argv and blocked["first"]:
+            blocked["first"] = False
+            await gate.wait()
+            return runner.Result(0, DEVICE_NONE, "")  # a stale "no device" answer
+        return await real_run(argv, **kwargs)
+
+    controller._run = gated  # type: ignore[assignment]
+    probe = asyncio.ensure_future(controller.refresh())
+    await asyncio.sleep(0)  # the probe is now waiting inside its adb call
+
+    await controller.toggle()  # mirroring starts while the probe is in flight
+    assert controller.state is State.MIRROR
+    gate.set()
+
+    assert await probe is State.MIRROR
+    assert controller.state is State.MIRROR
+
+
+@pytest.mark.usefixtures("notes")
+async def test_probe_does_not_touch_the_remembered_serial_or_labels(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    await _remember(controller, fake, "0")
+    labels = dict(controller._labels)
+    fake.devices = [f"List of devices attached\n{EMU}"]  # the phone vanished
+
+    assert await controller.refresh() is State.READY
+
+    assert controller._serial == "56201FDCR0077W"
+    assert controller._labels == labels
+
+
+# volume targets the device that is actually being mirrored
+
+
+@pytest.mark.usefixtures("notes")
+async def test_volume_goes_to_the_mirrored_device_when_another_one_appears(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    fake.devices = [ONE]
+    await controller.toggle()  # a single device: nothing is remembered
+    assert controller.is_mirroring()
+
+    fake.devices = [TWO]  # the emulator shows up
+    fake.calls.clear()
+    await controller.volume(up=True)
+
+    events = _keyevents(fake)
+    assert events
+    assert all(call[:3] == ["adb", "-s", "56201FDCR0077W"] for call in events)
+    assert not any(call[0] == "rofi" for call in fake.calls)
+
+
+@pytest.mark.usefixtures("notes")
+async def test_volume_after_mirroring_stopped_resolves_again(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    fake.devices = [ONE]
+    await controller.toggle()
+    await controller.toggle()  # stop
+    fake.devices = [TWO]
+    fake.rofi = runner.Result(0, "1\n", "")
+
+    await controller.volume(up=True)
+
+    assert any(call[0] == "rofi" for call in fake.calls)
+    assert _keyevents(fake)[-1][2] == "emulator-5554"
+
+
+# stopping: SIGTERM, a grace period, then SIGKILL, without blocking
+
+
+@pytest.mark.usefixtures("notes")
+async def test_stop_kills_a_child_that_ignores_sigterm(
+    controller: PhoneController, fake: FakeRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ctl, "STOP_GRACE", 0.05)
+    stubborn = FakeProcess(stubborn=True)
+    fake.process = stubborn
+    await controller.toggle()
+
+    await controller.toggle()  # stop: must return without waiting for the child
+
+    stubborn.terminate.assert_called_once()
+    stubborn.kill.assert_not_called()
+    await _until(lambda: stubborn.returncode is not None)
+    stubborn.kill.assert_called_once()
+    assert stubborn.returncode == -9
+
+
+@pytest.mark.usefixtures("notes")
+async def test_a_child_that_exits_on_sigterm_is_not_killed(
+    controller: PhoneController, fake: FakeRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ctl, "STOP_GRACE", 0.05)
+    await controller.toggle()
+    await controller.toggle()
+    await asyncio.sleep(0.2)
+
+    fake.process.terminate.assert_called_once()
+    fake.process.kill.assert_not_called()
+
+
+@pytest.mark.usefixtures("notes")
+async def test_toggle_during_the_grace_period_does_not_start_a_duplicate(
+    controller: PhoneController,
+    fake: FakeRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(ctl, "STOP_GRACE", 0.3)
+    stubborn = FakeProcess(stubborn=True)
+    fake.process = stubborn
+    await controller.toggle()
+    await controller.toggle()  # stop; the child is still shutting down
+    fake.process = FakeProcess()  # what a duplicate start would spawn
+
+    with caplog.at_level("INFO"):
+        await controller.toggle()  # during the grace period
+
+    assert len(fake.spawned) == 1
+    assert not controller.is_mirroring()
+    assert "still stopping" in caplog.text
+
+    await _until(lambda: stubborn.returncode is not None)
+    await controller.toggle()  # the old child is gone: a normal start
+    assert len(fake.spawned) == 2
+    assert controller.is_mirroring()
+
+
+@pytest.mark.usefixtures("notes")
+async def test_restart_after_a_switch_waits_for_the_old_process(
+    fake: FakeRunner, clock: list[float], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ctl, "STOP_GRACE", 0.05)
+    old = FakeProcess(stubborn=True)
+    fake.process = old
+    old_state_at_spawn: list[int | None] = []
+
+    async def spawn(argv: Sequence[str]) -> Any:
+        old_state_at_spawn.append(old.returncode)
+        return await fake.spawn(argv)
+
+    controller = PhoneController(
+        run=fake.run, spawn=spawn, which=lambda n: n, clock=lambda: clock[0]
+    )
+    await controller.toggle()
+    fake.process = FakeProcess()
+
+    await controller.reconnect()
+
+    assert len(fake.spawned) == 2
+    assert old_state_at_spawn == [None, -9]  # the restart began after the kill
+
+
+# attach is idempotent
+
+
+def test_attaching_the_same_listener_twice_is_a_noop(
+    controller: PhoneController,
+) -> None:
+    seen: list[int] = []
+
+    class Holder:
+        def callback(self) -> None:
+            seen.append(1)
+
+    holder = Holder()
+    controller.attach(holder.callback)
+    controller.attach(holder.callback)  # a new bound-method object, same target
+    controller._changed()
+
+    assert seen == [1]
+    controller.detach(holder.callback)
+    assert controller._listeners == []
+
+
+# every spawned scrcpy keeps its own output tail
+
+
+@pytest.mark.usefixtures("notes")
+async def test_stale_lines_from_an_old_process_do_not_skew_the_failure_reason(
+    controller: PhoneController, fake: FakeRunner, notes: MagicMock
+) -> None:
+    old = FakeProcess()
+    fake.process = old
+    await controller._start("SER")
+    new = FakeProcess(stderr=["something odd happened"])
+    fake.process = new
+    await controller._start("SER")
+
+    old.stderr.feed_data(b"ERROR: device unauthorized\n")  # a late line
+    await asyncio.sleep(0.01)
+    new.finish(1)
+    assert controller._watcher is not None
+    await controller._watcher
+    old.finish(0)
+    await asyncio.sleep(0)
+
+    bodies = _bodies(notes)
+    assert any("stopped unexpectedly" in body.lower() for body in bodies)
+    assert not any("unauthorized" in body.lower() for body in bodies)
+
+
+# env parsing
+
+
+@pytest.mark.parametrize(
+    ("raw", "calls"),
+    [("500", 20), ("21", 20), ("20", 20), ("0", 1), ("-4", 1), ("abc", 5), ("7", 7)],
+)
+async def test_volume_step_is_clamped_to_one_through_twenty(
+    controller: PhoneController,
+    fake: FakeRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    raw: str,
+    calls: int,
+) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_DEVICE", "192.168.1.10:5555")
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_VOLUME_STEP", raw)
+
+    await controller.volume(up=True)
+
+    assert len(_keyevents(fake)) == calls
+
+
+@pytest.mark.parametrize(("raw", "logged"), [("500", True), ("0", True), ("7", False)])
+async def test_clamping_the_volume_step_is_logged(
+    controller: PhoneController,
+    fake: FakeRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    raw: str,
+    logged: bool,
+) -> None:
+    del fake
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_DEVICE", "192.168.1.10:5555")
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_VOLUME_STEP", raw)
+
+    with caplog.at_level("INFO"):
+        await controller.volume(up=True)
+
+    assert ("clamped" in caplog.text) is logged
+
+
+async def test_volume_stops_after_the_first_failure_for_an_absent_env_device(
+    controller: PhoneController, fake: FakeRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_DEVICE", "GONE")
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_VOLUME_STEP", "5")
+    fake.devices = [ONE]
+
+    await controller.volume(up=True)
+
+    assert len(_keyevents(fake)) == 1
+
+
+async def _adb_is_down(_argv: Sequence[str], **_kwargs: Any) -> runner.Result:
+    return runner.Result(-1, "", "", timed_out=True)
+
+
+@pytest.mark.usefixtures("notes")
+async def test_a_transient_adb_failure_does_not_clear_the_remembered_serial(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    await _remember(controller, fake, "0")
+    controller._run = _adb_is_down  # type: ignore[assignment]
+
+    serial, _text = await controller._find_device()
+
+    assert serial == "56201FDCR0077W"
+    assert controller._serial == "56201FDCR0077W"
+
+
+@pytest.mark.usefixtures("notes")
+async def test_a_failed_keyevent_with_adb_down_keeps_the_remembered_serial(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    await _remember(controller, fake, "0")
+    controller._run = _adb_is_down  # type: ignore[assignment]
+
+    await controller.volume(up=True)
+
+    assert controller._serial == "56201FDCR0077W"

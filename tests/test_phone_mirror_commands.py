@@ -162,6 +162,27 @@ def test_parse_devices_skips_daemon_noise_and_keeps_states() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "noise",
+    [
+        "adb: device offline",
+        "adb: device 'X' not found",
+        "error: device unauthorized",
+        "error: no devices/emulators found",
+        "bad/serial\tdevice",
+        "bad serial!\tdevice",
+    ],
+)
+def test_parse_devices_ignores_adb_error_lines_and_odd_serials(noise: str) -> None:
+    out = f"List of devices attached\n{noise}\nABC123\tdevice\n"
+    assert parse_devices(out) == [Device("ABC123", "device")]
+
+
+def test_parse_devices_error_only_output_has_no_device() -> None:
+    assert parse_devices("adb: device offline\n") == []
+    assert ready_device(parse_devices("adb: device offline\n")) is None
+
+
 def test_ready_device_filters_by_expected_serial() -> None:
     devices = [Device("A", "offline"), Device("B", "device"), Device("C", "device")]
     assert ready_device(devices, "") == "B"

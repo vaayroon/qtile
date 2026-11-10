@@ -570,7 +570,9 @@ Status text: `PHONE:READY` (connected, idle) · `PHONE:MIRROR` (running) · `PHO
 
 Start and failure messages are sent as desktop notifications that name the reason (unauthorized, offline, unreachable, missing binary), and scrcpy's output goes to the qtile log (`~/.local/share/qtile/qtile.log`).
 
-**Host network safety.** Every process the phone mirror code starts goes through one allowlisted runner ([`src/widgets/phone_mirror_runner.py`](src/widgets/phone_mirror_runner.py)): only `adb`, `scrcpy`, `zenity`, `kitty` and `rofi` (the device selector) may run, and `adb` is limited to `devices`, `connect`, `disconnect`, `pair`, `mdns`, `shell input keyevent`, `tcpip` and `version`. It never touches NetworkManager, firewall rules, routes, DNS or any system service. Tests enforce this.
+**Config reload.** A config reload (`mod + Shift + r`) stops a running mirror on purpose: the widgets are rebuilt, and the last one to go away shuts scrcpy down. Start it again with `mod + p`. Stopping sends SIGTERM and, if scrcpy has not exited after a few seconds, SIGKILL.
+
+**Host network safety.** Every process the phone mirror code starts goes through one allowlisted runner ([`src/widgets/phone_mirror_runner.py`](src/widgets/phone_mirror_runner.py)): only `adb`, `scrcpy`, `zenity` (the setup form) and `rofi` (the device selector) may run, the last two with only the exact flags the code builds, and `adb` is limited to `devices`, `connect`, `disconnect`, `pair`, `mdns`, `shell input keyevent`, `tcpip` and `version`. It never touches NetworkManager, firewall rules, routes, DNS or any system service. Tests enforce this.
 
 ---
 

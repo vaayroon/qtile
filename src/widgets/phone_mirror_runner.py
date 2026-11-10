@@ -6,13 +6,12 @@ rejected before a process is created. Nothing here ever uses a shell.
 """
 
 import asyncio
+import contextlib
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-ALLOWED_EXECUTABLES: frozenset[str] = frozenset(
-    {"adb", "scrcpy", "zenity", "kitty", "rofi"}
-)
+ALLOWED_EXECUTABLES: frozenset[str] = frozenset({"adb", "scrcpy", "zenity", "rofi"})
 
 ALLOWED_ADB_SUBCOMMANDS: frozenset[str] = frozenset(
     {"devices", "connect", "disconnect", "pair", "mdns", "shell", "tcpip", "version"}
@@ -64,6 +63,21 @@ FORBIDDEN_NAMES: frozenset[str] = frozenset(
 
 _KEYEVENT_SHELL = ("input", "keyevent")
 
+# Exactly the flags the code builds. rofi: flag -> accepted values (None = any
+# single value, () = takes no value). zenity: the `--name=` prefixes of a form.
+ROFI_FLAGS: dict[str, frozenset[str] | None] = {
+    "-dmenu": frozenset(),
+    "-i": frozenset(),
+    "-p": None,
+    "-format": frozenset({"i"}),
+}
+ZENITY_PREFIXES: tuple[str, ...] = (
+    "--title=",
+    "--text=",
+    "--separator=",
+    "--add-entry=",
+)
+
 
 class ForbiddenCommand(Exception):
     """Raised before execution when an argv violates the allowlist."""
@@ -82,7 +96,11 @@ def _base(token: str) -> str:
 
 
 def _is_forbidden_token(token: str) -> bool:
-    candidates = [token, *token.split("=")]
+    """True if the token, or any word or `=` part inside it, names a banned tool."""
+    candidates = [token]
+    for word in token.split():
+        candidates += [word, *word.split("=")]
+    candidates += token.split("=")
     for candidate in candidates:
         name = _base(candidate)
         if name in FORBIDDEN_NAMES or name.startswith("avahi"):
@@ -107,6 +125,35 @@ def _validate_adb(args: Sequence[str]) -> None:
         raise ForbiddenCommand("adb shell is limited to 'input keyevent N'")
 
 
+def _validate_rofi(args: Sequence[str]) -> None:
+    seen: set[str] = set()
+    index = 0
+    while index < len(args):
+        flag = args[index]
+        if flag not in ROFI_FLAGS:
+            raise ForbiddenCommand(f"rofi flag not allowed: {flag}")
+        seen.add(flag)
+        accepted = ROFI_FLAGS[flag]
+        index += 1
+        if accepted == frozenset():
+            continue
+        if index >= len(args):
+            raise ForbiddenCommand(f"rofi flag needs a value: {flag}")
+        if accepted is not None and args[index] not in accepted:
+            raise ForbiddenCommand(f"rofi value not allowed for {flag}")
+        index += 1
+    if "-dmenu" not in seen:
+        raise ForbiddenCommand("rofi is limited to -dmenu mode")
+
+
+def _validate_zenity(args: Sequence[str]) -> None:
+    if "--forms" not in args:
+        raise ForbiddenCommand("zenity is limited to --forms")
+    for arg in args:
+        if arg != "--forms" and not arg.startswith(ZENITY_PREFIXES):
+            raise ForbiddenCommand(f"zenity argument not allowed: {arg}")
+
+
 def validate(argv: Sequence[str]) -> None:
     """Raise ForbiddenCommand unless argv is safe to execute."""
     if not argv:
@@ -119,6 +166,16 @@ def validate(argv: Sequence[str]) -> None:
         raise ForbiddenCommand(f"executable not allowed: {argv[0]}")
     if exe == "adb":
         _validate_adb(argv[1:])
+    elif exe == "rofi":
+        _validate_rofi(argv[1:])
+    elif exe == "zenity":
+        _validate_zenity(argv[1:])
+
+
+async def _kill(proc: asyncio.subprocess.Process) -> None:
+    with contextlib.suppress(ProcessLookupError):
+        proc.kill()
+    await proc.wait()
 
 
 async def run(
@@ -136,9 +193,12 @@ async def run(
     try:
         out, err = await asyncio.wait_for(proc.communicate(input=data), timeout=timeout)
     except TimeoutError:
-        proc.kill()
-        await proc.wait()
+        await _kill(proc)
         return Result(rc=-1, stdout="", stderr="", timed_out=True)
+    except BaseException:
+        # Cancellation included: never leave an orphaned child behind.
+        await _kill(proc)
+        raise
     return Result(
         rc=proc.returncode if proc.returncode is not None else -1,
         stdout=out.decode(errors="replace"),

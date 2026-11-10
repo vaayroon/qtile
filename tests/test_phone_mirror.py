@@ -176,6 +176,18 @@ def test_finalize_detaches_from_the_controller(
     assert widget._listener is None
 
 
+def test_configuring_twice_attaches_the_listener_once(
+    widget: PhoneMirrorWidget, fake: FakeController, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(phone_mirror.base.BackgroundPoll, "_configure", MagicMock())
+
+    widget._configure(MagicMock(), MagicMock())
+    widget._configure(MagicMock(), MagicMock())
+
+    assert len(fake.attached) == 1
+    assert fake.attached[0] == widget.force_update
+
+
 # --- R1.7: English only, no direct process handling ------------------------
 
 

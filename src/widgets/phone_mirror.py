@@ -110,8 +110,9 @@ class PhoneMirrorWidget(base.BackgroundPoll):
 
     def _configure(self, qtile: Any, bar: Any) -> None:
         super()._configure(qtile, bar)
-        self._listener = self.force_update
-        self.controller.attach(self._listener)
+        if self._listener is None:
+            self._listener = self.force_update
+            self.controller.attach(self._listener)
 
     async def apoll(self) -> str:
         try:

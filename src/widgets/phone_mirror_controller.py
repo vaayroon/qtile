@@ -6,6 +6,7 @@ goes through the allowlisted runner.
 """
 
 import asyncio
+import contextlib
 import os
 import shutil
 import time
@@ -38,6 +39,10 @@ from .phone_mirror_commands import (
 from .phone_mirror_reasons import Reason, map_exception, map_failure, message_for
 
 REFRESH_TTL = 2.0
+STOP_GRACE = 3.0  # seconds between SIGTERM and SIGKILL when stopping scrcpy
+VOLUME_STEP_DEFAULT = 5
+VOLUME_STEP_MIN = 1
+VOLUME_STEP_MAX = 20
 TAIL_LINES = 20
 NOTIFY_TITLE = "Phone mirror"
 NOTIFY_IDS = {"status": 7101, "error": 7102}
@@ -110,7 +115,10 @@ class PhoneController:
         self._process: Any = None
         self._stop_requested: Any = None
         self._watcher: asyncio.Task[None] | None = None
-        self._tail: deque[str] = deque(maxlen=TAIL_LINES)
+        self._stopping: Any = None  # a terminated scrcpy that has not exited yet
+        self._reaper: asyncio.Task[None] | None = None
+        self._mirror_serial = ""  # the device the running scrcpy is attached to
+        self._generation = 0  # bumped by every action that changes the state
         self._labels: dict[str, str] = {}
         self._serial = ""  # device picked in the selector, kept for the session
         self._last_refresh: float | None = None
@@ -159,7 +167,8 @@ class PhoneController:
     # -- listeners ---------------------------------------------------------
 
     def attach(self, listener: Callable[[], None]) -> None:
-        self._listeners.append(listener)
+        if listener not in self._listeners:
+            self._listeners.append(listener)
 
     def detach(self, listener: Callable[[], None]) -> None:
         if listener in self._listeners:
@@ -167,7 +176,12 @@ class PhoneController:
         if not self._listeners:
             self.shutdown()
 
+    def _touch(self) -> None:
+        """Invalidate any probe that started before this state change."""
+        self._generation += 1
+
     def _changed(self) -> None:
+        self._touch()
         self._last_refresh = None
         for listener in list(self._listeners):
             try:
@@ -214,13 +228,17 @@ class PhoneController:
             return 1, "timed out"
         return result.rc, f"{result.stdout}\n{result.stderr}"
 
-    async def _list_devices(self) -> tuple[list[Device], str]:
-        _rc, text = await self._exec(
+    async def _list_devices(
+        self, *, update_labels: bool = True
+    ) -> tuple[list[Device], str, bool]:
+        """Devices, the raw text, and whether adb actually answered."""
+        rc, text = await self._exec(
             build_devices_argv(self.resolve("adb_path"), long=True)
         )
         devices = parse_devices(text)
-        self._labels = {d.serial: device_label(d) for d in devices}
-        return devices, text
+        if update_labels:
+            self._labels = {d.serial: device_label(d) for d in devices}
+        return devices, text, rc == 0
 
     async def _select_device(self, devices: Sequence[Device]) -> str:
         """Ask which device to use; raises SelectionCancelled on dismissal."""
@@ -240,22 +258,23 @@ class PhoneController:
             raise SelectionCancelled
         return devices[index].serial
 
-    async def _find_device(self, interactive: bool = True) -> tuple[str | None, str]:
+    async def _find_device(self) -> tuple[str | None, str]:
         """Pick the target serial: env, remembered, the only one, or ask."""
-        devices, text = await self._list_devices()
+        devices, text, answered = await self._list_devices()
         expected = self.resolve("device")
         if expected:
             return ready_device(devices, expected), text
         ready = ready_devices(devices)
         if self._serial and self._serial not in {d.serial for d in ready}:
+            if not answered:
+                # adb timed out or failed: that says nothing about the device.
+                return self._serial, text
             logger.info("PhoneMirror: device %s is gone, resolving again", self._serial)
             self._serial = ""
         if self._serial:
             return self._serial, text
         if len(ready) <= 1:
             return (ready[0].serial if ready else None), text
-        if not interactive:
-            return ready[0].serial, text
         self._serial = await self._select_device(ready)
         return self._serial, text
 
@@ -275,31 +294,46 @@ class PhoneController:
         if self._last_refresh is not None and now - self._last_refresh < REFRESH_TTL:
             return self.state
         self._last_refresh = now
+        generation = self._generation
         try:
-            self.state = await self._probe()
+            state = await self._probe()
         except Exception:
             logger.exception("PhoneMirror: refresh failed")
-            self.state = State.DISCONNECTED
-        return self.state
+            state = State.DISCONNECTED
+        if generation != self._generation:
+            return self.state  # an action ran meanwhile; this answer is stale
+        self.state = state
+        return state
 
     async def _probe(self) -> State:
+        """Read-only status check: it never changes the remembered device."""
         if self._missing_binaries():
             return State.ERROR
         if self.is_mirroring():
             return State.MIRROR
-        serial, _text = await self._find_device(interactive=False)
+        expected = self.resolve("device")
+        devices, _text, _ok = await self._list_devices(update_labels=False)
+        serial = ready_device(devices, expected)
         if serial is None and self.resolve("wireless_target"):
             await self._connect()
-            serial, _text = await self._find_device(interactive=False)
+            devices, _text, _ok = await self._list_devices(update_labels=False)
+            serial = ready_device(devices, expected)
         return State.READY if serial else State.DISCONNECTED
 
     # -- actions -----------------------------------------------------------
 
+    def _is_stopping(self) -> bool:
+        return self._stopping is not None and self._stopping.returncode is None
+
     async def toggle(self) -> None:
+        if self._is_stopping():
+            logger.info("PhoneMirror: previous scrcpy is still stopping, click ignored")
+            return
         if self._lock.locked():
             logger.info("PhoneMirror: busy, click ignored")
             return
         async with self._lock:
+            self._touch()
             try:
                 if self.is_mirroring():
                     self._stop()
@@ -320,14 +354,48 @@ class PhoneController:
         proc = self._process
         if proc is None:
             return
+        self._touch()
         self._stop_requested = proc
         self._process = None
+        self._mirror_serial = ""
         self.state = State.READY
         try:
             if proc.returncode is None:
                 proc.terminate()
         except ProcessLookupError:
-            pass
+            return
+        if proc.returncode is None:
+            self._reap_later(proc)
+
+    def _reap_later(self, proc: Any) -> None:
+        """Give a terminated scrcpy a grace period, then kill it, off the loop."""
+        self._stopping = proc
+        coro = self._reap(proc)
+        try:
+            self._reaper = create_task(coro)
+        except RuntimeError:  # no running loop (shutting down): nothing to wait on
+            coro.close()
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            self._stopping = None
+
+    async def _reap(self, proc: Any) -> None:
+        try:
+            await asyncio.wait_for(proc.wait(), STOP_GRACE)
+        except TimeoutError:
+            logger.warning("PhoneMirror: scrcpy ignored SIGTERM, killing it")
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            await proc.wait()
+        finally:
+            if self._stopping is proc:
+                self._stopping = None
+
+    async def _settled(self) -> None:
+        """Wait until a process that is being stopped has really exited."""
+        reaper = self._reaper
+        if reaper is not None and not reaper.done():
+            await asyncio.shield(reaper)
 
     def shutdown(self) -> None:
         self._stop()
@@ -338,6 +406,7 @@ class PhoneController:
             logger.info("PhoneMirror: busy, click ignored")
             return
         async with self._lock:
+            self._touch()
             try:
                 was_mirroring = self.is_mirroring()
                 if was_mirroring:
@@ -357,6 +426,7 @@ class PhoneController:
                     restarted = False
                     if was_mirroring and to_bool(self.resolve("restart_on_switch")):
                         logger.info("PhoneMirror: restarting mirroring on %s", serial)
+                        await self._settled()
                         await self._start(serial)
                         restarted = self.is_mirroring()
                     elif was_mirroring:
@@ -381,12 +451,27 @@ class PhoneController:
             message += " Mirroring not restarted."
         self.notify("status", NOTIFY_TITLE, message)
 
-    async def volume(self, *, up: bool, _retry: bool = True) -> None:
+    def _volume_step(self) -> int:
+        raw = self.resolve("volume_step") or str(VOLUME_STEP_DEFAULT)
         try:
-            step = max(1, int(self.resolve("volume_step") or "5"))
+            wanted = int(raw)
         except ValueError:
-            step = 5
-        serial = self.resolve("device") or self._serial
+            logger.warning("PhoneMirror: bad volume step %r, using the default", raw)
+            return VOLUME_STEP_DEFAULT
+        step = min(max(wanted, VOLUME_STEP_MIN), VOLUME_STEP_MAX)
+        if step != wanted:
+            logger.info("PhoneMirror: volume step %d clamped to %d", wanted, step)
+        return step
+
+    async def _serial_is_gone(self, serial: str) -> bool:
+        """True only when adb answered and the device is really not listed."""
+        devices, _text, answered = await self._list_devices()
+        return answered and serial not in {d.serial for d in ready_devices(devices)}
+
+    async def volume(self, *, up: bool, _retry: bool = True) -> None:
+        step = self._volume_step()
+        mirrored = self._mirror_serial if self.is_mirroring() else ""
+        serial = self.resolve("device") or mirrored or self._serial
         if not serial:
             if self._lock.locked():
                 logger.info("PhoneMirror: busy, volume ignored")
@@ -403,11 +488,18 @@ class PhoneController:
         argv = build_keyevent_argv(self.resolve("adb_path"), 24 if up else 25, serial)
         for index in range(step):
             rc, _text = await self._exec(argv)
-            if rc != 0 and index == 0 and serial == self._serial and _retry:
+            if rc == 0:
+                continue
+            if (
+                index == 0
+                and _retry
+                and serial == self._serial
+                and await self._serial_is_gone(serial)
+            ):
                 logger.info("PhoneMirror: device %s is gone, resolving again", serial)
                 self._serial = ""
                 await self.volume(up=up, _retry=False)
-                return
+            return  # a failing command would only fail again
 
     async def _prompt(self) -> bool:
         initial = self._settings()
@@ -466,13 +558,15 @@ class PhoneController:
             self.state = State.DISCONNECTED
             self._fail(map_exception(exc))
             return
+        tail: deque[str] = deque(maxlen=TAIL_LINES)  # this process only
         self._process = proc
-        self._tail.clear()
+        self._mirror_serial = serial
         self.state = State.MIRROR
-        self._watcher = create_task(self._watch(proc))
+        self._touch()
+        self._watcher = create_task(self._watch(proc, tail))
         self.notify("status", NOTIFY_TITLE, "Mirroring started.")
 
-    async def _pump(self, stream: Any, label: str) -> None:
+    async def _pump(self, stream: Any, label: str, tail: deque[str]) -> None:
         if stream is None:
             return
         while True:
@@ -482,18 +576,20 @@ class PhoneController:
             text = line.decode(errors="replace").rstrip()
             if text:
                 logger.info("scrcpy %s: %s", label, text)
-                self._tail.append(text)
+                tail.append(text)
 
-    async def _watch(self, proc: Any) -> None:
+    async def _watch(self, proc: Any, tail: deque[str]) -> None:
         await asyncio.gather(
-            self._pump(proc.stdout, "stdout"), self._pump(proc.stderr, "stderr")
+            self._pump(proc.stdout, "stdout", tail),
+            self._pump(proc.stderr, "stderr", tail),
         )
         rc = await proc.wait()
         if self._process is proc:
             self._process = None
+            self._mirror_serial = ""
             self.state = State.READY
         if rc != 0 and self._stop_requested is not proc:
-            reason = map_failure("\n".join(self._tail), rc)
+            reason = map_failure("\n".join(tail), rc)
             self.notify(
                 "error",
                 NOTIFY_TITLE,
