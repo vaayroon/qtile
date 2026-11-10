@@ -13,11 +13,7 @@ dependencies = [
     "psutil",         # qtile widgets extra: Memory/Net/Sensors
     "dbus-fast",      # qtile optional-core: notification server / D-Bus
     "python-dotenv",  # src/settings.py loads .env
-]
-
-[project.optional-dependencies]
-phone = [
-    "segno>=1.6.6",
+    "segno>=1.6.6",   # phone mirror: Wi-Fi pairing QR (pure Python, no deps)
 ]
 
 [dependency-groups]

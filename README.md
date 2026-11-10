@@ -583,7 +583,7 @@ Start and failure messages are sent as desktop notifications that name the reaso
 
 Each attempt has a fresh random name and password (Python's `secrets`) and expires after `QTILE_PHONE_MIRROR_PAIR_TTL` seconds (default 180); an expired password is never used. The password is never logged, never put in a notification or a file, and reaches `adb pair` through stdin, so it does not show up in `ps`. The QR PNG is a private (`0600`) file under `$XDG_RUNTIME_DIR/qtile/`, deleted when pairing ends, is cancelled or expires.
 
-QR support is optional: it needs [`segno`](https://pypi.org/project/segno/) (the `phone` extra) and `kitty`. Install it with `uv sync --locked --extra phone` (add `--no-dev` for a runtime-only install). A later `uv sync` without `--extra phone` removes segno again.
+The QR is rendered with [`segno`](https://pypi.org/project/segno/), a regular runtime dependency installed by `uv sync --locked`, and shown with `kitty`.
 
 **Manual fallback.** If segno or kitty is missing, `adb mdns` is unavailable, or the phone is not found before the code expires, a notification explains the likely causes and a `zenity` form asks for the pairing address (`host:port`) and the 6-digit code shown by **Pair device with pairing code** on the phone. It then runs `adb pair` and `adb connect` the same way. Cancelling the form runs nothing. The usual causes of a failed discovery are: the phone and the computer are on different networks, the router isolates Wi-Fi clients (AP isolation), a firewall blocks mDNS (multicast DNS), or a VPN is active. The code only reports this and never changes network settings. `adb tcpip` is never run by any pairing or reconnect flow.
 

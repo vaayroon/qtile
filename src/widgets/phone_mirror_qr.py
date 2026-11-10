@@ -1,10 +1,11 @@
 """Show the pairing QR in a floating kitty window.
 
-segno is an optional dependency (the `phone` extra) and is imported lazily, so
-this module imports fine without it. The PNG lives in a private directory under
-$XDG_RUNTIME_DIR, is readable only by the user and is deleted as soon as the
-window closes. kitty is started through the allowlisted runner with one exact
-argv template, so the secret is never in a command line.
+segno is a runtime dependency, but it is still imported lazily so this module
+imports fine if it is missing; the pairing flow then falls back to manual
+entry. The PNG lives in a private directory under $XDG_RUNTIME_DIR, is readable
+only by the user and is deleted as soon as the window closes. kitty is started
+through the allowlisted runner with one exact argv template, so the secret is
+never in a command line.
 """
 
 import asyncio

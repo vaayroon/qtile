@@ -820,12 +820,8 @@ dependencies = [
     { name = "psutil" },
     { name = "python-dotenv" },
     { name = "qtile" },
-    { name = "xcffib" },
-]
-
-[package.optional-dependencies]
-phone = [
     { name = "segno" },
+    { name = "xcffib" },
 ]
 
 [package.dev-dependencies]
@@ -845,10 +841,9 @@ requires-dist = [
     { name = "psutil" },
     { name = "python-dotenv" },
     { name = "qtile", specifier = "==0.37.1" },
-    { name = "segno", marker = "extra == 'phone'", specifier = ">=1.6.6" },
+    { name = "segno", specifier = ">=1.6.6" },
     { name = "xcffib" },
 ]
-provides-extras = ["phone"]
 
 [package.metadata.requires-dev]
 dev = [
