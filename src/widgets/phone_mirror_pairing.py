@@ -127,6 +127,22 @@ def find_connect(entries: Sequence[MdnsEntry], host: str) -> MdnsEntry | None:
     return None
 
 
+def find_connect_by_instance(
+    entries: Sequence[MdnsEntry], instance: str
+) -> MdnsEntry | None:
+    """The connect entry of one phone, by its stable mDNS instance name."""
+    for entry in entries:
+        if entry.service == CONNECT_SERVICE and entry.instance == instance:
+            return entry
+    return None
+
+
+def connect_succeeded(rc: int, text: str) -> bool:
+    """`adb connect` can print "failed to connect" with rc 0, so read the text."""
+    lowered = text.lower()
+    return rc == 0 and "connected to" in lowered and "failed" not in lowered
+
+
 def parse_endpoint(text: str) -> str | None:
     """A validated `host:port`, or None."""
     value = text.strip()

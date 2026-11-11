@@ -12,7 +12,9 @@ import shutil
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from datetime import UTC, datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from libqtile.utils import create_task, send_notification
@@ -45,7 +47,9 @@ from .phone_mirror_pairing import (
     build_mdns_argv,
     build_pair_argv,
     build_zenity_pair_argv,
+    connect_succeeded,
     find_connect,
+    find_connect_by_instance,
     find_pairing,
     new_session,
     parse_mdns,
@@ -53,7 +57,17 @@ from .phone_mirror_pairing import (
     redact,
 )
 from .phone_mirror_reasons import Reason, map_exception, map_failure, message_for
-from .phone_mirror_state import is_wireless_serial, transport_of
+from .phone_mirror_state import (
+    MAX_ATTEMPTS,
+    RememberedDevice,
+    backoff_delay,
+    is_wireless_serial,
+    load,
+    save,
+    serial_from_instance,
+    state_path,
+    transport_of,
+)
 
 REFRESH_TTL = 2.0
 STOP_GRACE = 3.0  # seconds between SIGTERM and SIGKILL when stopping scrcpy
@@ -105,6 +119,7 @@ _USER_BLOCKED = {Reason.UNAUTHORIZED, Reason.OFFLINE}
 RunFn = Callable[..., Awaitable[runner.Result]]
 SpawnFn = Callable[[Sequence[str]], Awaitable[Any]]
 OpenQrFn = Callable[..., Awaitable[Any]]
+SleepFn = Callable[[float], Awaitable[None]]
 
 _QR_MISSING = {
     "segno": (
@@ -128,6 +143,10 @@ _MDNS_DOWN = (
 _MANUAL_INVALID = (
     "Invalid pairing details. Enter the host:port and the 6-digit code shown "
     "on the phone."
+)
+_GAVE_UP = (
+    f"Could not reconnect to the phone after {MAX_ATTEMPTS} attempts. Left-click "
+    "or right-click the widget, or press Mod+P, to try again."
 )
 _NO_CONNECT_ENTRY = (
     "Paired, but the phone's connect address was not found. Open Wireless "
@@ -187,7 +206,17 @@ class PhoneController:
         which: Callable[[str], str | None] = shutil.which,
         clock: Callable[[], float] = time.monotonic,
         open_qr: OpenQrFn = qr.open_window,
+        sleep: SleepFn = asyncio.sleep,
+        state_file: Path | None = None,
     ) -> None:
+        self._sleep = sleep
+        self._state_file = state_file
+        self._remembered: RememberedDevice | None = None
+        self._remembered_loaded = False
+        self._reconnect_task: asyncio.Task[None] | None = None
+        self._attempts = 0  # reconnect attempts used in this disconnect
+        self._exhausted = False  # all attempts spent: wait for a user action
+        self._seen_ready: list[str] = []  # serials the last probe found usable
         self._open_qr = open_qr
         self._pairing: PairingSession | None = None
         self._pair_cancel = asyncio.Event()
@@ -413,11 +442,17 @@ class PhoneController:
 
     async def _connect_user(self) -> str:
         """Connect the wireless target for an action and show CONNECTING meanwhile."""
-        if not self.resolve("wireless_target"):
+        target = self.resolve("wireless_target")
+        if not target and self.remembered is None:
             return ""
         self.state = State.CONNECTING
         self._changed()
-        return await self._connect()
+        if not target:
+            _ok, text = await self._connect_remembered()
+            return text
+        text = await self._connect()
+        await self._remember_target(target, text)
+        return text
 
     async def refresh(self) -> State:
         if self._lock.locked():
@@ -435,10 +470,15 @@ class PhoneController:
         if generation != self._generation:
             return self.state  # an action ran meanwhile; this answer is stale
         self.state = state
+        try:
+            self._watch_remembered(state)
+        except Exception:
+            logger.exception("PhoneMirror: reconnect scheduling failed")
         return state
 
     async def _probe(self) -> State:
         """Read-only status check: it never changes the remembered device."""
+        self._seen_ready = []
         if self._missing_binaries():
             return State.ERROR
         if self.is_mirroring():
@@ -450,7 +490,157 @@ class PhoneController:
             await self._connect()
             devices, _text, _ok = await self._list_devices(update_labels=False)
             serial = ready_device(devices, expected)
+        self._seen_ready = [d.serial for d in ready_devices(devices)]
         return State.READY if serial else State.DISCONNECTED
+
+    # -- remembered device and reconnect -----------------------------------
+
+    def _store_path(self) -> Path:
+        return self._state_file if self._state_file is not None else state_path()
+
+    @property
+    def remembered(self) -> RememberedDevice | None:
+        if not self._remembered_loaded:
+            self._remembered_loaded = True
+            self._remembered = load(self._store_path())
+        return self._remembered
+
+    def _remember(self, instance: str, address: str) -> None:
+        """Keep the phone by its mDNS identity; the port is only the last one seen."""
+        previous = self.remembered
+        paired_at = (
+            previous.paired_at
+            if previous is not None
+            and previous.service_name == instance
+            and previous.paired_at
+            else datetime.now(UTC).isoformat(timespec="seconds")
+        )
+        device = RememberedDevice(
+            instance, address, serial_from_instance(instance), paired_at
+        )
+        if device == previous:
+            return
+        self._remembered = device
+        self._remembered_loaded = True
+        save(self._store_path(), device)
+        logger.info("PhoneMirror: remembered %s at %s", instance, address)
+
+    async def _remember_target(self, target: str, text: str) -> None:
+        """After a wireless connect, find the phone's mDNS identity and keep it."""
+        if not connect_succeeded(0, text):
+            return
+        host = target.rpartition(":")[0].strip("[]")
+        _rc, out = await self._exec(
+            build_mdns_argv(self.resolve("adb_path"), "services")
+        )
+        entry = find_connect(parse_mdns(out), host)
+        if entry is None:
+            logger.info("PhoneMirror: %s has no mDNS identity, not remembered", target)
+            return
+        self._remember(entry.instance, target)
+
+    async def _connect_remembered(self) -> tuple[bool, str]:
+        """`adb connect` to the remembered phone's current endpoint (mDNS first)."""
+        device = self.remembered
+        if device is None:
+            return False, ""
+        adb = self.resolve("adb_path")
+        _rc, out = await self._exec(build_mdns_argv(adb, "services"))
+        entry = find_connect_by_instance(parse_mdns(out), device.service_name)
+        address = entry.address if entry is not None else device.last_address
+        logger.info(
+            "PhoneMirror: connecting to %s at %s (%s)",
+            device.service_name,
+            address,
+            "found by mDNS" if entry is not None else "last known address",
+        )
+        rc, text = await self._exec(build_connect_argv(adb, address))
+        ok = connect_succeeded(rc, text)
+        if ok:
+            self._remember(device.service_name, address)
+        else:
+            logger.info("PhoneMirror: connect to %s failed: %s", address, text.strip())
+        return ok, text
+
+    def _reset_reconnect(self) -> None:
+        """A user action or a connected phone: forget the spent attempts."""
+        self._attempts = 0
+        self._exhausted = False
+        task = self._reconnect_task
+        self._reconnect_task = None
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+
+    def _watch_remembered(self, state: State) -> None:
+        """After a probe: start the reconnect timer when the phone is lost."""
+        device = self.remembered
+        if device is None or state is State.ERROR:
+            return
+        if any(device.matches(serial) for serial in self._seen_ready):
+            self._reset_reconnect()
+            return
+        if state is State.MIRROR or self.resolve("wireless_target"):
+            return
+        self._schedule_reconnect()
+
+    def _schedule_reconnect(self) -> None:
+        """One reconnect timer at a time; none once the attempts are spent."""
+        task = self._reconnect_task
+        if self._exhausted or (task is not None and not task.done()):
+            return
+        self._reconnect_task = create_task(self._reconnect_loop())
+
+    async def _reconnect_loop(self) -> None:
+        try:
+            while True:
+                delay = backoff_delay(self._attempts)
+                if delay is None:
+                    self._give_up()
+                    return
+                await self._sleep(delay)
+                if self._lock.locked():
+                    logger.info("PhoneMirror: busy, reconnect attempt postponed")
+                    continue
+                if await self._reconnect_attempt():
+                    return
+        finally:
+            if self._reconnect_task is asyncio.current_task():
+                self._reconnect_task = None
+
+    def _give_up(self) -> None:
+        self._exhausted = True
+        logger.info("PhoneMirror: reconnect gave up after %d attempts", self._attempts)
+        self.notify("error", NOTIFY_TITLE, _GAVE_UP, urgent=True)
+
+    async def _reconnect_attempt(self) -> bool:
+        """One attempt under the lock; True when the loop should stop."""
+        async with self._lock:
+            if self.remembered is None or self.is_mirroring():
+                return True
+            self._attempts += 1
+            before = self.state
+            self.state = State.CONNECTING
+            self._changed()
+            generation = self._generation
+            logger.info(
+                "PhoneMirror: reconnect attempt %d of %d", self._attempts, MAX_ATTEMPTS
+            )
+            try:
+                ok, _text = await self._connect_remembered()
+            except Exception:
+                logger.exception("PhoneMirror: reconnect attempt failed")
+                ok = False
+            if generation == self._generation:  # else an action ran: stale answer
+                self.state = (
+                    State.READY
+                    if ok
+                    else (State.DISCONNECTED if before is State.CONNECTING else before)
+                )
+            if ok:
+                self._reset_reconnect()
+                self.notify("status", NOTIFY_TITLE, "Reconnected to the phone.")
+            self._changed()
+            return ok
 
     # -- actions -----------------------------------------------------------
 
@@ -466,6 +656,7 @@ class PhoneController:
             return
         async with self._lock:
             self._touch()
+            self._reset_reconnect()
             try:
                 if self.is_mirroring():
                     self._stop()
@@ -530,6 +721,7 @@ class PhoneController:
             await asyncio.shield(reaper)
 
     def shutdown(self) -> None:
+        self._reset_reconnect()
         self._stop()
 
     async def reconnect(self) -> None:
@@ -539,6 +731,7 @@ class PhoneController:
             return
         async with self._lock:
             self._touch()
+            self._reset_reconnect()
             try:
                 was_mirroring = self.is_mirroring()
                 if was_mirroring:
@@ -612,6 +805,7 @@ class PhoneController:
             return
         async with self._lock:
             self._touch()
+            self._reset_reconnect()
             self._pair_cancel = asyncio.Event()
             try:
                 await self._pair_flow()
@@ -750,29 +944,30 @@ class PhoneController:
             self._fail(Reason.PAIR_REJECTED if reason is Reason.UNKNOWN else reason)
             return
         host = endpoint.rpartition(":")[0].strip("[]")
-        address = await self._find_connect_address(host)
-        if address is None:
+        found = await self._find_connect_entry(host)
+        address = found.address if found is not None else None
+        if found is None or address is None:
             self.state = State.DISCONNECTED
             self.notify("error", NOTIFY_TITLE, _NO_CONNECT_ENTRY, urgent=True)
             return
         rc, text = await self._exec(build_connect_argv(adb, address))
-        lowered = text.lower()
-        if rc == 0 and "connected to" in lowered and "failed" not in lowered:
+        if connect_succeeded(rc, text):
+            self._remember(found.instance, address)
             self.state = State.READY
             self.notify("pair", NOTIFY_TITLE, f"Paired and connected to {address}.")
             return
         self.state = State.DISCONNECTED
         self._fail(map_failure(text))
 
-    async def _find_connect_address(self, host: str) -> str | None:
-        """The phone's connect address: same host, whatever the instance name."""
+    async def _find_connect_entry(self, host: str) -> MdnsEntry | None:
+        """The phone's connect entry: same host, whatever the instance name."""
         adb = self.resolve("adb_path")
         deadline = self._clock() + CONNECT_WAIT
         while True:
             _rc, text = await self._exec(build_mdns_argv(adb, "services"))
             entry = find_connect(parse_mdns(text), host)
             if entry is not None:
-                return entry.address
+                return entry
             if self._clock() >= deadline:
                 return None
             await asyncio.sleep(PAIR_POLL_INTERVAL)
