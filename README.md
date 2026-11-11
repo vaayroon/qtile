@@ -600,6 +600,21 @@ The QR is rendered with [`segno`](https://pypi.org/project/segno/), a regular ru
 
 **Host network safety.** Every process the phone mirror code starts goes through one allowlisted runner ([`src/widgets/phone_mirror_runner.py`](src/widgets/phone_mirror_runner.py)): only `adb`, `scrcpy`, `zenity` (the setup and pairing forms), `rofi` (the device selector) and `kitty` (the pairing QR window) may run, the last three with only the exact flags the code builds (`kitty` runs one argv template that shows `$XDG_RUNTIME_DIR/qtile/pair-qr.png`, nothing else), and `adb` is limited to `devices`, `connect`, `disconnect`, `pair`, `mdns`, `shell input keyevent`, `tcpip` and `version`. It never touches NetworkManager, firewall rules, routes, DNS or any system service. Tests enforce this.
 
+#### Known issues
+
+**The phone freezes for a few seconds, repeatedly, while mirroring over Wi-Fi.** After a while the computer can also lose its internet connection until its Wi-Fi is reconnected.
+
+- **Symptom:** you mirror over Wi-Fi and use the phone actively from the computer (clicks, typing, scrolling). The phone freezes for a few seconds, again and again. Rebooting the phone does not help; reconnecting the computer's Wi-Fi does.
+- **Cause, as diagnosed on one machine:** heavy two-way traffic makes the phone (seen with a Pixel 10) start TDLS, a direct Wi-Fi link between the phone and the computer. The computer's Wi-Fi driver (MediaTek MT7921, `mt7921e`) fails to install the link key (`TDLS: Failed to set TPK to the driver`), and the negotiation keeps retrying. Other phones and Wi-Fi chips may behave differently.
+- **Diagnose:** while using the mirror, run `journalctl -f -u wpa_supplicant | rg TDLS` (or `grep TDLS`). Repeated `TDLS` failures while the freezes happen point to this issue.
+- **Workarounds, applied by you and never by this config:**
+  - Use USB for long sessions. This avoids the problem entirely.
+  - Disable TDLS until the next reboot with `sudo wpa_cli -i wlo1 set tdls_disabled 1`, and revert it with `sudo wpa_cli -i wlo1 set tdls_disabled 0`. Replace `wlo1` with the name of your Wi-Fi interface.
+
+  The second workaround changes the network behaviour of your computer. Whether to do it is your choice: this config never runs it, never changes a network setting and only documents it.
+
+**`Failed to initialise VAAPI connection` in the scrcpy output.** Harmless. It appears on machines without a VA-API video driver, and scrcpy falls back to software decoding.
+
 ---
 
 ## External tools
