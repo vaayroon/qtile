@@ -1344,3 +1344,27 @@ async def test_the_usb_reason_is_logged(
     assert "preset=balanced" in caplog.text
     assert "usb transport" in caplog.text
     assert "QTILE_PHONE_MIRROR_QUALITY" in caplog.text
+
+
+# --- log injection (review fix) -----------------------------------------------------
+
+
+@pytest.mark.usefixtures("notes")
+async def test_scrcpy_output_cannot_inject_escape_codes_or_fake_lines(
+    controller: PhoneController,
+    fake: FakeRunner,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    fake.process = FakeProcess(
+        stderr=["ERROR: \x1b[2J\x1b[Hcleared\rINFO forged"], exit_rc=0
+    )
+
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+        watcher = controller._watcher
+        assert watcher is not None
+        await watcher
+
+    assert "\x1b" not in caplog.text
+    assert "\r" not in caplog.text
+    assert "scrcpy stderr: ERROR: \\x1b[2J\\x1b[Hcleared\\rINFO forged" in caplog.text

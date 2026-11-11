@@ -293,3 +293,37 @@ def test_redact_removes_the_secret_everywhere() -> None:
 
 def test_redact_with_an_empty_secret_changes_nothing() -> None:
     assert pairing.redact("plain text", "") == "plain text"
+
+
+# --- non-ASCII digits and secrets in repr (review fixes) ---------------------------
+
+
+def test_a_superscript_port_is_not_a_port() -> None:
+    assert pairing.parse_mdns("a\t_x._tcp\t1.2.3.4:²") == []
+
+
+def test_ascii_ports_still_parse_after_the_ascii_only_change() -> None:
+    entries = pairing.parse_mdns("a\t_x._tcp\t1.2.3.4:5555")
+    assert [(e.instance, e.port) for e in entries] == [("a", 5555)]
+
+
+@pytest.mark.parametrize("port", ["²", "٣٤", "５５"])
+def test_unicode_digits_never_pass_as_a_port_or_a_code(port: str) -> None:
+    assert pairing.parse_endpoint(f"host:{port}") is None
+    assert pairing.parse_code(port * 6) is None
+
+
+def test_a_code_with_unicode_digits_is_rejected_but_ascii_is_kept() -> None:
+    assert pairing.parse_code("١٢٣٤٥٦") is None
+    assert pairing.parse_code("123456") == "123456"
+
+
+def test_a_code_followed_by_a_newline_is_not_a_code() -> None:
+    assert pairing.parse_code("123456\n123456") is None
+
+
+def test_the_password_never_shows_in_repr() -> None:
+    session = pairing.new_session(0.0)
+
+    assert session.password not in repr(session)
+    assert session.name in repr(session)

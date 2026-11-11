@@ -49,18 +49,33 @@ def render_png(payload: str) -> Path:
         raise QrUnavailable("runtime")
     path = Path(target)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    code = segno.make(payload, error="m")
-    # Create it private from the start: never write first and chmod later.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "wb") as out:
-        os.fchmod(out.fileno(), 0o600)  # an older, looser file keeps its mode
-        code.save(out, kind="png", scale=QR_SCALE, border=QR_BORDER)
+    try:
+        code = segno.make(payload, error="m")
+        # Create it private from the start: never write first and chmod later.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as out:
+            os.fchmod(out.fileno(), 0o600)  # an older, looser file keeps its mode
+            code.save(out, kind="png", scale=QR_SCALE, border=QR_BORDER)
+    except BaseException:
+        remove_png(path)  # never leave a partial file that holds the secret
+        raise
     return path
 
 
 def remove_png(path: Path) -> None:
     with contextlib.suppress(OSError):
         path.unlink(missing_ok=True)
+
+
+def remove_stale_png() -> bool:
+    """Delete a QR left by a crash: the phone does not enforce our expiry."""
+    target = runner.qr_image_path()
+    if target is None:
+        return False
+    path = Path(target)
+    existed = path.exists()
+    remove_png(path)
+    return existed
 
 
 def build_kitty_argv(png: Path) -> list[str]:

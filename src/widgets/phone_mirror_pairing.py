@@ -11,7 +11,7 @@ import re
 import secrets
 import string
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .phone_mirror_commands import build_adb_argv
 
@@ -24,9 +24,10 @@ NAME_LENGTH = 10
 PASSWORD_LENGTH = 12
 _ALPHABET = string.ascii_letters + string.digits
 
-_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]*$")
-_MDNS_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.:-]*$")
-_CODE = re.compile(r"^\d{6}$")
+_HOST = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*")
+_MDNS_HOST = re.compile(r"[A-Za-z0-9][A-Za-z0-9.:-]*")
+_CODE = re.compile(r"[0-9]{6}")  # ASCII only: \d would match other scripts
+_PORT = re.compile(r"[0-9]{1,5}")
 _MAX_PORT = 65535
 
 
@@ -39,7 +40,7 @@ class PairingSession:
     """One pairing attempt: its own name and password, a deadline, single use."""
 
     name: str
-    password: str
+    password: str = field(repr=False)
     started: float
     ttl: float = DEFAULT_TTL
     _used: bool = False
@@ -91,7 +92,7 @@ class MdnsEntry:
 
 
 def _valid_port(text: str) -> bool:
-    return text.isdigit() and 0 < int(text) <= _MAX_PORT
+    return _PORT.fullmatch(text) is not None and 0 < int(text) <= _MAX_PORT
 
 
 def parse_mdns(output: str) -> list[MdnsEntry]:
@@ -105,7 +106,7 @@ def parse_mdns(output: str) -> list[MdnsEntry]:
         host, _, port = address.rpartition(":")
         if not (instance and service.startswith("_") and _valid_port(port)):
             continue
-        if not _MDNS_HOST.match(host.strip("[]")):
+        if not _MDNS_HOST.fullmatch(host.strip("[]")):
             continue
         entries.append(MdnsEntry(instance, service, address))
     return entries
@@ -147,7 +148,7 @@ def parse_endpoint(text: str) -> str | None:
     """A validated `host:port`, or None."""
     value = text.strip()
     host, _, port = value.rpartition(":")
-    if _HOST.match(host) and _valid_port(port):
+    if _HOST.fullmatch(host) and _valid_port(port):
         return value
     return None
 
@@ -155,7 +156,7 @@ def parse_endpoint(text: str) -> str | None:
 def parse_code(text: str) -> str | None:
     """The 6-digit pairing code shown by the phone, or None."""
     value = text.strip()
-    return value if _CODE.match(value) else None
+    return value if _CODE.fullmatch(value) else None
 
 
 def build_mdns_argv(adb_path: str, action: str) -> list[str]:

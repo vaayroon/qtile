@@ -264,3 +264,74 @@ def test_the_delays_never_shrink_and_stay_capped() -> None:
     values = [d for d in delays if d is not None]
     assert values == sorted(values)
     assert max(values) == 300.0
+
+
+# --- strict validation (review fixes) -------------------------------------------
+
+
+def _write(path: Path, **changes: object) -> Path:
+    data: dict[str, object] = {
+        "version": 1,
+        "serial": SERIAL,
+        "service_name": INSTANCE,
+        "last_address": ADDRESS,
+        "paired_at": "",
+    }
+    data.update(changes)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize("name", [INSTANCE + "\n", "a\nb", "na me", ""])
+def test_a_name_with_a_trailing_newline_or_spaces_is_rejected(
+    tmp_path: Path, name: str
+) -> None:
+    assert st.load(_write(tmp_path / "s.json", service_name=name)) is None
+
+
+@pytest.mark.parametrize(
+    "address",
+    ["1.2.3.4:0", "1.2.3.4:65536", "1.2.3.4:99999", "1.2.3.4:²", "1.2.3.4:5\n"],
+)
+def test_an_out_of_range_or_odd_port_is_rejected(tmp_path: Path, address: str) -> None:
+    assert st.load(_write(tmp_path / "s.json", last_address=address)) is None
+
+
+@pytest.mark.parametrize("address", ["1.2.3.4:1", "1.2.3.4:65535", "[fe80::1]:5555"])
+def test_ports_at_the_edges_are_accepted(tmp_path: Path, address: str) -> None:
+    device = st.load(_write(tmp_path / "s.json", last_address=address))
+    assert device is not None
+    assert device.last_address == address
+
+
+def test_a_huge_file_is_not_read(tmp_path: Path) -> None:
+    path = tmp_path / "s.json"
+    path.write_text(" " * (st.MAX_FILE_BYTES + 1), encoding="utf-8")
+
+    assert st.load(path) is None
+
+
+def test_deeply_nested_json_is_ignored_not_fatal(tmp_path: Path) -> None:
+    path = tmp_path / "s.json"
+    path.write_text("[" * 200_000 + "]" * 200_000, encoding="utf-8")
+
+    assert st.load(path) is None
+
+
+def test_a_file_the_size_limit_allows_still_loads(tmp_path: Path) -> None:
+    assert st.load(_write(tmp_path / "s.json")) == make(paired_at="")
+
+
+def test_save_syncs_the_data_before_the_rename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    order: list[str] = []
+    real_fsync, real_replace = os.fsync, os.replace
+    monkeypatch.setattr(os, "fsync", lambda fd: (order.append("fsync"), real_fsync(fd)))
+    monkeypatch.setattr(
+        os, "replace", lambda a, b: (order.append("replace"), real_replace(a, b))
+    )
+
+    assert st.save(tmp_path / "s.json", make()) is True
+
+    assert order == ["fsync", "replace"]

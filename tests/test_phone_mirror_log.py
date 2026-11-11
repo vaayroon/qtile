@@ -204,3 +204,93 @@ def test_a_real_setup_does_not_leak_into_the_next_test(
 def test_the_previous_real_setup_was_undone() -> None:
     assert plog.logger.propagate is True
     assert not any(isinstance(h, RotatingFileHandler) for h in plog.logger.handlers)
+
+
+# --- file mode (review fix) -----------------------------------------------------------
+
+
+def test_the_log_file_is_private(
+    tmp_path: Path, family: tuple[logging.Logger, logging.Logger, Capture]
+) -> None:
+    _parent, child, _seen = family
+    where = tmp_path / "phone_mirror.log"
+    old_umask = os.umask(0o022)
+    try:
+        plog.setup(child, where)
+        child.info("hello")
+    finally:
+        os.umask(old_umask)
+
+    assert stat.S_IMODE(where.stat().st_mode) == 0o600
+
+
+def test_an_older_log_with_loose_permissions_is_made_private(
+    tmp_path: Path, family: tuple[logging.Logger, logging.Logger, Capture]
+) -> None:
+    _parent, child, _seen = family
+    where = tmp_path / "phone_mirror.log"
+    where.write_text("old line\n")
+    where.chmod(0o644)
+
+    plog.setup(child, where)
+    child.info("new line")
+
+    assert stat.S_IMODE(where.stat().st_mode) == 0o600
+    assert where.read_text().startswith("old line\n")  # appended, not truncated
+
+
+def test_rotated_files_are_private_too(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    family: tuple[logging.Logger, logging.Logger, Capture],
+) -> None:
+    _parent, child, _seen = family
+    monkeypatch.setattr(plog, "MAX_BYTES", 400)
+    where = tmp_path / "phone_mirror.log"
+    old_umask = os.umask(0o022)
+    try:
+        plog.setup(child, where)
+        for index in range(100):
+            child.info("line %03d %s", index, "x" * 40)
+    finally:
+        os.umask(old_umask)
+
+    files = sorted(tmp_path.glob("phone_mirror.log*"))
+    assert len(files) == 4
+    assert {stat.S_IMODE(f.stat().st_mode) for f in files} == {0o600}
+
+
+# --- log injection (review fix) -----------------------------------------------------
+
+
+def test_escape_codes_and_carriage_returns_are_made_visible() -> None:
+    assert plog.sanitize("a\x1b[2Jb\rc") == "a\\x1b[2Jb\\rc"
+
+
+def test_tab_is_kept_and_plain_text_is_untouched() -> None:
+    assert plog.sanitize("a\tb plain: text") == "a\tb plain: text"
+
+
+@pytest.mark.parametrize("char", ["\x00", "\x07", "\x08", "\x0b", "\x0c", "\x7f"])
+def test_other_control_characters_are_escaped(char: str) -> None:
+    cleaned = plog.sanitize(f"x{char}y")
+    assert char not in cleaned
+    assert cleaned == f"x\\x{ord(char):02x}y"
+
+
+def test_a_newline_inside_a_message_cannot_forge_a_log_line() -> None:
+    assert plog.sanitize("ok\nINFO forged") == "ok\\nINFO forged"
+
+
+def test_sanitized_lines_gives_one_clean_line_per_line_of_output() -> None:
+    text = "first\r\nsecond \x1b[31mred\x1b[0m\n\nthird\n"
+
+    assert plog.sanitized_lines(text) == [
+        "first",
+        "second \\x1b[31mred\\x1b[0m",
+        "third",
+    ]
+
+
+def test_sanitized_lines_of_nothing_is_empty() -> None:
+    assert plog.sanitized_lines("  \n \r\n") == []

@@ -278,3 +278,60 @@ async def test_a_stubborn_kitty_is_killed_after_the_grace_period(
 
     spawn.process.kill.assert_called_once_with()
     assert not window.path.exists()
+
+
+# --- failed save and stale files (review fixes) ------------------------------------
+
+
+def test_a_failed_save_leaves_no_partial_png(
+    runtime: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Broken(FakeSegno):
+        def make(self, _payload: str, **_kwargs: Any) -> Any:
+            class Code:
+                def save(self, out: Any, **_kw: Any) -> None:
+                    out.write(b"partial")
+                    raise OSError("disk full")
+
+            return Code()
+
+    monkeypatch.setitem(sys.modules, "segno", Broken())
+
+    with pytest.raises(OSError, match="disk full"):
+        qr.render_png(PAYLOAD)
+
+    assert not (runtime / "qtile" / "pair-qr.png").exists()
+
+
+def test_a_failure_while_making_the_code_leaves_no_file(
+    runtime: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Broken(FakeSegno):
+        def make(self, _payload: str, **_kwargs: Any) -> Any:
+            raise ValueError("too long")
+
+    monkeypatch.setitem(sys.modules, "segno", Broken())
+
+    with pytest.raises(ValueError, match="too long"):
+        qr.render_png(PAYLOAD)
+
+    assert not (runtime / "qtile" / "pair-qr.png").exists()
+
+
+def test_remove_stale_png_deletes_a_leftover_file(runtime: Path) -> None:
+    folder = runtime / "qtile"
+    folder.mkdir()
+    (folder / "pair-qr.png").write_bytes(b"old secret")
+
+    assert qr.remove_stale_png() is True
+
+    assert not (folder / "pair-qr.png").exists()
+
+
+def test_remove_stale_png_with_nothing_to_remove_or_no_runtime_dir(
+    runtime: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    del runtime
+    assert qr.remove_stale_png() is False
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    assert qr.remove_stale_png() is False

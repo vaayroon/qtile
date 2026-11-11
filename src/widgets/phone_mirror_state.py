@@ -23,9 +23,13 @@ BACKOFF: tuple[float, ...] = (8.0, 16.0, 32.0, 64.0, 128.0, 300.0)
 MAX_ATTEMPTS = len(BACKOFF)
 
 _CONNECT_SUFFIX = "._adb-tls-connect._tcp"
-_INSTANCE = re.compile(r"^adb-(.+)-[A-Za-z0-9]+$")
-_NAME = re.compile(r"^[\w.-]+$")
-_ADDRESS = re.compile(r"^[A-Za-z0-9\[][A-Za-z0-9.:\[\]-]*:\d{1,5}$")
+MAX_FILE_BYTES = 64 * 1024  # the real file is ~200 bytes; refuse anything huge
+_MAX_PORT = 65535
+
+# ASCII only and fullmatch: `\d` matches other scripts and `$` a trailing newline.
+_INSTANCE = re.compile(r"adb-(.+)-[A-Za-z0-9]+")
+_NAME = re.compile(r"[A-Za-z0-9_.-]+")
+_ADDRESS = re.compile(r"([A-Za-z0-9\[][A-Za-z0-9.:\[\]-]*):([0-9]{1,5})")
 
 
 def backoff_delay(attempt: int) -> float | None:
@@ -46,7 +50,7 @@ def state_path(environ: Mapping[str, str] | None = None) -> Path:
 
 def serial_from_instance(instance: str) -> str:
     """`adb-<serial>-<random>` carries the USB serial; empty when it does not."""
-    match = _INSTANCE.match(instance)
+    match = _INSTANCE.fullmatch(instance)
     return match.group(1) if match and not match.group(1).startswith("-") else ""
 
 
@@ -91,18 +95,32 @@ def _from_data(data: object) -> RememberedDevice | None:
         return None
     if not (isinstance(serial, str) and isinstance(paired_at, str)):
         return None
-    if not _NAME.match(name) or not _ADDRESS.match(address):
+    if not valid_identity(name, address):
         return None
     return RememberedDevice(name, address, serial, paired_at)
+
+
+def valid_identity(name: str, address: str) -> bool:
+    """Is this a mDNS instance name and a `host:port` worth keeping?"""
+    found = _ADDRESS.fullmatch(address)
+    return (
+        _NAME.fullmatch(name) is not None
+        and found is not None
+        and 0 < int(found.group(2)) <= _MAX_PORT
+    )
 
 
 def load(path: Path) -> RememberedDevice | None:
     """The remembered phone, or None if the file is missing or not usable."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        with path.open("rb") as handle:
+            raw = handle.read(MAX_FILE_BYTES + 1)
+        if len(raw) > MAX_FILE_BYTES:
+            raise ValueError(f"larger than {MAX_FILE_BYTES} bytes")
+        data = json.loads(raw.decode("utf-8"))
     except FileNotFoundError:
         return None
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, TypeError, RecursionError) as exc:
         logger.warning("PhoneMirror: ignoring unreadable state file %s: %s", path, exc)
         return None
     device = _from_data(data)
@@ -127,6 +145,8 @@ def save(path: Path, device: RememberedDevice) -> bool:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)
             handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
         os.chmod(part, 0o600)
         os.replace(part, path)
     except OSError as exc:

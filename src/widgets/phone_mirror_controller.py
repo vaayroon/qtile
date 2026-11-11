@@ -67,6 +67,7 @@ from .phone_mirror_state import (
     serial_from_instance,
     state_path,
     transport_of,
+    valid_identity,
 )
 
 REFRESH_TTL = 2.0
@@ -508,6 +509,13 @@ class PhoneController:
 
     def _remember(self, instance: str, address: str) -> None:
         """Keep the phone by its mDNS identity; the port is only the last one seen."""
+        if not valid_identity(instance, address):
+            logger.warning(
+                "PhoneMirror: %r at %r is not a valid identity, not remembered",
+                plog.sanitize(instance),
+                plog.sanitize(address),
+            )
+            return
         previous = self.remembered
         paired_at = (
             previous.paired_at
@@ -940,7 +948,8 @@ class PhoneController:
             input_text=f"{secret}\n",
         )
         text = redact(text, secret)
-        logger.info("PhoneMirror: adb pair %s: %s", endpoint, text.strip())
+        for line in plog.sanitized_lines(text):
+            logger.info("PhoneMirror: adb pair %s: %s", endpoint, line)
         if rc != 0 or "successfully paired" not in text.lower():
             reason = map_failure(text)
             if reason is Reason.UNREACHABLE:  # a timeout while pairing
@@ -1110,7 +1119,7 @@ class PhoneController:
             line = await stream.readline()
             if not line:
                 return
-            text = line.decode(errors="replace").rstrip()
+            text = plog.sanitize(line.decode(errors="replace").rstrip())
             if text:
                 logger.info("scrcpy %s: %s", label, text)
                 tail.append(text)

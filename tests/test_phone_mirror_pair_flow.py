@@ -843,3 +843,80 @@ async def test_the_listeners_hear_about_connecting_after_a_match(
     await controller.pair()
 
     assert State.CONNECTING in heard
+
+
+# --- log injection and unicode digits (review fixes) ----------------------------------
+
+
+async def test_adb_pair_output_is_logged_one_clean_line_at_a_time(
+    controller: PhoneController,
+    fake: Fake,
+    caplog: pytest.LogCaptureFixture,
+    notes: MagicMock,
+) -> None:
+    del notes
+    fake.zenity = runner.Result(0, f"{HOST}:{PAIR_PORT}|123456", "")
+    fake.pair = runner.Result(1, "Failed: \x1b[31mbad\x1b[0m\rINFO forged\nsecond", "")
+    fake.mdns_check = "ADB mdns not available"
+
+    with caplog.at_level("INFO"):
+        await controller.pair()
+
+    assert "\x1b" not in caplog.text
+    assert "\r" not in caplog.text
+    lines = [r.getMessage() for r in caplog.records if "adb pair" in r.getMessage()]
+    prefix = f"PhoneMirror: adb pair {HOST}:{PAIR_PORT}: "
+    assert [line.removeprefix(prefix) for line in lines] == [
+        "Failed: \\x1b[31mbad\\x1b[0m",
+        "INFO forged",  # a forged level cannot start a line: the prefix stays
+        "second",
+    ]
+
+
+@pytest.mark.parametrize("endpoint", [f"{HOST}:²", f"{HOST}:٥٥"])
+async def test_a_manual_endpoint_with_unicode_digits_is_a_validation_message(
+    controller: PhoneController,
+    fake: Fake,
+    notes: MagicMock,
+    endpoint: str,
+) -> None:
+    fake.mdns_check = "ADB mdns not available"
+    fake.zenity = runner.Result(0, f"{endpoint}|123456", "")
+
+    await controller.pair()
+
+    assert "Invalid pairing details" in _last_body(notes)
+    assert "Unexpected" not in _bodies(notes)
+    assert fake.adb("pair") == []
+
+
+async def test_a_phone_with_an_invalid_instance_name_is_not_remembered(
+    controller: PhoneController,
+    fake: Fake,
+    caplog: pytest.LogCaptureFixture,
+    notes: MagicMock,
+) -> None:
+    del notes
+    odd = f"evil name\t_adb-tls-connect._tcp\t{HOST}:{CONNECT_PORT}\n"
+    phone_appears(fake, connect=odd)
+
+    with caplog.at_level("INFO"):
+        await controller.pair()
+
+    assert controller.state is State.READY  # pairing itself worked
+    assert controller.remembered is None
+    assert not ctl.state_path().exists()
+    assert "not remembered" in caplog.text
+
+
+async def test_a_phone_with_a_valid_instance_name_is_remembered(
+    controller: PhoneController, fake: Fake, notes: MagicMock
+) -> None:
+    del notes
+    phone_appears(fake)
+
+    await controller.pair()
+
+    assert controller.remembered is not None
+    assert controller.remembered.service_name == DEVICE
+    assert ctl.state_path().exists()
