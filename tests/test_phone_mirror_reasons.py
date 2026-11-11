@@ -8,6 +8,12 @@ from src.widgets.phone_mirror_reasons import (
     message_for,
 )
 
+# Real line from a live pairing run where the phone dropped the connection.
+PROTOCOL_FAULT = (
+    "adb pair 192.168.1.134:44667: Enter pairing code: \n"
+    "error: protocol fault (couldn't read status message): Success"
+)
+
 
 @pytest.mark.parametrize(
     ("text", "rc", "expected"),
@@ -22,6 +28,8 @@ from src.widgets.phone_mirror_reasons import (
         ("adb: more than one device/emulator", 1, Reason.MULTIPLE_DEVICES),
         ("Failed: Wrong password or connection was dropped.", 1, Reason.PAIR_REJECTED),
         ("mDNS discovery is not available", 1, Reason.MDNS_UNAVAILABLE),
+        (PROTOCOL_FAULT, 1, Reason.PAIR_CONNECTION_LOST),
+        ("error: connection reset by peer", 1, Reason.PAIR_CONNECTION_LOST),
         ("sh: adb: command not found", 127, Reason.MISSING_BINARY),
         ("something completely different", 1, Reason.UNKNOWN),
         ("", 1, Reason.UNKNOWN),
@@ -63,3 +71,17 @@ def test_messages_are_unique() -> None:
 
 def test_unauthorized_message_names_the_reason() -> None:
     assert "unauthorized" in message_for(Reason.UNAUTHORIZED).lower()
+
+
+def test_connection_lost_message_suggests_retrying_on_the_same_wifi() -> None:
+    text = message_for(Reason.PAIR_CONNECTION_LOST).lower()
+    assert "connection lost" in text
+    assert "again" in text
+    assert "same wi-fi network" in text
+    assert "code" not in text
+
+
+def test_the_rejected_message_only_blames_the_code_when_one_was_typed() -> None:
+    assert "code" in message_for(Reason.PAIR_REJECTED, typed_code=True).lower()
+    assert "code" not in message_for(Reason.PAIR_REJECTED).lower()
+    assert "code" not in message_for(Reason.PAIR_REJECTED, typed_code=False).lower()

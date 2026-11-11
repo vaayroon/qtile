@@ -20,6 +20,10 @@ DEVICE = "adb-56201FDCR0077W-I7p3gg"
 
 PAIR_OK = f"Successfully paired to {HOST}:{PAIR_PORT} [guid=adb-56201FDCR0077W-I7p3gg]"
 PAIR_WRONG = "Failed: Wrong password or invalid pairing code"
+PAIR_FAULT = (
+    f"adb pair {HOST}:{PAIR_PORT}: Enter pairing code: \n"
+    "error: protocol fault (couldn't read status message): Success"
+)
 CONNECT_OK = f"connected to {HOST}:{CONNECT_PORT}"
 MDNS_HEAD = "List of discovered mdns services\n"
 NOTHING = MDNS_HEAD
@@ -156,6 +160,10 @@ def _bodies(notes: MagicMock) -> str:
     return "\n".join(call.args[1] for call in notes.call_args_list)
 
 
+def _last_body(notes: MagicMock) -> str:
+    return str(notes.call_args_list[-1].args[1])
+
+
 def phone_appears(fake: Fake, *, after: int = 3, connect: str = CONNECT_LINE) -> None:
     """From the `after`-th mDNS poll on, the phone shows up under our name."""
     polls = {"n": 0}
@@ -255,8 +263,36 @@ async def test_wrong_code_stops_before_connect_and_says_so(
     await controller.pair()
 
     assert fake.adb("connect") == []
-    assert "rejected" in _bodies(notes).lower()
+    assert "code" not in _last_body(notes).lower()
+    assert "failed" in _last_body(notes).lower()
     assert controller.state is State.DISCONNECTED
+
+
+async def test_a_dropped_connection_in_the_qr_flow_is_not_blamed_on_a_code(
+    controller: PhoneController, fake: Fake, notes: MagicMock
+) -> None:
+    phone_appears(fake)
+    fake.pair = runner.Result(1, PAIR_FAULT, "")
+
+    await controller.pair()
+
+    body = _last_body(notes).lower()
+    assert fake.adb("connect") == []
+    assert "connection lost" in body
+    assert "same wi-fi network" in body
+    assert "code" not in body
+    assert controller.state is State.DISCONNECTED
+
+
+async def test_a_pairing_timeout_reads_as_a_lost_connection(
+    controller: PhoneController, fake: Fake, notes: MagicMock
+) -> None:
+    phone_appears(fake)
+    fake.pair = runner.Result(1, "error: timed out", "")
+
+    await controller.pair()
+
+    assert "connection lost" in _last_body(notes).lower()
 
 
 async def test_connect_entry_not_found_tells_the_user_and_does_not_connect(
@@ -605,7 +641,8 @@ async def test_wrong_manual_code_stops_before_connect(
     await controller.pair()
 
     assert fake.adb("connect") == []
-    assert "rejected" in _bodies(notes).lower()
+    assert "rejected" in _last_body(notes).lower()
+    assert "check the pairing code" in _last_body(notes).lower()
 
 
 # --- R3.4 / R3.5: discovery is read-only, failures only explain -------------------

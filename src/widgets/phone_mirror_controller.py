@@ -349,8 +349,9 @@ class PhoneController:
         except Exception as exc:
             logger.warning("PhoneMirror: notification failed: %s", exc)
 
-    def _fail(self, reason: Reason) -> None:
-        self.notify("error", NOTIFY_TITLE, message_for(reason), urgent=True)
+    def _fail(self, reason: Reason, *, typed_code: bool = False) -> None:
+        text = message_for(reason, typed_code=typed_code)
+        self.notify("error", NOTIFY_TITLE, text, urgent=True)
 
     # -- state -------------------------------------------------------------
 
@@ -924,9 +925,11 @@ class PhoneController:
             self.notify("error", NOTIFY_TITLE, _MANUAL_INVALID, urgent=True)
             return
         endpoint, code = parsed
-        await self._pair_and_connect(endpoint, code)
+        await self._pair_and_connect(endpoint, code, typed_code=True)
 
-    async def _pair_and_connect(self, endpoint: str, secret: str) -> None:
+    async def _pair_and_connect(
+        self, endpoint: str, secret: str, *, typed_code: bool = False
+    ) -> None:
         adb = self.resolve("adb_path")
         self.state = State.CONNECTING
         self._changed()
@@ -940,8 +943,12 @@ class PhoneController:
         logger.info("PhoneMirror: adb pair %s: %s", endpoint, text.strip())
         if rc != 0 or "successfully paired" not in text.lower():
             reason = map_failure(text)
+            if reason is Reason.UNREACHABLE:  # a timeout while pairing
+                reason = Reason.PAIR_CONNECTION_LOST
+            elif reason is Reason.UNKNOWN:
+                reason = Reason.PAIR_REJECTED
             self.state = State.DISCONNECTED
-            self._fail(Reason.PAIR_REJECTED if reason is Reason.UNKNOWN else reason)
+            self._fail(reason, typed_code=typed_code)
             return
         host = endpoint.rpartition(":")[0].strip("[]")
         found = await self._find_connect_entry(host)
