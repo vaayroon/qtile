@@ -70,6 +70,7 @@ class PhoneMirrorWidget(base.BackgroundPoll):
         ("format_ready", "PHONE:READY", "Text when a device is connected."),
         ("format_disconnected", "PHONE:DISC", "Text when no device is connected."),
         ("format_mirroring", "PHONE:MIRROR", "Text while scrcpy is running."),
+        ("format_connecting", "PHONE:CONN", "Text while pairing or connecting."),
         ("format_error", "PHONE:ERR", "Text when required binaries are missing."),
         (
             "format_pairing",
@@ -149,6 +150,7 @@ class PhoneMirrorWidget(base.BackgroundPoll):
             State.DISCONNECTED: self.format_disconnected,
             State.ERROR: self.format_error,
             State.PAIRING: self._pairing_text(),
+            State.CONNECTING: self.format_connecting,
         }[state]
         device = self.controller.resolve("device")
         if state in (State.READY, State.MIRROR) and device:

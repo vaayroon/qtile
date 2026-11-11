@@ -717,3 +717,92 @@ def test_phone_pair_toggle_is_synchronous_and_schedules_a_task(
 
     assert len(created) == 1
     assert not asyncio.iscoroutinefunction(ctl.phone_pair_toggle)
+
+
+# --- R2.10: states along the pairing flow -----------------------------------------
+
+
+async def test_qr_pairing_goes_pairing_connecting_ready(
+    controller: PhoneController, fake: Fake, notes: MagicMock
+) -> None:
+    del notes
+    phone_appears(fake)
+
+    await controller.pair()
+
+    assert list(controller.history) == [State.PAIRING, State.CONNECTING, State.READY]
+
+
+async def test_a_rejected_code_goes_pairing_connecting_disconnected(
+    controller: PhoneController, fake: Fake, notes: MagicMock
+) -> None:
+    del notes
+    phone_appears(fake)
+    fake.pair = runner.Result(1, PAIR_WRONG, "")
+
+    await controller.pair()
+
+    assert list(controller.history) == [
+        State.PAIRING,
+        State.CONNECTING,
+        State.DISCONNECTED,
+    ]
+
+
+async def test_connecting_is_shown_while_adb_pair_runs(
+    controller: PhoneController, fake: Fake, notes: MagicMock
+) -> None:
+    del notes
+    phone_appears(fake)
+    real = fake.run
+    seen: list[State] = []
+
+    async def spy(argv: Any, **kwargs: Any) -> runner.Result:
+        if list(argv)[1:2] in (["pair"], ["connect"]):
+            seen.append(controller.state)
+        return await real(argv, **kwargs)
+
+    controller._run = spy
+
+    await controller.pair()
+
+    assert seen == [State.CONNECTING, State.CONNECTING]
+
+
+async def test_manual_pairing_shows_connecting_then_ready(
+    controller: PhoneController, fake: Fake, notes: MagicMock
+) -> None:
+    del notes
+    fake.qr_error = qr.QrUnavailable("segno")
+    fake.zenity = runner.Result(0, f"{HOST}:{PAIR_PORT}|123456\n", "")
+    fake.mdns = [MDNS_HEAD + CONNECT_LINE]
+
+    await controller.pair()
+
+    assert list(controller.history) == [State.CONNECTING, State.READY]
+
+
+async def test_a_cancelled_pairing_goes_back_to_disconnected(
+    controller: PhoneController, fake: Fake, notes: MagicMock
+) -> None:
+    del notes
+    task = asyncio.ensure_future(controller.pair())
+    while not fake.windows:
+        await asyncio.sleep(0)
+    controller.cancel_pairing()
+    await task
+
+    assert list(controller.history) == [State.PAIRING, State.DISCONNECTED]
+
+
+async def test_the_listeners_hear_about_connecting_after_a_match(
+    controller: PhoneController, fake: Fake, notes: MagicMock
+) -> None:
+    del notes
+    phone_appears(fake)
+    heard: list[State] = []
+    controller.attach(lambda: heard.append(controller.state))
+
+    await controller.pair()
+
+    assert State.CONNECTING in heard

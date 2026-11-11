@@ -569,7 +569,7 @@ A custom widget ([`src/widgets/phone_mirror.py`](src/widgets/phone_mirror.py)) t
 
 **Middle click while mirroring** still flips the screen-off preference, which scrcpy only reads at start, so it applies on the next start. A notification says so and reminds you that `Alt+O` and `Alt+Shift+O` inside the scrcpy window turn the phone screen off and on right now.
 
-Status text: `PHONE:READY` (connected, idle) · `PHONE:MIRROR` (running) · `PHONE:DISC` (no device) · `PHONE:ERR` (adb/scrcpy not found) · `PHONE:PAIR 02:41` (pairing, with the time left). If no device can be reached it opens a `zenity` dialog to fix paths and targets on the fly.
+Status text: `PHONE:READY` (connected, idle) · `PHONE:MIRROR` (running) · `PHONE:DISC` (no device) · `PHONE:ERR` (adb/scrcpy not found) · `PHONE:PAIR 02:41` (pairing, with the time left). · `PHONE:CONN` (pairing or connecting step: `adb pair` / `adb connect`) If no device can be reached it opens a `zenity` dialog to fix paths and targets on the fly.
 
 Start and failure messages are sent as desktop notifications that name the reason (unauthorized, offline, unreachable, missing binary), and scrcpy's output goes to the dedicated phone mirror log `$XDG_STATE_HOME/qtile/phone_mirror.log` (default `~/.local/state/qtile/phone_mirror.log`, INFO and above, rotated at about 1 MB with 3 backups), not to `qtile.log`. Each mirror start and stop is logged with the time, serial, transport (`usb` or `wifi`), preset and exit code. Warnings and errors are also sent to `qtile.log`. The pairing password is never logged.
 

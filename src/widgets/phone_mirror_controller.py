@@ -146,6 +146,32 @@ class State(Enum):
     DISCONNECTED = "disconnected"
     ERROR = "error"
     PAIRING = "pairing"
+    CONNECTING = "connecting"
+
+
+# Where each state may go next. Staying in a state is always fine. Anything not
+# listed is rejected, e.g. DISCONNECTED -> MIRROR: mirroring needs a READY device.
+TRANSITIONS: dict[State, frozenset[State]] = {
+    State.DISCONNECTED: frozenset(
+        {State.READY, State.CONNECTING, State.PAIRING, State.ERROR}
+    ),
+    State.CONNECTING: frozenset({State.READY, State.DISCONNECTED, State.ERROR}),
+    State.READY: frozenset(
+        {
+            State.MIRROR,
+            State.DISCONNECTED,
+            State.CONNECTING,
+            State.PAIRING,
+            State.ERROR,
+        }
+    ),
+    State.MIRROR: frozenset({State.READY, State.DISCONNECTED, State.ERROR}),
+    State.PAIRING: frozenset({State.CONNECTING, State.DISCONNECTED, State.ERROR}),
+    State.ERROR: frozenset(
+        {State.DISCONNECTED, State.READY, State.CONNECTING, State.PAIRING}
+    ),
+}
+HISTORY = 32  # accepted transitions kept for debugging and tests
 
 
 def to_bool(value: str) -> bool:
@@ -169,7 +195,8 @@ class PhoneController:
         self._spawn = spawn
         self._which = which
         self._clock = clock
-        self.state = State.DISCONNECTED
+        self._state = State.DISCONNECTED
+        self.history: deque[State] = deque(maxlen=HISTORY)
         self._lock = asyncio.Lock()
         self._defaults: dict[str, str] = dict(DEFAULTS)
         self._session: dict[str, str] = {}
@@ -184,6 +211,28 @@ class PhoneController:
         self._serial = ""  # device picked in the selector, kept for the session
         self._last_refresh: float | None = None
         self._listeners: list[Callable[[], None]] = []
+
+    # -- state -------------------------------------------------------------
+
+    @property
+    def state(self) -> State:
+        return self._state
+
+    @state.setter
+    def state(self, new: State) -> None:
+        old = self._state
+        if new is old:
+            return
+        if new not in TRANSITIONS[old]:
+            logger.warning(
+                "PhoneMirror: invalid state change %s -> %s rejected",
+                old.name,
+                new.name,
+            )
+            return
+        logger.info("PhoneMirror: state %s -> %s", old.name, new.name)
+        self._state = new
+        self.history.append(new)
 
     # -- settings ----------------------------------------------------------
 
@@ -362,6 +411,14 @@ class PhoneController:
         )
         return text
 
+    async def _connect_user(self) -> str:
+        """Connect the wireless target for an action and show CONNECTING meanwhile."""
+        if not self.resolve("wireless_target"):
+            return ""
+        self.state = State.CONNECTING
+        self._changed()
+        return await self._connect()
+
     async def refresh(self) -> State:
         if self._lock.locked():
             return self.state
@@ -495,7 +552,7 @@ class PhoneController:
                     target = self.resolve("device")
                 if target:
                     await self._exec(build_disconnect_argv(adb, target))
-                    await self._connect()
+                    await self._connect_user()
                 serial = await self._ensure_ready()
                 if serial is not None:
                     restarted = False
@@ -547,6 +604,9 @@ class PhoneController:
 
     async def pair(self) -> None:
         """Pair over Wi-Fi with a QR code, or by hand when that is not possible."""
+        if self.is_mirroring():
+            self.notify("pair", NOTIFY_TITLE, "Stop mirroring before pairing a phone.")
+            return
         if self._lock.locked():
             logger.info("PhoneMirror: busy, pairing ignored")
             return
@@ -614,13 +674,15 @@ class PhoneController:
         finally:
             await window.close()
             self._pairing = None
-            self.state = State.DISCONNECTED
         if outcome == "cancelled":
+            self.state = State.DISCONNECTED
             self.notify("pair", NOTIFY_TITLE, "Pairing cancelled.")
         elif entry is None:
+            self.state = State.DISCONNECTED
             self.notify("error", NOTIFY_TITLE, _DISCOVERY_FAILED, urgent=True)
             await self._manual_pair()
         elif not session.consume(self._clock()):
+            self.state = State.DISCONNECTED
             self._fail(Reason.EXPIRED)
         else:
             await self._pair_and_connect(entry.address, session.password)
@@ -672,6 +734,8 @@ class PhoneController:
 
     async def _pair_and_connect(self, endpoint: str, secret: str) -> None:
         adb = self.resolve("adb_path")
+        self.state = State.CONNECTING
+        self._changed()
         # The code goes through stdin so it never shows up in argv or `ps`.
         rc, text = await self._exec(
             build_pair_argv(adb, endpoint),
@@ -688,6 +752,7 @@ class PhoneController:
         host = endpoint.rpartition(":")[0].strip("[]")
         address = await self._find_connect_address(host)
         if address is None:
+            self.state = State.DISCONNECTED
             self.notify("error", NOTIFY_TITLE, _NO_CONNECT_ENTRY, urgent=True)
             return
         rc, text = await self._exec(build_connect_argv(adb, address))
@@ -795,16 +860,17 @@ class PhoneController:
 
         serial, text = await self._find_device()
         if serial is None:
-            text += await self._connect()
+            text += await self._connect_user()
             serial, more = await self._find_device()
             text += more
         reason = map_failure(text)
         if serial is None and reason not in _USER_BLOCKED and await self._prompt():
-            text += await self._connect()
+            text += await self._connect_user()
             serial, more = await self._find_device()
             text += more
             reason = map_failure(text)
         if serial is not None:
+            self.state = State.READY
             return serial
 
         self.state = State.DISCONNECTED
