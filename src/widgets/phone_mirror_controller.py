@@ -79,10 +79,15 @@ VOLUME_STEP_MIN = 1
 VOLUME_STEP_MAX = 20
 TAIL_LINES = 20
 # scrcpy lines that mean the hardware decoder failed mid-stream (scrcpy 5.0.1).
-HWDEC_FAILURE_MARKERS = ("hardware accelerator failed", "decoding (video) failed")
+# Only this line proves the hardware decoder broke. "Decoding (video) failed" alone
+# also shows up for a corrupt packet on a flaky link, so it is not a trigger; after
+# the marker it tells us scrcpy is ending because of the decoder.
+HWDEC_FAILURE_MARKER = "hardware accelerator failed"
+HWDEC_FATAL_MARKER = "decoding (video) failed"
 HWDEC_FALLBACK_NOTICE = "Hardware video decoding failed; using software decoding"
 NOTIFY_TITLE = "Phone mirror"
 NOTIFY_IDS = {"status": 7101, "error": 7102, "pair": 7103}
+GIVE_UP_GRACE = 10.0  # one more wait after the last attempt, so a probe can see it
 PAIR_POLL_INTERVAL = 2.0  # seconds between `adb mdns services` queries
 PAIR_TTL_MIN = 120.0
 PAIR_TTL_MAX = 300.0
@@ -256,6 +261,8 @@ class PhoneController:
         self._hwdec_override = ""
         self._hwdec_fallback_used = False
         self._hwdec_failed: Any = None  # the scrcpy whose decoder failed
+        self._hwdec_fatal: Any = None  # ... and that ended because of it
+        self._closed = False  # shutdown() ran; attach() reopens
         self._hwdec_task: asyncio.Task[None] | None = None
         self._generation = 0  # bumped by every action that changes the state
         self._labels: dict[str, str] = {}
@@ -347,6 +354,7 @@ class PhoneController:
     # -- listeners ---------------------------------------------------------
 
     def attach(self, listener: Callable[[], None]) -> None:
+        self._closed = False
         if listener not in self._listeners:
             self._listeners.append(listener)
 
@@ -617,7 +625,7 @@ class PhoneController:
         device = self.remembered
         if device is None or state is State.ERROR:
             return
-        if any(device.matches(serial) for serial in self._seen_ready):
+        if self._remembered_is_ready():
             came_back = self._attempts > 0
             self._session_ready = True
             self._startup_tried = True
@@ -635,10 +643,10 @@ class PhoneController:
 
     async def _startup_attempt(self) -> None:
         """The one silent try at login: no timer, no notification, no new state."""
-        if self._lock.locked():
+        if self._lock.locked() or self._closed:
             return
         async with self._lock:
-            if self.remembered is None or self.is_mirroring():
+            if self._closed or self.remembered is None or self.is_mirroring():
                 return
             logger.info("PhoneMirror: startup: one silent attempt to reach the phone")
             try:
@@ -659,7 +667,11 @@ class PhoneController:
             while True:
                 delay = backoff_delay(self._attempts)
                 if delay is None:
-                    self._give_up()
+                    # The last attempt may have worked: give the next probe time
+                    # to see the phone. A probe that does ends this task.
+                    await self._sleep(GIVE_UP_GRACE)
+                    if not self._remembered_is_ready():
+                        self._give_up()
                     return
                 await self._sleep(delay)
                 if self._lock.locked():
@@ -670,6 +682,12 @@ class PhoneController:
         finally:
             if self._reconnect_task is asyncio.current_task():
                 self._reconnect_task = None
+
+    def _remembered_is_ready(self) -> bool:
+        device = self.remembered
+        return device is not None and any(
+            device.matches(serial) for serial in self._seen_ready
+        )
 
     def _give_up(self) -> None:
         self._exhausted = True
@@ -788,6 +806,10 @@ class PhoneController:
             await asyncio.shield(reaper)
 
     def shutdown(self) -> None:
+        self._closed = True
+        for task in (self._hwdec_task, self._startup_task):
+            if task is not None and not task.done():
+                task.cancel()
         self._reset_reconnect()
         self._abort_pairing()
         self._stop()
@@ -1218,11 +1240,16 @@ class PhoneController:
 
         def on_line(text: str) -> None:
             lowered = text.lower()
+            if self._stop_requested is proc:
+                return
+            if self._hwdec_failed is proc:
+                if HWDEC_FATAL_MARKER in lowered:
+                    self._hwdec_fatal = proc  # scrcpy ends because of the decoder
+                return
             if (
                 hwdec == "disabled"
                 or self._hwdec_fallback_used
-                or self._stop_requested is proc
-                or not any(mark in lowered for mark in HWDEC_FAILURE_MARKERS)
+                or HWDEC_FAILURE_MARKER not in lowered
             ):
                 return
             self._hwdec_fallback_used = True  # at most one automatic restart
@@ -1241,13 +1268,20 @@ class PhoneController:
     async def _hwdec_restart(self, proc: Any, serial: str) -> None:
         """Stop the scrcpy whose decoder failed and start it again in software."""
         async with self._lock:
-            if self._stop_requested is proc or (
-                self._process is not None and self._process is not proc
+            if (
+                self._closed
+                or self._stop_requested is proc
+                or (self._process is not None and self._process is not proc)
+                # scrcpy ended on its own for another reason (window closed, phone
+                # gone): only an exit caused by the decoder failure is restarted
+                or (proc.returncode is not None and self._hwdec_fatal is not proc)
             ):
-                return  # the user stopped or switched it meanwhile
+                return
             try:
                 self._stop()  # no-op if scrcpy already ended by itself
                 await self._settled()
+                if self._closed:  # shutdown ran while the old scrcpy was stopping
+                    return
                 await self._start(serial)
                 if self.is_mirroring():
                     self.notify("status", NOTIFY_TITLE, HWDEC_FALLBACK_NOTICE)
@@ -1277,7 +1311,7 @@ class PhoneController:
             self._process = None
             self._mirror_serial = ""
             self.state = State.READY
-        if rc != 0 and self._stop_requested is not proc and self._hwdec_failed is proc:
+        if rc != 0 and self._stop_requested is not proc and self._hwdec_fatal is proc:
             logger.info("PhoneMirror: scrcpy ended after a decoding failure")
         elif rc != 0 and self._stop_requested is not proc:
             reason = map_failure("\n".join(tail), rc)

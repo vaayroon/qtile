@@ -5,7 +5,7 @@ The failure lines are the real output of scrcpy 5.0.1 when its default
 """
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -111,6 +111,23 @@ def sequence(
     return argvs
 
 
+async def until(condition: Callable[[], bool], timeout: float = 5.0) -> None:
+    """Wait for a condition instead of a fixed time: fast when it holds, bounded."""
+
+    async def poll() -> None:
+        while not condition():
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(poll(), timeout)
+
+
+async def drained(process: FakeProcess) -> None:
+    """Every line the process printed has been read and handled."""
+    await until(lambda: not process.stderr._buffer)
+    for _ in range(10):  # let anything a line triggered get scheduled
+        await asyncio.sleep(0)
+
+
 async def settled(controller: PhoneController) -> None:
     task = controller._hwdec_task
     if task is not None:
@@ -189,7 +206,7 @@ async def test_a_hardware_decoding_failure_restarts_once_in_software(
 
     with caplog.at_level("INFO"):
         await controller.toggle()
-        await asyncio.sleep(0.01)
+        await until(lambda: controller._hwdec_task is not None)
         await settled(controller)
 
     assert len(argvs) == 2
@@ -212,7 +229,7 @@ async def test_a_scrcpy_that_ignores_sigterm_is_killed_before_the_restart(
     argvs = sequence(controller, [first, second])
 
     await controller.toggle()
-    await asyncio.sleep(0.01)
+    await until(lambda: controller._hwdec_task is not None)
     await settled(controller)
 
     first.kill.assert_called_once()
@@ -229,7 +246,7 @@ async def test_a_failure_that_also_ends_scrcpy_by_itself_still_restarts(
     argvs = sequence(controller, [first, second])
 
     await controller.toggle()
-    await asyncio.sleep(0.01)
+    await until(lambda: controller._hwdec_task is not None)
     await settled(controller)
 
     assert len(argvs) == 2
@@ -238,40 +255,62 @@ async def test_a_failure_that_also_ends_scrcpy_by_itself_still_restarts(
     assert not any("stopped unexpectedly" in b for b in _bodies(notes))
 
 
-@pytest.mark.parametrize(
-    "line",
-    [
-        "ERROR: [FFmpeg] hardware accelerator failed to decode picture",
-        "ERROR: Decoding (video) failed",
-    ],
-)
-async def test_either_failure_line_alone_triggers_the_fallback(
-    controller: PhoneController, notes: MagicMock, line: str
+async def test_the_accelerator_line_alone_triggers_the_fallback(
+    controller: PhoneController, notes: MagicMock
 ) -> None:
     del notes
+    line = "ERROR: [FFmpeg] hardware accelerator failed to decode picture"
     argvs = sequence(controller, [FakeProcess(stderr=[line]), FakeProcess()])
 
     await controller.toggle()
-    await asyncio.sleep(0.01)
+    await until(lambda: controller._hwdec_task is not None)
     await settled(controller)
 
     assert [_flag(a, "--hwdec") for a in argvs] == ["auto", "disabled"]
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        ["ERROR: Decoding (video) failed"],
+        [  # a corrupt packet on a flaky Wi-Fi link, no hardware involved
+            "ERROR: [FFmpeg] Invalid data found when processing input",
+            "ERROR: Decoder 'video': could not send video packet: Invalid data",
+            "ERROR: Decoding (video) failed",
+        ],
+    ],
+)
+async def test_a_generic_decoding_failure_does_not_trigger_the_fallback(
+    controller: PhoneController, notes: MagicMock, lines: list[str]
+) -> None:
+    first = FakeProcess(stderr=lines)
+    argvs = sequence(controller, [first, FakeProcess()])
+
+    await controller.toggle()
+    await drained(first)
+
+    assert len(argvs) == 1
+    assert controller._hwdec_task is None
+    assert controller._hwdec_override == ""
+    assert NOTICE not in _bodies(notes)
+    assert controller.is_mirroring()
 
 
 async def test_it_never_loops_even_when_software_decoding_also_fails(
     controller: PhoneController, notes: MagicMock
 ) -> None:
     del notes
-    argvs = sequence(
-        controller, [FakeProcess(stderr=HW_FAILURE), FakeProcess(stderr=HW_FAILURE)]
-    )
+    second = FakeProcess(stderr=HW_FAILURE)
+    argvs = sequence(controller, [FakeProcess(stderr=HW_FAILURE), second])
 
     await controller.toggle()
-    await asyncio.sleep(0.01)
+    await until(lambda: controller._hwdec_task is not None)
+    task = controller._hwdec_task
     await settled(controller)
-    await asyncio.sleep(0.05)
+    await drained(second)
 
     assert len(argvs) == 2
+    assert controller._hwdec_task is task
 
 
 async def test_the_software_choice_lasts_for_the_session_and_is_not_repeated(
@@ -281,10 +320,10 @@ async def test_the_software_choice_lasts_for_the_session_and_is_not_repeated(
         controller, [FakeProcess(stderr=HW_FAILURE), FakeProcess(), FakeProcess()]
     )
     await controller.toggle()
-    await asyncio.sleep(0.01)
+    await until(lambda: controller._hwdec_task is not None)
     await settled(controller)
     await controller.toggle()  # stop
-    await asyncio.sleep(0.05)
+    await until(lambda: controller._stopping is None and not controller.is_mirroring())
 
     await controller.toggle()  # start again, later in the same session
 
@@ -298,10 +337,11 @@ async def test_a_user_who_already_chose_disabled_gets_no_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("QTILE_PHONE_MIRROR_HWDEC", "disabled")
-    argvs = sequence(controller, [FakeProcess(stderr=HW_FAILURE, exit_rc=1)])
+    first = FakeProcess(stderr=HW_FAILURE, exit_rc=1)
+    argvs = sequence(controller, [first])
 
     await controller.toggle()
-    await asyncio.sleep(0.05)
+    await until(lambda: controller._watcher.done())
 
     assert len(argvs) == 1
     assert controller._hwdec_task is None
@@ -317,7 +357,7 @@ async def test_other_scrcpy_errors_do_not_trigger_the_fallback(
     )
 
     await controller.toggle()
-    await asyncio.sleep(0.05)
+    await until(lambda: controller._watcher.done())
 
     assert len(argvs) == 1
     assert NOTICE not in _bodies(notes)
@@ -333,7 +373,7 @@ async def test_a_manual_stop_before_the_failure_is_read_does_not_restart(
         process.stderr.feed_data(f"{line}\n".encode())
 
     await controller.toggle()  # the user stops it before the lines are read
-    await asyncio.sleep(0.05)
+    await until(lambda: controller._watcher.done())
 
     assert len(argvs) == 1
     assert NOTICE not in _bodies(notes)
@@ -347,8 +387,120 @@ async def test_the_fallback_only_touches_the_same_serial(
     argvs = sequence(controller, [FakeProcess(stderr=HW_FAILURE), FakeProcess()])
 
     await controller.toggle()
-    await asyncio.sleep(0.01)
+    await until(lambda: controller._hwdec_task is not None)
     await settled(controller)
 
     assert {a[a.index("-s") + 1] for a in argvs} == {"192.168.1.10:5555"}
     assert {c[0] for c in fake.calls} <= {"adb"}  # no other tool was involved
+
+
+# --- shutdown, and scrcpy that already ended ------------------------------------------
+
+
+async def test_shutdown_while_the_restart_waits_does_not_start_a_second_scrcpy(
+    controller: PhoneController,
+    notes: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ctl, "STOP_GRACE", 0.2)
+    first = FakeProcess(stderr=HW_FAILURE, stubborn=True)  # ignores SIGTERM
+    second = FakeProcess()
+    argvs = sequence(controller, [first, second])
+    await controller.toggle()
+    await until(lambda: controller._hwdec_task is not None)
+    await until(lambda: controller._stopping is first)  # the restart is in _settled()
+    task = controller._hwdec_task
+
+    controller.shutdown()
+    await until(lambda: first.returncode is not None and controller._stopping is None)
+    for _ in range(10):
+        await asyncio.sleep(0)
+
+    assert task is not None
+    assert task.done()
+    assert len(argvs) == 1
+    assert not controller.is_mirroring()
+    assert NOTICE not in _bodies(notes)
+
+
+async def test_a_closed_controller_does_not_restart_even_if_the_task_is_not_cancelled(
+    controller: PhoneController, notes: MagicMock
+) -> None:
+    first = FakeProcess(stderr=HW_FAILURE)
+    argvs = sequence(controller, [first, FakeProcess()])
+    await controller.toggle()
+    await drained(first)
+    await settled(controller)
+    assert len(argvs) == 2  # the normal restart did happen
+
+    controller.shutdown()
+    await controller._hwdec_restart(first, "192.168.1.10:5555")  # a late call
+
+    assert len(argvs) == 2
+    assert NOTICE in _bodies(notes)
+    assert not controller.is_mirroring()
+
+
+async def test_attaching_again_after_a_shutdown_reopens_the_controller(
+    controller: PhoneController,
+) -> None:
+    controller.shutdown()
+    assert controller._closed
+
+    controller.attach(lambda: None)
+
+    assert not controller._closed
+
+
+async def test_a_phone_that_dropped_after_the_accelerator_line_is_not_restarted(
+    controller: PhoneController, notes: MagicMock
+) -> None:
+    # only the accelerator line, then scrcpy ends by itself (the phone went away)
+    line = "ERROR: [FFmpeg] hardware accelerator failed to decode picture"
+    first = FakeProcess(stderr=[line], exit_rc=1)
+    argvs = sequence(controller, [first, FakeProcess()])
+
+    await controller.toggle()
+    await until(lambda: controller._hwdec_task is not None)
+    await settled(controller)
+    await until(lambda: controller._watcher.done())
+
+    assert len(argvs) == 1
+    assert not controller.is_mirroring()
+    assert NOTICE not in _bodies(notes)
+    assert any("stopped unexpectedly" in b for b in _bodies(notes))
+
+
+async def test_a_window_closed_by_the_user_after_the_accelerator_line_is_not_restarted(
+    controller: PhoneController, notes: MagicMock
+) -> None:
+    line = "ERROR: [FFmpeg] hardware accelerator failed to decode picture"
+    first = FakeProcess(stderr=[line], exit_rc=0)  # the user closed the window
+    argvs = sequence(controller, [first, FakeProcess()])
+
+    await controller.toggle()
+    await until(lambda: controller._hwdec_task is not None)
+    await settled(controller)
+    await until(lambda: controller._watcher.done())
+
+    assert len(argvs) == 1
+    assert not controller.is_mirroring()
+    assert controller.state is State.READY
+    assert NOTICE not in _bodies(notes)
+    assert not any("stopped unexpectedly" in b for b in _bodies(notes))
+
+
+async def test_scrcpy_that_ends_because_of_the_decoder_failure_still_restarts(
+    controller: PhoneController, notes: MagicMock
+) -> None:
+    # the whole real sequence, then scrcpy exits on its own: the exit is the decoder's
+    first = FakeProcess(stderr=HW_FAILURE, exit_rc=1)
+    argvs = sequence(controller, [first, FakeProcess()])
+
+    await controller.toggle()
+    await until(lambda: controller._hwdec_task is not None)
+    await settled(controller)
+
+    assert [_flag(a, "--hwdec") for a in argvs] == ["auto", "disabled"]
+    assert controller.is_mirroring()
+    assert _bodies(notes).count(NOTICE) == 1

@@ -32,6 +32,8 @@ HEAD = "List of discovered mdns services\n"
 NO_DEVICES = "List of devices attached\n\n"
 PAIR_PORT = 35715
 PAIR_OK = f"Successfully paired to {HOST}:{PAIR_PORT} [guid={INSTANCE}]"
+# The six backoff waits, then one grace wait before giving up.
+ALL_DELAYS = [8.0, 16.0, 32.0, 64.0, 128.0, 300.0, ctl.GIVE_UP_GRACE]
 
 
 def connect_line(port: int, instance: str = INSTANCE, host: str = HOST) -> str:
@@ -485,7 +487,7 @@ async def test_the_delays_are_8_16_32_64_128_300_and_then_it_stops(
     await tick(controller, clock)
     await settle(controller)
 
-    assert sleeper.delays == [8.0, 16.0, 32.0, 64.0, 128.0, 300.0]
+    assert sleeper.delays == ALL_DELAYS
     assert len(fake.connects()) == 6
     body = notes.call_args.args[1]
     assert "6 attempts" in body
@@ -542,7 +544,8 @@ async def test_every_attempt_waits_first_so_there_is_no_busy_loop(
     await tick(controller, clock)
     await settle(controller)
 
-    assert order == ["sleep", "connect"] * 6
+    # each attempt waits first, then one grace wait before giving up
+    assert order == ["sleep", "connect"] * 6 + ["sleep"]
 
 
 async def test_success_on_the_third_attempt_ends_in_ready_and_stops(
@@ -599,7 +602,7 @@ async def test_the_budget_is_back_after_a_success(
     await tick(controller, clock)
     await settle(controller)
 
-    assert sleeper.delays == [8.0, 16.0, 32.0, 64.0, 128.0, 300.0]
+    assert sleeper.delays == ALL_DELAYS
 
 
 async def test_a_phone_that_comes_back_resets_a_spent_budget(
@@ -758,7 +761,7 @@ async def test_an_attempt_is_skipped_while_another_action_holds_the_lock(
     await settle(controller)
 
     # two timers fired with the lock held: no attempt was made or counted
-    assert sleeper.delays == [8.0, 8.0, 8.0, 16.0, 32.0, 64.0, 128.0, 300.0]
+    assert sleeper.delays == [8.0, 8.0, 8.0, *ALL_DELAYS[1:]]
     assert len(fake.connects()) == 6
 
 
@@ -905,7 +908,7 @@ async def test_a_crash_in_an_attempt_is_contained(
     await tick(controller, clock)
     await settle(controller)
 
-    assert sleeper.delays == [8.0, 16.0, 32.0, 64.0, 128.0, 300.0]
+    assert sleeper.delays == ALL_DELAYS
     assert controller.state is State.DISCONNECTED
 
 
@@ -975,7 +978,7 @@ async def test_a_startup_attempt_that_works_is_silent_and_arms_the_backoff(
     await tick(controller, clock)
     await settle(controller)
 
-    assert sleeper.delays == [8.0, 16.0, 32.0, 64.0, 128.0, 300.0]
+    assert sleeper.delays == ALL_DELAYS
 
 
 async def test_a_phone_that_was_ready_in_this_session_and_drops_starts_the_backoff(
@@ -990,7 +993,7 @@ async def test_a_phone_that_was_ready_in_this_session_and_drops_starts_the_backo
     await tick(controller, clock)
     await settle(controller)
 
-    assert sleeper.delays == [8.0, 16.0, 32.0, 64.0, 128.0, 300.0]
+    assert sleeper.delays == ALL_DELAYS
     assert len(fake.connects()) == 6
 
 
@@ -1026,7 +1029,7 @@ async def test_connected_but_still_offline_runs_out_after_six_attempts(
         await tick(controller, clock)
         await pump()
 
-    assert sleeper.delays == [8.0, 16.0, 32.0, 64.0, 128.0, 300.0]
+    assert sleeper.delays == ALL_DELAYS
     assert len(fake.connects()) == 6
     assert controller._exhausted
     assert controller._reconnect_task is None
@@ -1114,4 +1117,134 @@ async def test_mirroring_the_remembered_phone_arms_the_backoff_for_a_later_drop(
     await tick(controller, clock)
     await settle(controller)
 
-    assert sleeper.delays == [8.0, 16.0, 32.0, 64.0, 128.0, 300.0]
+    assert sleeper.delays == ALL_DELAYS
+
+
+# --- the last attempt gets a chance to be observed ----------------------------------
+
+
+class _GraceHook:
+    """A sleep that parks at the final grace wait so a test can act inside it."""
+
+    def __init__(self) -> None:
+        self.at_grace = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def __call__(self, delay: float) -> None:
+        if delay == ctl.GIVE_UP_GRACE:
+            self.at_grace.set()
+            await self.release.wait()
+        else:
+            await asyncio.sleep(0)
+
+
+async def test_the_giving_up_notice_waits_one_grace_after_the_last_attempt(
+    controller: PhoneController,
+    fake: Fake,
+    clock: Clock,
+    notes: MagicMock,
+) -> None:
+    save(remembered())
+    await arm(controller, fake, clock)
+    hook = _GraceHook()
+    controller._sleep = hook
+
+    await tick(controller, clock)
+    await asyncio.wait_for(hook.at_grace.wait(), 5)
+    await pump()
+
+    assert len(fake.connects()) == 6  # all attempts are done
+    assert not controller._exhausted
+    assert not any("attempts" in c.args[1] for c in notes.call_args_list)
+
+    hook.release.set()  # the grace passes and the phone is still not ready
+    await settle(controller)
+
+    assert controller._exhausted
+    assert len([c for c in notes.call_args_list if "attempts" in c.args[1]]) == 1
+
+
+async def test_a_phone_that_turns_ready_during_the_grace_wait_is_not_given_up(
+    controller: PhoneController,
+    fake: Fake,
+    clock: Clock,
+    notes: MagicMock,
+) -> None:
+    save(remembered())
+    await arm(controller, fake, clock)
+    fake.connect = [runner.Result(0, f"connected to {NEW}", "")]  # 6th connect is OK
+    hook = _GraceHook()
+    controller._sleep = hook
+    await tick(controller, clock)
+    await asyncio.wait_for(hook.at_grace.wait(), 5)
+    await pump()
+
+    fake.devices = listed(SERIAL)  # the phone shows up 2 s later
+    await tick(controller, clock)
+    hook.release.set()
+    await pump()
+
+    bodies = [c.args[1] for c in notes.call_args_list]
+    assert "Reconnected to the phone." in bodies
+    assert not any("attempts" in b for b in bodies)
+    assert not controller._exhausted
+    assert controller._reconnect_task is None
+
+
+async def test_the_loop_itself_does_not_give_up_on_a_phone_that_is_ready_now(
+    controller: PhoneController, fake: Fake, clock: Clock, notes: MagicMock
+) -> None:
+    save(remembered())
+    await arm(controller, fake, clock)
+    hook = _GraceHook()
+    controller._sleep = hook
+    await tick(controller, clock)
+    await asyncio.wait_for(hook.at_grace.wait(), 5)
+
+    controller._seen_ready = [SERIAL]  # a probe saw it, and the loop is not cancelled
+    hook.release.set()
+    await settle(controller)
+
+    assert not controller._exhausted
+    assert not any("attempts" in c.args[1] for c in notes.call_args_list)
+
+
+# --- shutdown and the silent startup attempt ------------------------------------------
+
+
+async def test_shutdown_cancels_a_pending_startup_attempt(
+    controller: PhoneController, fake: Fake, clock: Clock
+) -> None:
+    save(remembered())
+    await tick(controller, clock)  # schedules the one silent attempt
+    task = controller._startup_task
+    assert task is not None
+
+    controller.shutdown()
+    await pump()
+
+    assert task.cancelled()
+    assert fake.connects() == []
+
+
+async def test_a_closed_controller_makes_no_startup_attempt(
+    controller: PhoneController, fake: Fake
+) -> None:
+    save(remembered())
+    controller.shutdown()
+
+    await controller._startup_attempt()
+
+    assert fake.connects() == []
+
+
+async def test_attaching_again_lets_the_startup_attempt_run(
+    controller: PhoneController, fake: Fake
+) -> None:
+    save(remembered())
+    controller.shutdown()
+    controller.attach(lambda: None)
+
+    await controller._startup_attempt()
+
+    assert len(fake.connects()) == 1
