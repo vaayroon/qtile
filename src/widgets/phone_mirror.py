@@ -8,11 +8,11 @@ callbacks, so they are plain functions that schedule the async work.
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from libqtile.log_utils import logger
 from libqtile.utils import create_task
 from libqtile.widget import base
 
 from .phone_mirror_controller import PhoneController, State, get_controller, to_bool
+from .phone_mirror_log import logger
 
 
 class PhoneMirrorWidget(base.BackgroundPoll):

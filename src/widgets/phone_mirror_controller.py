@@ -15,9 +15,9 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from enum import Enum
 from typing import Any
 
-from libqtile.log_utils import logger
 from libqtile.utils import create_task, send_notification
 
+from . import phone_mirror_log as plog
 from . import phone_mirror_qr as qr
 from . import phone_mirror_runner as runner
 from .phone_mirror_commands import (
@@ -37,6 +37,7 @@ from .phone_mirror_commands import (
     ready_device,
     ready_devices,
 )
+from .phone_mirror_log import logger
 from .phone_mirror_pairing import (
     DEFAULT_TTL,
     MdnsEntry,
@@ -52,6 +53,7 @@ from .phone_mirror_pairing import (
     redact,
 )
 from .phone_mirror_reasons import Reason, map_exception, map_failure, message_for
+from .phone_mirror_state import transport_of
 
 REFRESH_TTL = 2.0
 STOP_GRACE = 3.0  # seconds between SIGTERM and SIGKILL when stopping scrcpy
@@ -812,7 +814,13 @@ class PhoneController:
         self._mirror_serial = serial
         self.state = State.MIRROR
         self._touch()
-        self._watcher = create_task(self._watch(proc, tail))
+        logger.info(
+            "PhoneMirror: mirror start serial=%s transport=%s preset=%s",
+            serial,
+            transport_of(serial),
+            self._options(serial).quality,
+        )
+        self._watcher = create_task(self._watch(proc, tail, serial))
         self.notify("status", NOTIFY_TITLE, "Mirroring started.")
 
     async def _pump(self, stream: Any, label: str, tail: deque[str]) -> None:
@@ -827,12 +835,20 @@ class PhoneController:
                 logger.info("scrcpy %s: %s", label, text)
                 tail.append(text)
 
-    async def _watch(self, proc: Any, tail: deque[str]) -> None:
+    async def _watch(self, proc: Any, tail: deque[str], serial: str) -> None:
         await asyncio.gather(
             self._pump(proc.stdout, "stdout", tail),
             self._pump(proc.stderr, "stderr", tail),
         )
         rc = await proc.wait()
+        requested = self._stop_requested is proc
+        logger.info(
+            "PhoneMirror: mirror stop serial=%s transport=%s rc=%s (%s)",
+            serial,
+            transport_of(serial),
+            rc,
+            "requested" if requested else "unexpected" if rc != 0 else "ended",
+        )
         if self._process is proc:
             self._process = None
             self._mirror_serial = ""
@@ -854,6 +870,7 @@ _controller: PhoneController | None = None
 def get_controller() -> PhoneController:
     global _controller
     if _controller is None:
+        plog.setup()
         _controller = PhoneController()
     return _controller
 

@@ -1157,3 +1157,72 @@ async def test_a_failed_keyevent_with_adb_down_keeps_the_remembered_serial(
     await controller.volume(up=True)
 
     assert controller._serial == "56201FDCR0077W"
+
+
+# --- the dedicated log: mirror start and stop ---------------------------------
+
+
+@pytest.mark.usefixtures("notes")
+async def test_mirror_start_is_logged_with_serial_transport_and_preset(
+    controller: PhoneController, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+
+    line = next(
+        r.getMessage() for r in caplog.records if "mirror start" in r.getMessage()
+    )
+    assert "serial=192.168.1.10:5555" in line
+    assert "transport=wifi" in line
+    assert "preset=" in line
+
+
+@pytest.mark.usefixtures("notes")
+async def test_mirror_stop_is_logged_with_serial_and_how_it_ended(
+    controller: PhoneController, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+        watcher = controller._watcher
+        await controller.toggle()
+        assert watcher is not None
+        await watcher
+
+    line = next(
+        r.getMessage() for r in caplog.records if "mirror stop" in r.getMessage()
+    )
+    assert "serial=192.168.1.10:5555" in line
+    assert "transport=wifi" in line
+    assert "requested" in line
+
+
+@pytest.mark.usefixtures("notes")
+async def test_an_unexpected_exit_is_logged_with_its_exit_code(
+    controller: PhoneController, fake: FakeRunner, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake.process = FakeProcess(stderr=["ERROR: Device disconnected"], exit_rc=1)
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+        assert controller._watcher is not None
+        await controller._watcher
+
+    line = next(
+        r.getMessage() for r in caplog.records if "mirror stop" in r.getMessage()
+    )
+    assert "rc=1" in line
+    assert "unexpected" in line
+
+
+@pytest.mark.usefixtures("notes")
+async def test_a_usb_serial_is_logged_as_usb(
+    controller: PhoneController, fake: FakeRunner, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake.devices = ["List of devices attached\n56201FDCR0077W\tdevice usb:1-1\n"]
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+
+    line = next(
+        r.getMessage() for r in caplog.records if "mirror start" in r.getMessage()
+    )
+    assert "serial=56201FDCR0077W" in line
+    assert "transport=usb" in line

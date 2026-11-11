@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from libqtile.log_utils import logger
+from .phone_mirror_log import logger
 
 STATE_VERSION = 1
 STATE_FILE = "phone_mirror.json"
@@ -53,6 +53,13 @@ def serial_from_instance(instance: str) -> str:
 def is_wireless_serial(serial: str) -> bool:
     """A `host:port` or an mDNS connect name, as listed by `adb devices`."""
     return ":" in serial or serial.endswith(_CONNECT_SUFFIX)
+
+
+def transport_of(serial: str) -> str:
+    """`wifi`, `emulator` or `usb`: how this adb serial reaches the phone."""
+    if is_wireless_serial(serial):
+        return "wifi"
+    return "emulator" if serial.startswith("emulator-") else "usb"
 
 
 @dataclass(frozen=True)
