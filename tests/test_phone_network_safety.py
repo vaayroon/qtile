@@ -603,7 +603,10 @@ _OS_BANNED_NAMES = {"system", "popen"}
 
 
 _OS_BANNED_PREFIXES = ("exec", "spawn", "posix_spawn", "fork")
-_BANNED_MODULES = {"subprocess", "pty", "ctypes"}
+_BANNED_MODULES = {"subprocess", "pty", "ctypes", "multiprocessing"}
+_BANNED_DOTTED = ("concurrent.futures.process",)
+_PROCESS_POOLS = {"ProcessPoolExecutor"}
+_CODE_RUNNERS = {"eval", "exec"}
 _LOOP_PRIMITIVES = {"subprocess_exec", "subprocess_shell"}
 
 
@@ -613,19 +616,52 @@ def _os_banned(name: str) -> bool:
     )
 
 
+def _banned_module(name: str) -> bool:
+    return name.split(".")[0] in _BANNED_MODULES or name.startswith(_BANNED_DOTTED)
+
+
 def _dynamic_import_offender(node: ast.Call) -> bool:
     """`importlib.import_module(x)` / `__import__(x)` of a banned or unknown module.
 
-    A literal name is checked against the banned modules; a computed name cannot
-    be checked, so it is flagged. `import_module("segno")` stays fine.
+    The name may be the first positional argument or the `name=` keyword. A
+    literal is checked against the banned modules; a computed name (or `**kwargs`)
+    cannot be checked, so it is flagged. `import_module("segno")` stays fine.
     """
     func = node.func
     name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
-    if name not in {"import_module", "__import__"} or not node.args:
+    if name not in {"import_module", "__import__"}:
         return False
-    first = node.args[0]
-    if isinstance(first, ast.Constant) and isinstance(first.value, str):
-        return first.value.split(".")[0] in _BANNED_MODULES
+    if any(kw.arg is None for kw in node.keywords):
+        return True  # **options: the module name is hidden
+    if node.args:
+        target: ast.expr = node.args[0]
+    else:
+        named = [kw.value for kw in node.keywords if kw.arg == "name"]
+        if not named:
+            return False  # not a usable import call
+        target = named[0]
+    if isinstance(target, ast.Constant) and isinstance(target.value, str):
+        return _banned_module(target.value)
+    return True
+
+
+def _getattr_offender(node: ast.Call, os_aliases: set[str]) -> bool:
+    """`getattr(os, x)` / `getattr(subprocess, x)` unless x is a harmless literal."""
+    func = node.func
+    if not (isinstance(func, ast.Name) and func.id == "getattr"):
+        return False
+    if not node.args:
+        return False
+    obj = node.args[0]
+    process_like = (
+        isinstance(obj, ast.Name) and obj.id in os_aliases | {"subprocess"}
+    ) or (isinstance(obj, ast.Attribute) and obj.attr == "subprocess")
+    if not process_like:
+        return False
+    if len(node.args) > 1:
+        attr = node.args[1]
+        if isinstance(attr, ast.Constant) and isinstance(attr.value, str):
+            return _os_banned(attr.value) or attr.value in _EXEC_PRIMITIVES
     return True
 
 
@@ -641,29 +677,43 @@ def _process_offenders(source: str, *, is_runner: bool = False) -> list[str]:
         line = getattr(node, "lineno", 0)
         if isinstance(node, ast.Call) and _dynamic_import_offender(node):
             found.append(f"{line}: dynamic import")
+        elif isinstance(node, ast.Call) and _getattr_offender(node, os_aliases):
+            found.append(f"{line}: getattr on os/subprocess")
+        elif isinstance(node, ast.Name) and node.id in _CODE_RUNNERS:
+            found.append(f"{line}: {node.id}")
         elif isinstance(node, ast.Import):
             found += [
                 f"{line}: import {a.name}"
                 for a in node.names
                 if (a.name.split(".")[0] == "subprocess" and not is_runner)
-                or a.name.split(".")[0] in {"pty", "ctypes"}
+                or (_banned_module(a.name) and a.name.split(".")[0] != "subprocess")
             ]
         elif isinstance(node, ast.ImportFrom):
-            module = (node.module or "").split(".")[0]
-            if (module == "subprocess" and not is_runner) or module in {
-                "pty",
-                "ctypes",
-            }:
-                found.append(f"{line}: from {module} import")
+            full = node.module or ""
+            module = full.split(".")[0]
+            if (module == "subprocess" and not is_runner) or (
+                _banned_module(full) and module != "subprocess"
+            ):
+                found.append(f"{line}: from {full} import")
             for alias in node.names:
-                if alias.name in _SHELL_SPAWNERS:
+                if alias.name in _PROCESS_POOLS:
+                    found.append(f"{line}: from-import {alias.name}")
+                elif alias.name in _SHELL_SPAWNERS:
                     found.append(f"{line}: from-import {alias.name}")
                 elif alias.name in _EXEC_PRIMITIVES and not is_runner:
                     found.append(f"{line}: from-import {alias.name}")
                 elif module == "os" and _os_banned(alias.name):
                     found.append(f"{line}: from os import {alias.name}")
         elif isinstance(node, ast.Attribute):
-            if node.attr in _SHELL_SPAWNERS | _LOOP_PRIMITIVES:
+            if node.attr in _PROCESS_POOLS:
+                found.append(f"{line}: .{node.attr}")
+            elif (
+                node.attr in _CODE_RUNNERS
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "builtins"
+            ):
+                found.append(f"{line}: builtins.{node.attr}")
+            elif node.attr in _SHELL_SPAWNERS | _LOOP_PRIMITIVES:
                 found.append(f"{line}: .{node.attr}")
             elif node.attr in _EXEC_PRIMITIVES and not is_runner:
                 found.append(f"{line}: .{node.attr}")
@@ -744,6 +794,68 @@ def test_negative_control_scan_finds_fork_pty_ctypes_and_dynamic_imports(
 @pytest.mark.parametrize("source", _NEW_BANNED)
 def test_the_runner_gets_no_exemption_for_the_new_bans(source: str) -> None:
     assert _process_offenders(source, is_runner=True)
+
+
+_SCAN_GAPS = [
+    # keyword arguments of the dynamic import
+    "import importlib\nimportlib.import_module(name='subprocess')",
+    "from importlib import import_module\nimport_module(name='pty')",
+    "__import__(name='ctypes')",
+    "import importlib\nimportlib.import_module(name=computed)",
+    "import importlib\nimportlib.import_module(**options)",
+    "import importlib\nimportlib.import_module(package='x', name='subprocess')",
+    # other ways to start processes
+    "import multiprocessing",
+    "import multiprocessing.pool",
+    "from multiprocessing import Process",
+    "import importlib\nimportlib.import_module('multiprocessing')",
+    "import importlib\nimportlib.import_module('multiprocessing.pool')",
+    "from concurrent.futures import ProcessPoolExecutor",
+    "from concurrent.futures import ProcessPoolExecutor as Pool",
+    "import concurrent.futures\nconcurrent.futures.ProcessPoolExecutor()",
+    "from concurrent import futures\nfutures.ProcessPoolExecutor()",
+    "import concurrent.futures.process",
+    "from concurrent.futures.process import ProcessPoolExecutor",
+    # running arbitrary code
+    "eval('1')",
+    "exec('x = 1')",
+    "f = eval",
+    "import builtins\nbuiltins.eval('1')",
+    "import builtins\nbuiltins.exec('x = 1')",
+    # reaching os / subprocess without naming the attribute
+    "import os\ngetattr(os, name)('x')",
+    "import os\ngetattr(os, 'sys' + 'tem')",
+    "import os\ngetattr(os, 'system')('x')",
+    "import os as o\ngetattr(o, name)",
+    "import os\ngetattr(os, name, None)",
+    "import os\ngetattr(os, attr=name)",
+    "import asyncio\ngetattr(asyncio.subprocess, name)",
+    "from asyncio import subprocess\ngetattr(subprocess, name)",
+]
+
+
+@pytest.mark.parametrize("source", _SCAN_GAPS)
+def test_negative_control_scan_finds_the_known_gaps(source: str) -> None:
+    assert _process_offenders(source)
+
+
+@pytest.mark.parametrize("source", _SCAN_GAPS)
+def test_the_runner_gets_no_exemption_for_the_known_gaps(source: str) -> None:
+    assert _process_offenders(source, is_runner=True)
+
+
+def test_harmless_getattr_eval_like_names_and_executors_are_not_flagged() -> None:
+    source = (
+        "import os\nimport importlib\n"
+        "from concurrent.futures import ThreadPoolExecutor\n"
+        "importlib.import_module(name='segno')\n"
+        "importlib.import_module('segno', package=None)\n"
+        "getattr(os, 'getpid')()\n"
+        "getattr(widget, name)\n"
+        "evaluate = 1\nexecutor = 2\nlogger.exec_time = 3\n"
+        "ThreadPoolExecutor()\n"
+    )
+    assert _process_offenders(source) == []
 
 
 def test_importing_segno_dynamically_is_still_allowed() -> None:
