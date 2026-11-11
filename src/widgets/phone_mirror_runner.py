@@ -16,7 +16,7 @@ ALLOWED_EXECUTABLES: frozenset[str] = frozenset(
 )
 
 ALLOWED_ADB_SUBCOMMANDS: frozenset[str] = frozenset(
-    {"devices", "connect", "disconnect", "pair", "mdns", "shell", "tcpip", "version"}
+    {"devices", "connect", "disconnect", "pair", "mdns", "shell", "version"}
 )
 ALLOWED_MDNS_ACTIONS: frozenset[str] = frozenset({"services", "check"})
 

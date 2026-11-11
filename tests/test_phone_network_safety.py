@@ -177,7 +177,6 @@ async def test_non_allowlisted_adb_calls_are_rejected(
         ["adb", "pair", "192.168.1.20:37000", "123456"],
         ["adb", "mdns", "services"],
         ["adb", "mdns", "check"],
-        ["adb", "tcpip", "5555"],
         ["adb", "-s", "SER", "shell", "input", "keyevent", "24"],
         ["adb", "shell", "input", "keyevent", "25"],
         ["scrcpy", "-S", "--no-audio", "--window-title=Phone"],
@@ -190,6 +189,26 @@ async def test_allowlisted_calls_are_spawned(
 ) -> None:
     await runner.run(argv)
     exec_mock.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["adb", "tcpip", "5555"],
+        ["adb", "-s", "SER", "tcpip", "5555"],
+        ["adb", "TCPIP", "5555"],
+    ],
+)
+async def test_tcpip_is_rejected_by_the_runner(
+    argv: list[str], exec_mock: AsyncMock
+) -> None:
+    with pytest.raises(runner.ForbiddenCommand):
+        await runner.run(argv)
+    exec_mock.assert_not_called()
+
+
+def test_tcpip_is_not_in_the_adb_subcommand_allowlist() -> None:
+    assert "tcpip" not in runner.ALLOWED_ADB_SUBCOMMANDS
 
 
 # --- strict rofi / zenity templates ------------------------------------------
@@ -583,8 +602,31 @@ _EXEC_PRIMITIVES = {"create_subprocess_exec", "subprocess"}
 _OS_BANNED_NAMES = {"system", "popen"}
 
 
+_OS_BANNED_PREFIXES = ("exec", "spawn", "posix_spawn", "fork")
+_BANNED_MODULES = {"subprocess", "pty", "ctypes"}
+_LOOP_PRIMITIVES = {"subprocess_exec", "subprocess_shell"}
+
+
 def _os_banned(name: str) -> bool:
-    return name in _OS_BANNED_NAMES or name.startswith(("exec", "spawn")) or name == "*"
+    return (
+        name in _OS_BANNED_NAMES or name.startswith(_OS_BANNED_PREFIXES) or name == "*"
+    )
+
+
+def _dynamic_import_offender(node: ast.Call) -> bool:
+    """`importlib.import_module(x)` / `__import__(x)` of a banned or unknown module.
+
+    A literal name is checked against the banned modules; a computed name cannot
+    be checked, so it is flagged. `import_module("segno")` stays fine.
+    """
+    func = node.func
+    name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+    if name not in {"import_module", "__import__"} or not node.args:
+        return False
+    first = node.args[0]
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        return first.value.split(".")[0] in _BANNED_MODULES
+    return True
 
 
 def _process_offenders(source: str, *, is_runner: bool = False) -> list[str]:
@@ -597,16 +639,22 @@ def _process_offenders(source: str, *, is_runner: bool = False) -> list[str]:
     found: list[str] = []
     for node in ast.walk(tree):
         line = getattr(node, "lineno", 0)
-        if isinstance(node, ast.Import):
+        if isinstance(node, ast.Call) and _dynamic_import_offender(node):
+            found.append(f"{line}: dynamic import")
+        elif isinstance(node, ast.Import):
             found += [
                 f"{line}: import {a.name}"
                 for a in node.names
-                if a.name.split(".")[0] == "subprocess" and not is_runner
+                if (a.name.split(".")[0] == "subprocess" and not is_runner)
+                or a.name.split(".")[0] in {"pty", "ctypes"}
             ]
         elif isinstance(node, ast.ImportFrom):
             module = (node.module or "").split(".")[0]
-            if module == "subprocess" and not is_runner:
-                found.append(f"{line}: from subprocess import")
+            if (module == "subprocess" and not is_runner) or module in {
+                "pty",
+                "ctypes",
+            }:
+                found.append(f"{line}: from {module} import")
             for alias in node.names:
                 if alias.name in _SHELL_SPAWNERS:
                     found.append(f"{line}: from-import {alias.name}")
@@ -615,7 +663,7 @@ def _process_offenders(source: str, *, is_runner: bool = False) -> list[str]:
                 elif module == "os" and _os_banned(alias.name):
                     found.append(f"{line}: from os import {alias.name}")
         elif isinstance(node, ast.Attribute):
-            if node.attr in _SHELL_SPAWNERS:
+            if node.attr in _SHELL_SPAWNERS | _LOOP_PRIMITIVES:
                 found.append(f"{line}: .{node.attr}")
             elif node.attr in _EXEC_PRIMITIVES and not is_runner:
                 found.append(f"{line}: .{node.attr}")
@@ -654,6 +702,61 @@ def _process_offenders(source: str, *, is_runner: bool = False) -> list[str]:
     ],
 )
 def test_negative_control_scan_finds_process_primitives(source: str) -> None:
+    assert _process_offenders(source)
+
+
+_NEW_BANNED = [
+    "import os\nos.posix_spawn('x', ['x'], {})",
+    "import os\nos.posix_spawnp('x', ['x'], {})",
+    "import os\nos.fork()",
+    "import os\nos.forkpty()",
+    "import os as o\no.fork()",
+    "from os import fork",
+    "from os import forkpty",
+    "from os import posix_spawn",
+    "import pty",
+    "import pty as p",
+    "from pty import spawn",
+    "import ctypes",
+    "import ctypes.util",
+    "from ctypes import CDLL",
+    "import importlib\nimportlib.import_module('subprocess')",
+    "import importlib as il\nil.import_module('subprocess')",
+    "from importlib import import_module\nimport_module('subprocess')",
+    "import importlib\nimportlib.import_module('pty')",
+    "import importlib\nimportlib.import_module('ctypes')",
+    "import importlib\nimportlib.import_module('subprocess.x')",
+    "__import__('subprocess')",
+    "__import__('ctypes')",
+    "import asyncio\nloop = asyncio.get_running_loop()\nloop.subprocess_exec(1, 'x')",
+    "import asyncio\nasyncio.get_event_loop().subprocess_shell(1, 'x')",
+    "def f(loop):\n    return loop.subprocess_exec",
+]
+
+
+@pytest.mark.parametrize("source", _NEW_BANNED)
+def test_negative_control_scan_finds_fork_pty_ctypes_and_dynamic_imports(
+    source: str,
+) -> None:
+    assert _process_offenders(source)
+
+
+@pytest.mark.parametrize("source", _NEW_BANNED)
+def test_the_runner_gets_no_exemption_for_the_new_bans(source: str) -> None:
+    assert _process_offenders(source, is_runner=True)
+
+
+def test_importing_segno_dynamically_is_still_allowed() -> None:
+    source = (
+        "import importlib\nimportlib.import_module('segno')\n"
+        "from importlib import import_module\nimport_module('segno')\n"
+        "import os\nos.getpid()\nos.environ.get('X')\n"
+    )
+    assert _process_offenders(source) == []
+
+
+def test_a_dynamic_import_with_a_computed_name_is_not_guessable_but_flagged() -> None:
+    source = "import importlib\nname = 'sub' + 'process'\nimportlib.import_module(name)"
     assert _process_offenders(source)
 
 
