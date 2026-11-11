@@ -57,6 +57,11 @@ class PhoneMirrorWidget(base.BackgroundPoll):
         ),
         ("audio", False, "Forward the phone audio to the computer."),
         (
+            "hwdec",
+            "auto",
+            "Hardware video decoding on the computer: auto, disabled or vaapi.",
+        ),
+        (
             "restart_on_switch",
             True,
             "Reopen mirroring after a right-click device switch if it was running.",
@@ -89,6 +94,7 @@ class PhoneMirrorWidget(base.BackgroundPoll):
         "quality",
         "wifi_quality",
         "audio",
+        "hwdec",
         "restart_on_switch",
         "pair_ttl",
         "show_device",

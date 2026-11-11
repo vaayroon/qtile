@@ -14,6 +14,11 @@ QUALITY_PRESETS: dict[str, tuple[int | None, str, int]] = {
 }
 
 
+# Hardware decoding on the computer: scrcpy's own `--hwdec` values we offer.
+HWDEC_MODES = ("auto", "disabled", "vaapi")
+DEFAULT_HWDEC = "auto"
+
+
 @dataclass(frozen=True)
 class MirrorOptions:
     quality: str = DEFAULT_QUALITY
@@ -21,6 +26,7 @@ class MirrorOptions:
     audio: bool = False
     window_title: str = "Phone"
     serial: str = ""
+    hwdec: str = DEFAULT_HWDEC
 
 
 @dataclass(frozen=True)
@@ -38,6 +44,12 @@ def normalize_quality(value: str, default: str = DEFAULT_QUALITY) -> str:
     return name if name in QUALITY_PRESETS else default
 
 
+def normalize_hwdec(value: str, default: str = DEFAULT_HWDEC) -> str:
+    """Return a known hwdec mode; anything else becomes `default`."""
+    name = value.strip().lower()
+    return name if name in HWDEC_MODES else default
+
+
 def build_scrcpy_argv(scrcpy_path: str, options: MirrorOptions) -> list[str]:
     max_size, bit_rate, fps = QUALITY_PRESETS[normalize_quality(options.quality)]
     argv = [scrcpy_path]
@@ -46,6 +58,7 @@ def build_scrcpy_argv(scrcpy_path: str, options: MirrorOptions) -> list[str]:
     if max_size is not None:
         argv += ["--max-size", str(max_size)]
     argv += ["--video-bit-rate", bit_rate, "--max-fps", str(fps)]
+    argv.append(f"--hwdec={normalize_hwdec(options.hwdec)}")
     if options.screen_off:
         argv.append("-S")
     if not options.audio:

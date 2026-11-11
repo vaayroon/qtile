@@ -190,6 +190,7 @@ Runtime behavior is controlled through `.env` (loaded by `python-dotenv` at star
 | `QTILE_PHONE_MIRROR_QUALITY` | `balanced` | Video preset for a USB device: `low` (1024 px, 4M, 30 fps), `balanced` (1600 px, 8M, 60 fps) or `high` (native size, 16M, 60 fps). |
 | `QTILE_PHONE_MIRROR_WIFI_QUALITY` | `low` | Video preset for a Wi-Fi device (`host:port` or an `adb-…._adb-tls-connect._tcp` name), same values as above. It defaults to `low` because heavy scrcpy traffic over Wi-Fi coincided with Wi-Fi link problems and a phone network-stack crash in testing. The code never changes any network setting of this computer. The chosen preset and the reason are logged at each start. |
 | `QTILE_PHONE_MIRROR_AUDIO` | `false` | Forward the phone audio to the computer (`--no-audio` when off). |
+| `QTILE_PHONE_MIRROR_HWDEC` | `auto` | Hardware video decoding on this computer, passed to scrcpy as `--hwdec=<mode>`: `auto` (the first hardware decoder, software otherwise), `disabled` (always software) or `vaapi`. An invalid value falls back to `auto` and is logged. If scrcpy reports a hardware decoding failure while the mode is not `disabled`, the widget restarts mirroring once on the same device with `--hwdec=disabled`, keeps software decoding for the rest of the session, logs it and notifies once ("Hardware video decoding failed; using software decoding"). It never restarts a second time. Set `disabled` yourself to skip the failed first attempt. |
 | `QTILE_PHONE_MIRROR_RESTART_ON_SWITCH` | `true` | Reopen mirroring on the new device after a right-click switch, only if it was running. |
 | `QTILE_PHONE_MIRROR_PAIR_TTL` | `180` | Seconds the Wi-Fi pairing QR stays valid (clamped to 120-300). |
 | `QTILE_PHONE_MIRROR_SHOW_DEVICE` | `false` | Append the device serial to the bar status text. |
@@ -612,6 +613,11 @@ The QR is rendered with [`segno`](https://pypi.org/project/segno/), a regular ru
   - Disable TDLS until the next reboot with `sudo wpa_cli -i wlo1 set tdls_disabled 1`, and revert it with `sudo wpa_cli -i wlo1 set tdls_disabled 0`. Replace `wlo1` with the name of your Wi-Fi interface.
 
   The second workaround changes the network behaviour of your computer. Whether to do it is your choice: this config never runs it, never changes a network setting and only documents it.
+
+**Mirroring stops with `hardware accelerator failed to decode picture` and `Decoding (video) failed`.** This happens when a VA-API driver is installed but cannot decode the stream (seen with the NVIDIA VA-API/NVDEC driver and scrcpy 5.0.1, whose default `--hwdec=auto` picks VA-API). The failing scrcpy can ignore SIGTERM; the widget kills it after a 3-second grace period.
+
+- **Automatic:** the widget restarts mirroring once with `--hwdec=disabled`, remembers that for the session, logs it and shows one notification. It never loops.
+- **Permanent:** set `QTILE_PHONE_MIRROR_HWDEC=disabled` in `.env` so scrcpy never tries the hardware decoder.
 
 **`Failed to initialise VAAPI connection` in the scrcpy output.** Harmless. It appears on machines without a VA-API video driver, and scrcpy falls back to software decoding.
 

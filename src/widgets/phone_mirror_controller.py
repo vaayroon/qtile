@@ -34,6 +34,7 @@ from .phone_mirror_commands import (
     build_scrcpy_argv,
     build_zenity_argv,
     device_label,
+    normalize_hwdec,
     normalize_quality,
     parse_devices,
     parse_zenity_values,
@@ -77,6 +78,9 @@ VOLUME_STEP_DEFAULT = 5
 VOLUME_STEP_MIN = 1
 VOLUME_STEP_MAX = 20
 TAIL_LINES = 20
+# scrcpy lines that mean the hardware decoder failed mid-stream (scrcpy 5.0.1).
+HWDEC_FAILURE_MARKERS = ("hardware accelerator failed", "decoding (video) failed")
+HWDEC_FALLBACK_NOTICE = "Hardware video decoding failed; using software decoding"
 NOTIFY_TITLE = "Phone mirror"
 NOTIFY_IDS = {"status": 7101, "error": 7102, "pair": 7103}
 PAIR_POLL_INTERVAL = 2.0  # seconds between `adb mdns services` queries
@@ -96,6 +100,7 @@ ENV_KEYS = {
     "quality": "QTILE_PHONE_MIRROR_QUALITY",
     "wifi_quality": "QTILE_PHONE_MIRROR_WIFI_QUALITY",
     "audio": "QTILE_PHONE_MIRROR_AUDIO",
+    "hwdec": "QTILE_PHONE_MIRROR_HWDEC",
     "restart_on_switch": "QTILE_PHONE_MIRROR_RESTART_ON_SWITCH",
     "pair_ttl": "QTILE_PHONE_MIRROR_PAIR_TTL",
 }
@@ -111,6 +116,7 @@ DEFAULTS = {
     "quality": "balanced",
     "wifi_quality": "low",
     "audio": "false",
+    "hwdec": "auto",
     "restart_on_switch": "true",
     "pair_ttl": "180",
 }
@@ -245,6 +251,12 @@ class PhoneController:
         self._stopping: Any = None  # a terminated scrcpy that has not exited yet
         self._reaper: asyncio.Task[None] | None = None
         self._mirror_serial = ""  # the device the running scrcpy is attached to
+        # After a hardware decoding failure: software decoding for the rest of the
+        # session, through one automatic restart at most.
+        self._hwdec_override = ""
+        self._hwdec_fallback_used = False
+        self._hwdec_failed: Any = None  # the scrcpy whose decoder failed
+        self._hwdec_task: asyncio.Task[None] | None = None
         self._generation = 0  # bumped by every action that changes the state
         self._labels: dict[str, str] = {}
         self._serial = ""  # device picked in the selector, kept for the session
@@ -300,8 +312,19 @@ class PhoneController:
         wanted = normalize_quality(self.resolve("quality"))
         return wanted, "usb transport, QTILE_PHONE_MIRROR_QUALITY"
 
+    def _hwdec(self) -> str:
+        """The decoding mode: the session fallback, else the setting (bad -> auto)."""
+        if self._hwdec_override:
+            return self._hwdec_override
+        raw = self.resolve("hwdec")
+        mode = normalize_hwdec(raw)
+        if raw and mode != raw.strip().lower():
+            logger.warning("PhoneMirror: bad hwdec %r, using %s", raw, mode)
+        return mode
+
     def _options(self, serial: str) -> MirrorOptions:
         return MirrorOptions(
+            hwdec=self._hwdec(),
             quality=self._preset(serial)[0],
             screen_off=to_bool(self.resolve("turn_screen_off")),
             audio=to_bool(self.resolve("audio")),
@@ -1142,7 +1165,8 @@ class PhoneController:
         return None
 
     async def _start(self, serial: str) -> None:
-        argv = build_scrcpy_argv(self.resolve("scrcpy_path"), self._options(serial))
+        options = self._options(serial)
+        argv = build_scrcpy_argv(self.resolve("scrcpy_path"), options)
         try:
             proc = await self._spawn(argv)
         except (OSError, runner.ForbiddenCommand) as exc:
@@ -1159,16 +1183,23 @@ class PhoneController:
             self._session_ready = True
         preset, why = self._preset(serial)
         logger.info(
-            "PhoneMirror: mirror start serial=%s transport=%s preset=%s (%s)",
+            "PhoneMirror: mirror start serial=%s transport=%s preset=%s (%s) hwdec=%s",
             serial,
             transport_of(serial),
             preset,
             why,
+            options.hwdec,
         )
-        self._watcher = create_task(self._watch(proc, tail, serial))
+        self._watcher = create_task(self._watch(proc, tail, serial, options.hwdec))
         self.notify("status", NOTIFY_TITLE, "Mirroring started.")
 
-    async def _pump(self, stream: Any, label: str, tail: deque[str]) -> None:
+    async def _pump(
+        self,
+        stream: Any,
+        label: str,
+        tail: deque[str],
+        on_line: Callable[[str], None] | None = None,
+    ) -> None:
         if stream is None:
             return
         while True:
@@ -1179,11 +1210,59 @@ class PhoneController:
             if text:
                 logger.info("scrcpy %s: %s", label, text)
                 tail.append(text)
+                if on_line is not None:
+                    on_line(text)
 
-    async def _watch(self, proc: Any, tail: deque[str], serial: str) -> None:
+    def _hwdec_check(self, proc: Any, serial: str, hwdec: str) -> Callable[[str], None]:
+        """A line hook: the first hardware decoding failure starts the fallback."""
+
+        def on_line(text: str) -> None:
+            lowered = text.lower()
+            if (
+                hwdec == "disabled"
+                or self._hwdec_fallback_used
+                or self._stop_requested is proc
+                or not any(mark in lowered for mark in HWDEC_FAILURE_MARKERS)
+            ):
+                return
+            self._hwdec_fallback_used = True  # at most one automatic restart
+            self._hwdec_override = "disabled"
+            self._hwdec_failed = proc
+            logger.warning(
+                "PhoneMirror: hardware decoding failed (hwdec=%s), restarting "
+                "once with software decoding: %s",
+                hwdec,
+                text,
+            )
+            self._hwdec_task = create_task(self._hwdec_restart(proc, serial))
+
+        return on_line
+
+    async def _hwdec_restart(self, proc: Any, serial: str) -> None:
+        """Stop the scrcpy whose decoder failed and start it again in software."""
+        async with self._lock:
+            if self._stop_requested is proc or (
+                self._process is not None and self._process is not proc
+            ):
+                return  # the user stopped or switched it meanwhile
+            try:
+                self._stop()  # no-op if scrcpy already ended by itself
+                await self._settled()
+                await self._start(serial)
+                if self.is_mirroring():
+                    self.notify("status", NOTIFY_TITLE, HWDEC_FALLBACK_NOTICE)
+            except Exception:
+                logger.exception("PhoneMirror: software decoding restart failed")
+            finally:
+                self._changed()
+
+    async def _watch(
+        self, proc: Any, tail: deque[str], serial: str, hwdec: str
+    ) -> None:
+        check = self._hwdec_check(proc, serial, hwdec)
         await asyncio.gather(
-            self._pump(proc.stdout, "stdout", tail),
-            self._pump(proc.stderr, "stderr", tail),
+            self._pump(proc.stdout, "stdout", tail, check),
+            self._pump(proc.stderr, "stderr", tail, check),
         )
         rc = await proc.wait()
         requested = self._stop_requested is proc
@@ -1198,7 +1277,9 @@ class PhoneController:
             self._process = None
             self._mirror_serial = ""
             self.state = State.READY
-        if rc != 0 and self._stop_requested is not proc:
+        if rc != 0 and self._stop_requested is not proc and self._hwdec_failed is proc:
+            logger.info("PhoneMirror: scrcpy ended after a decoding failure")
+        elif rc != 0 and self._stop_requested is not proc:
             reason = map_failure("\n".join(tail), rc)
             self.notify(
                 "error",
