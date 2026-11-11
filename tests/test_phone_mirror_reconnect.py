@@ -176,6 +176,18 @@ async def tick(controller: PhoneController, clock: Clock) -> State:
     return await controller.refresh()
 
 
+async def arm(controller: PhoneController, fake: Fake, clock: Clock) -> None:
+    """The remembered phone is ready in this session, then it drops."""
+    fake.devices = listed(SERIAL)
+    assert await tick(controller, clock) is State.READY
+    fake.devices = NO_DEVICES
+
+
+async def pump(times: int = 20) -> None:
+    for _ in range(times):
+        await asyncio.sleep(0)
+
+
 async def settle(controller: PhoneController) -> None:
     task = controller._reconnect_task
     if task is not None:
@@ -367,9 +379,10 @@ async def test_without_a_remembered_phone_nothing_is_attempted(
 
 
 async def test_a_disconnected_remembered_phone_starts_one_timer(
-    controller: PhoneController, clock: Clock, sleeper: Sleeper
+    controller: PhoneController, fake: Fake, clock: Clock, sleeper: Sleeper
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     sleeper.gate = asyncio.Event()
 
     await tick(controller, clock)
@@ -405,6 +418,7 @@ async def test_another_connected_device_does_not_hide_a_lost_remembered_one(
     controller: PhoneController, fake: Fake, clock: Clock, sleeper: Sleeper
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     fake.devices = listed("emulator-5554")
     sleeper.gate = asyncio.Event()
 
@@ -466,6 +480,7 @@ async def test_the_delays_are_8_16_32_64_128_300_and_then_it_stops(
     notes: MagicMock,
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
 
     await tick(controller, clock)
     await settle(controller)
@@ -496,9 +511,10 @@ async def test_after_the_last_attempt_it_waits_for_a_user_action(
 
 
 async def test_the_giving_up_notice_is_sent_once(
-    controller: PhoneController, clock: Clock, notes: MagicMock
+    controller: PhoneController, fake: Fake, clock: Clock, notes: MagicMock
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     await tick(controller, clock)
     await settle(controller)
     for _ in range(3):
@@ -512,6 +528,7 @@ async def test_every_attempt_waits_first_so_there_is_no_busy_loop(
     controller: PhoneController, fake: Fake, clock: Clock, sleeper: Sleeper
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     order: list[str] = []
     real_sleep = sleeper.__call__
 
@@ -536,15 +553,23 @@ async def test_success_on_the_third_attempt_ends_in_ready_and_stops(
     notes: MagicMock,
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
+    sleeper.gate = asyncio.Event()
     fail = runner.Result(0, f"failed to connect to {NEW}", "")
     fake.connect = [fail, fail, runner.Result(0, f"connected to {NEW}", "")]
+    fake.on_connect = lambda addr: (
+        setattr(fake, "devices", listed(addr)) if len(fake.connects()) == 3 else None
+    )
 
     await tick(controller, clock)
-    await settle(controller)
-
-    assert controller.state is State.READY
-    assert sleeper.delays == [8.0, 16.0, 32.0]
+    for _ in range(3):
+        await pump()
+        sleeper.gate.set()
+    await pump()
     assert len(fake.connects()) == 3
+    assert await tick(controller, clock) is State.READY  # the probe sees it ready
+
+    assert sleeper.delays[:3] == [8.0, 16.0, 32.0]
     assert controller._reconnect_task is None
     assert any("reconnected" in c.args[1].lower() for c in notes.call_args_list)
     assert not any("attempts" in c.args[1] for c in notes.call_args_list)
@@ -554,13 +579,22 @@ async def test_the_budget_is_back_after_a_success(
     controller: PhoneController, fake: Fake, clock: Clock, sleeper: Sleeper
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
+    sleeper.gate = asyncio.Event()
     fake.connect = [runner.Result(0, f"connected to {NEW}", "")]
+    fake.on_connect = lambda addr: setattr(fake, "devices", listed(addr))
     await tick(controller, clock)
-    await settle(controller)
-    assert controller.state is State.READY
+    await pump()
+    sleeper.gate.set()
+    await pump()
+    assert await tick(controller, clock) is State.READY
+    assert controller._attempts == 0
 
     # the phone drops again: a new episode starts from the first delay
+    fake.on_connect = None
+    fake.devices = NO_DEVICES
     fake.connect = [runner.Result(0, f"failed to connect to {NEW}", "")]
+    sleeper.gate = None
     sleeper.delays.clear()
     await tick(controller, clock)
     await settle(controller)
@@ -572,6 +606,7 @@ async def test_a_phone_that_comes_back_resets_a_spent_budget(
     controller: PhoneController, fake: Fake, clock: Clock, sleeper: Sleeper
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     await tick(controller, clock)
     await settle(controller)
     assert controller._exhausted
@@ -594,6 +629,7 @@ async def test_the_current_port_comes_from_mdns_by_the_instance_name(
     controller: PhoneController, fake: Fake, clock: Clock
 ) -> None:
     save(remembered())  # last known port is the OLD one
+    await arm(controller, fake, clock)
     fake.mdns = HEAD + connect_line(NEW_PORT)
 
     await tick(controller, clock)
@@ -606,6 +642,7 @@ async def test_a_new_endpoint_is_stored_after_a_successful_reconnect(
     controller: PhoneController, fake: Fake, clock: Clock
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     fake.connect = [runner.Result(0, f"connected to {NEW}", "")]
 
     await tick(controller, clock)
@@ -618,13 +655,15 @@ async def test_a_new_endpoint_is_stored_after_a_successful_reconnect(
 
 
 async def test_a_failed_reconnect_does_not_overwrite_the_stored_endpoint(
-    controller: PhoneController, clock: Clock
+    controller: PhoneController, fake: Fake, clock: Clock
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
 
     await tick(controller, clock)
     await settle(controller)
 
+    assert len(fake.connects()) == 6  # the loop ran, and none of it was kept
     assert stored()["last_address"] == OLD
 
 
@@ -632,6 +671,7 @@ async def test_without_an_mdns_entry_the_last_address_is_used(
     controller: PhoneController, fake: Fake, clock: Clock
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     fake.mdns = HEAD
 
     await tick(controller, clock)
@@ -644,6 +684,7 @@ async def test_an_entry_of_another_phone_on_the_same_host_is_ignored(
     controller: PhoneController, fake: Fake, clock: Clock
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     fake.mdns = HEAD + connect_line(9999, instance="adb-OTHERSERIAL-abc")
 
     await tick(controller, clock)
@@ -656,6 +697,7 @@ async def test_the_pairing_entry_is_never_used_to_connect(
     controller: PhoneController, fake: Fake, clock: Clock
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     fake.mdns = HEAD + f"{INSTANCE}\t_adb-tls-pairing._tcp\t{HOST}:{PAIR_PORT}\n"
 
     await tick(controller, clock)
@@ -671,6 +713,7 @@ async def test_each_attempt_shows_connecting_and_falls_back_to_disconnected(
     controller: PhoneController, fake: Fake, clock: Clock
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     seen: list[State] = []
     fake.on_connect = lambda _addr: seen.append(controller.state)
 
@@ -682,9 +725,10 @@ async def test_each_attempt_shows_connecting_and_falls_back_to_disconnected(
 
 
 async def test_the_listeners_hear_about_each_attempt(
-    controller: PhoneController, clock: Clock
+    controller: PhoneController, fake: Fake, clock: Clock
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     heard: list[State] = []
     controller.attach(lambda: heard.append(controller.state))
 
@@ -722,6 +766,7 @@ async def test_a_state_change_during_an_attempt_is_not_overwritten(
     controller: PhoneController, fake: Fake, clock: Clock
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     fake.connect = [runner.Result(0, f"connected to {NEW}", "")]
     fake.on_connect = lambda _addr: controller._touch()  # something else acted
 
@@ -740,6 +785,7 @@ async def test_a_user_toggle_cancels_the_timer_and_resets_the_budget(
 ) -> None:
     del notes
     save(remembered())
+    await arm(controller, fake, clock)
     sleeper.gate = asyncio.Event()
     await tick(controller, clock)
     await asyncio.sleep(0)
@@ -761,6 +807,7 @@ async def test_a_toggle_after_giving_up_connects_to_the_remembered_phone(
 ) -> None:
     del notes
     save(remembered())
+    await arm(controller, fake, clock)
     await tick(controller, clock)
     await settle(controller)
     assert controller._exhausted
@@ -810,6 +857,7 @@ async def test_shutdown_cancels_the_timer(
     controller: PhoneController, fake: Fake, clock: Clock, sleeper: Sleeper
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     sleeper.gate = asyncio.Event()
     await tick(controller, clock)
     await asyncio.sleep(0)
@@ -825,9 +873,10 @@ async def test_shutdown_cancels_the_timer(
 
 
 async def test_the_last_listener_detaching_cancels_the_timer(
-    controller: PhoneController, clock: Clock, sleeper: Sleeper
+    controller: PhoneController, fake: Fake, clock: Clock, sleeper: Sleeper
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
     sleeper.gate = asyncio.Event()
     listener = MagicMock()
     controller.attach(listener)
@@ -846,6 +895,7 @@ async def test_a_crash_in_an_attempt_is_contained(
     controller: PhoneController, fake: Fake, clock: Clock, sleeper: Sleeper
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
 
     def boom(_addr: str) -> None:
         raise RuntimeError("boom")
@@ -866,6 +916,7 @@ async def test_the_reconnect_only_runs_allowlisted_adb_calls_and_never_tcpip(
     controller: PhoneController, fake: Fake, clock: Clock
 ) -> None:
     save(remembered())
+    await arm(controller, fake, clock)
 
     await tick(controller, clock)
     await settle(controller)
@@ -874,3 +925,193 @@ async def test_the_reconnect_only_runs_allowlisted_adb_calls_and_never_tcpip(
     assert {c[1] for c in fake.calls} <= {"devices", "mdns", "connect"}
     assert not any("tcpip" in c for c in fake.calls)
     assert not any("disconnect" in c for c in fake.calls)
+
+
+# --- review fixes: no loop at login, backoff that runs out -----------------------
+
+
+async def test_login_with_the_phone_absent_makes_one_silent_attempt_and_no_timer(
+    controller: PhoneController,
+    fake: Fake,
+    clock: Clock,
+    sleeper: Sleeper,
+    notes: MagicMock,
+) -> None:
+    save(remembered())
+
+    await tick(controller, clock)
+    assert controller._startup_task is not None
+    await controller._startup_task
+    for _ in range(4):
+        await tick(controller, clock)
+        await pump()
+
+    assert fake.connects() == [NEW]  # exactly one attempt, at the mDNS endpoint
+    assert controller._reconnect_task is None
+    assert sleeper.delays == []
+    notes.assert_not_called()  # silent
+
+
+async def test_a_startup_attempt_that_works_is_silent_and_arms_the_backoff(
+    controller: PhoneController,
+    fake: Fake,
+    clock: Clock,
+    sleeper: Sleeper,
+    notes: MagicMock,
+) -> None:
+    save(remembered())
+    fake.connect = [runner.Result(0, f"connected to {NEW}", "")]
+    fake.on_connect = lambda _addr: setattr(fake, "devices", listed(NEW))
+
+    await tick(controller, clock)
+    assert controller._startup_task is not None
+    await controller._startup_task
+    assert await tick(controller, clock) is State.READY
+    notes.assert_not_called()
+
+    fake.devices = NO_DEVICES  # now it drops: this session saw it ready
+    fake.on_connect = None
+    fake.connect = [runner.Result(0, f"failed to connect to {NEW}", "")]
+    await tick(controller, clock)
+    await settle(controller)
+
+    assert sleeper.delays == [8.0, 16.0, 32.0, 64.0, 128.0, 300.0]
+
+
+async def test_a_phone_that_was_ready_in_this_session_and_drops_starts_the_backoff(
+    controller: PhoneController,
+    fake: Fake,
+    clock: Clock,
+    sleeper: Sleeper,
+) -> None:
+    save(remembered())
+    await arm(controller, fake, clock)
+
+    await tick(controller, clock)
+    await settle(controller)
+
+    assert sleeper.delays == [8.0, 16.0, 32.0, 64.0, 128.0, 300.0]
+    assert len(fake.connects()) == 6
+
+
+async def test_the_startup_attempt_happens_once_per_session(
+    controller: PhoneController, fake: Fake, clock: Clock
+) -> None:
+    save(remembered())
+
+    for _ in range(3):
+        await tick(controller, clock)
+        task = controller._startup_task
+        if task is not None:
+            await task
+
+    assert len(fake.connects()) == 1
+
+
+async def test_connected_but_still_offline_runs_out_after_six_attempts(
+    controller: PhoneController,
+    fake: Fake,
+    clock: Clock,
+    sleeper: Sleeper,
+    notes: MagicMock,
+) -> None:
+    save(remembered())
+    await arm(controller, fake, clock)
+    fake.connect = [runner.Result(0, f"connected to {NEW}", "")]
+    fake.devices = f"List of devices attached\n{NEW}\toffline\n"  # never ready
+
+    await tick(controller, clock)
+    await settle(controller)
+    for _ in range(5):  # more polls: nothing may restart the loop
+        await tick(controller, clock)
+        await pump()
+
+    assert sleeper.delays == [8.0, 16.0, 32.0, 64.0, 128.0, 300.0]
+    assert len(fake.connects()) == 6
+    assert controller._exhausted
+    assert controller._reconnect_task is None
+    bodies = [c.args[1] for c in notes.call_args_list]
+    assert len([b for b in bodies if "6 attempts" in b]) == 1
+    assert not any("reconnected" in b.lower() for b in bodies)
+
+
+async def test_reconnected_is_announced_only_once_the_device_is_ready(
+    controller: PhoneController,
+    fake: Fake,
+    clock: Clock,
+    sleeper: Sleeper,
+    notes: MagicMock,
+) -> None:
+    save(remembered())
+    await arm(controller, fake, clock)
+    sleeper.gate = asyncio.Event()
+    fail = runner.Result(0, f"failed to connect to {NEW}", "")
+    fake.connect = [fail, runner.Result(0, f"connected to {NEW}", "")]
+    fake.on_connect = lambda _addr: setattr(
+        fake, "devices", f"List of devices attached\n{NEW}\toffline\n"
+    )
+
+    await tick(controller, clock)
+    for _ in range(2):  # attempt 1 fails, attempt 2 connects but is offline
+        await pump()
+        sleeper.gate.set()
+    await pump()
+    assert len(fake.connects()) == 2
+    assert not any("reconnected" in c.args[1].lower() for c in notes.call_args_list)
+    assert controller._attempts == 2  # not reset by the connect text
+
+    fake.devices = listed(NEW)  # now adb lists it as ready
+    assert await tick(controller, clock) is State.READY
+
+    announced = [c for c in notes.call_args_list if "reconnected" in c.args[1].lower()]
+    assert len(announced) == 1
+    assert controller._attempts == 0
+    assert controller._reconnect_task is None
+
+
+async def test_a_phone_that_is_ready_again_says_nothing_when_no_attempt_was_made(
+    controller: PhoneController, fake: Fake, clock: Clock, notes: MagicMock
+) -> None:
+    save(remembered())
+    fake.devices = listed(SERIAL)
+
+    await tick(controller, clock)
+    await tick(controller, clock)
+
+    notes.assert_not_called()
+
+
+async def test_giving_up_is_a_normal_notification_not_a_critical_one(
+    controller: PhoneController, fake: Fake, clock: Clock, notes: MagicMock
+) -> None:
+    save(remembered())
+    await arm(controller, fake, clock)
+
+    await tick(controller, clock)
+    await settle(controller)
+
+    gave_up = [c for c in notes.call_args_list if "attempts" in c.args[1]]
+    assert len(gave_up) == 1
+    assert gave_up[0].kwargs["urgent"] is False
+
+
+async def test_mirroring_the_remembered_phone_arms_the_backoff_for_a_later_drop(
+    controller: PhoneController,
+    fake: Fake,
+    clock: Clock,
+    sleeper: Sleeper,
+    notes: MagicMock,
+) -> None:
+    del notes
+    save(remembered())
+    fake.devices = listed(SERIAL)
+    controller._spawn = _spawn_ok
+    await controller.toggle()  # mirror starts: probes now return MIRROR
+    assert controller.is_mirroring()
+    await controller.toggle()  # stop: READY
+    fake.devices = NO_DEVICES  # and the phone is gone
+
+    await tick(controller, clock)
+    await settle(controller)
+
+    assert sleeper.delays == [8.0, 16.0, 32.0, 64.0, 128.0, 300.0]

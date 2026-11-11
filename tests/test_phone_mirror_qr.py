@@ -335,3 +335,40 @@ def test_remove_stale_png_with_nothing_to_remove_or_no_runtime_dir(
     assert qr.remove_stale_png() is False
     monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
     assert qr.remove_stale_png() is False
+
+
+async def test_abort_ends_the_window_and_deletes_the_png_without_awaiting(
+    runtime: Path, segno: FakeSegno
+) -> None:
+    del segno
+    spawn = Spawner()
+    window = await qr.open_window(PAYLOAD, spawn=spawn, which=_which())
+    assert window.path.exists()
+
+    window.abort()
+
+    spawn.process.terminate.assert_called_once()
+    assert not (runtime / "qtile" / "pair-qr.png").exists()
+
+
+@pytest.mark.usefixtures("runtime", "segno")
+async def test_abort_on_a_window_the_user_closed_only_deletes_the_png() -> None:
+    spawn = Spawner()
+    window = await qr.open_window(PAYLOAD, spawn=spawn, which=_which())
+    spawn.process.returncode = 0
+
+    window.abort()
+
+    spawn.process.terminate.assert_not_called()
+    assert not window.path.exists()
+
+
+@pytest.mark.usefixtures("runtime", "segno")
+async def test_a_cancelled_spawn_removes_the_png(runtime: Path) -> None:
+    async def cancelled(_argv: Sequence[str]) -> Any:
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await qr.open_window(PAYLOAD, spawn=cancelled, which=_which())
+
+    assert not (runtime / "qtile" / "pair-qr.png").exists()

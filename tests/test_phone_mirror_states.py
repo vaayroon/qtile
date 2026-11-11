@@ -24,6 +24,7 @@ ALLOWED = {
     (State.CONNECTING, State.READY),
     (State.CONNECTING, State.DISCONNECTED),
     (State.CONNECTING, State.ERROR),
+    (State.CONNECTING, State.PAIRING),
     (State.READY, State.MIRROR),
     (State.READY, State.DISCONNECTED),
     (State.READY, State.CONNECTING),

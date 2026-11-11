@@ -103,6 +103,13 @@ class QrWindow:
     def is_open(self) -> bool:
         return bool(self._process.returncode is None)
 
+    def abort(self) -> None:
+        """End the window and delete the PNG without waiting (shutdown path)."""
+        if self.is_open():
+            with contextlib.suppress(ProcessLookupError):
+                self._process.terminate()
+        remove_png(self.path)
+
     async def close(self) -> None:
         """End the window if it is still up, and always delete the PNG."""
         try:

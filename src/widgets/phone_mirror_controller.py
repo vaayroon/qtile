@@ -7,6 +7,7 @@ goes through the allowlisted runner.
 
 import asyncio
 import contextlib
+import math
 import os
 import shutil
 import time
@@ -175,7 +176,9 @@ TRANSITIONS: dict[State, frozenset[State]] = {
     State.DISCONNECTED: frozenset(
         {State.READY, State.CONNECTING, State.PAIRING, State.ERROR}
     ),
-    State.CONNECTING: frozenset({State.READY, State.DISCONNECTED, State.ERROR}),
+    State.CONNECTING: frozenset(
+        {State.READY, State.DISCONNECTED, State.PAIRING, State.ERROR}
+    ),
     State.READY: frozenset(
         {
             State.MIRROR,
@@ -217,9 +220,15 @@ class PhoneController:
         self._reconnect_task: asyncio.Task[None] | None = None
         self._attempts = 0  # reconnect attempts used in this disconnect
         self._exhausted = False  # all attempts spent: wait for a user action
+        # The backoff only starts for a phone that was ready in THIS session and
+        # dropped; at startup there is a single silent attempt, nothing more.
+        self._session_ready = False
+        self._startup_tried = False
+        self._startup_task: asyncio.Task[None] | None = None
         self._seen_ready: list[str] = []  # serials the last probe found usable
         self._open_qr = open_qr
         self._pairing: PairingSession | None = None
+        self._qr_window: Any = None  # the QR window while a pairing waits
         self._pair_cancel = asyncio.Event()
         self._run = run
         self._spawn = spawn
@@ -581,16 +590,39 @@ class PhoneController:
             task.cancel()
 
     def _watch_remembered(self, state: State) -> None:
-        """After a probe: start the reconnect timer when the phone is lost."""
+        """After a probe: reset on a ready phone, retry only after a real drop."""
         device = self.remembered
         if device is None or state is State.ERROR:
             return
         if any(device.matches(serial) for serial in self._seen_ready):
-            self._reset_reconnect()
+            came_back = self._attempts > 0
+            self._session_ready = True
+            self._startup_tried = True
+            self._reset_reconnect()  # the only place a spent budget is refilled
+            if came_back:
+                self.notify("status", NOTIFY_TITLE, "Reconnected to the phone.")
             return
         if state is State.MIRROR or self.resolve("wireless_target"):
             return
-        self._schedule_reconnect()
+        if self._session_ready:
+            self._schedule_reconnect()
+        elif not self._startup_tried:
+            self._startup_tried = True
+            self._startup_task = create_task(self._startup_attempt())
+
+    async def _startup_attempt(self) -> None:
+        """The one silent try at login: no timer, no notification, no new state."""
+        if self._lock.locked():
+            return
+        async with self._lock:
+            if self.remembered is None or self.is_mirroring():
+                return
+            logger.info("PhoneMirror: startup: one silent attempt to reach the phone")
+            try:
+                await self._connect_remembered()
+            except Exception:
+                logger.exception("PhoneMirror: startup attempt failed")
+        self._changed()
 
     def _schedule_reconnect(self) -> None:
         """One reconnect timer at a time; none once the attempts are spent."""
@@ -619,10 +651,14 @@ class PhoneController:
     def _give_up(self) -> None:
         self._exhausted = True
         logger.info("PhoneMirror: reconnect gave up after %d attempts", self._attempts)
-        self.notify("error", NOTIFY_TITLE, _GAVE_UP, urgent=True)
+        self.notify("error", NOTIFY_TITLE, _GAVE_UP)
 
     async def _reconnect_attempt(self) -> bool:
-        """One attempt under the lock; True when the loop should stop."""
+        """One attempt under the lock; True when the loop should stop.
+
+        It never stops on its own after a connect: only a probe that sees the
+        device ready (`_watch_remembered`) or a user action ends the loop.
+        """
         async with self._lock:
             if self.remembered is None or self.is_mirroring():
                 return True
@@ -641,15 +677,14 @@ class PhoneController:
                 ok = False
             if generation == self._generation:  # else an action ran: stale answer
                 self.state = (
-                    State.READY
-                    if ok
-                    else (State.DISCONNECTED if before is State.CONNECTING else before)
+                    State.DISCONNECTED if before is State.CONNECTING else before
                 )
             if ok:
-                self._reset_reconnect()
-                self.notify("status", NOTIFY_TITLE, "Reconnected to the phone.")
+                # `adb connect` printing "connected" proves nothing: the device can
+                # still be offline or unauthorized. The next probe decides.
+                logger.info("PhoneMirror: adb connected, waiting for the device")
             self._changed()
-            return ok
+            return False
 
     # -- actions -----------------------------------------------------------
 
@@ -731,7 +766,17 @@ class PhoneController:
 
     def shutdown(self) -> None:
         self._reset_reconnect()
+        self._abort_pairing()
         self._stop()
+
+    def _abort_pairing(self) -> None:
+        """Cancel a waiting pairing and drop its QR now (the secret must not linger)."""
+        if self._pairing is not None:
+            self._pair_cancel.set()
+        window = self._qr_window
+        if window is not None:
+            self._qr_window = None
+            window.abort()
 
     async def reconnect(self) -> None:
         """Reconnect the wireless target, then pick the device again."""
@@ -824,6 +869,9 @@ class PhoneController:
                 self._fail(Reason.UNKNOWN)
             finally:
                 self._pairing = None
+                if self.state in (State.PAIRING, State.CONNECTING):
+                    # cancelled mid-way (task cancelled, shutdown): leave no half state
+                    self.state = State.DISCONNECTED
                 self._changed()
 
     def _pair_ttl(self) -> float:
@@ -831,6 +879,8 @@ class PhoneController:
         try:
             wanted = float(raw)
         except ValueError:
+            wanted = math.nan
+        if not math.isfinite(wanted):  # "nan" and "inf" parse as floats
             logger.warning("PhoneMirror: bad pairing expiry %r, using the default", raw)
             return DEFAULT_TTL
         ttl = min(max(wanted, PAIR_TTL_MIN), PAIR_TTL_MAX)
@@ -862,6 +912,7 @@ class PhoneController:
             await self._manual_pair()
             return
         self._pairing = session
+        self._qr_window = window
         self.state = State.PAIRING
         self._changed()
         left = session.countdown(self._clock())
@@ -875,6 +926,7 @@ class PhoneController:
         try:
             entry, outcome = await self._await_pairing(session, window)
         finally:
+            self._qr_window = None
             await window.close()
             self._pairing = None
         if outcome == "cancelled":
@@ -969,6 +1021,7 @@ class PhoneController:
         rc, text = await self._exec(build_connect_argv(adb, address))
         if connect_succeeded(rc, text):
             self._remember(found.instance, address)
+            self._session_ready = True
             self.state = State.READY
             self.notify("pair", NOTIFY_TITLE, f"Paired and connected to {address}.")
             return
@@ -1101,6 +1154,9 @@ class PhoneController:
         self._mirror_serial = serial
         self.state = State.MIRROR
         self._touch()
+        known = self.remembered
+        if known is not None and known.matches(serial):
+            self._session_ready = True
         preset, why = self._preset(serial)
         logger.info(
             "PhoneMirror: mirror start serial=%s transport=%s preset=%s (%s)",
@@ -1160,6 +1216,7 @@ def get_controller() -> PhoneController:
     global _controller
     if _controller is None:
         plog.setup()
+        qr.remove_stale_png()  # a crash can leave the one-time QR behind
         _controller = PhoneController()
     return _controller
 

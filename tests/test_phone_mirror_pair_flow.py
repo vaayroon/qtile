@@ -42,6 +42,11 @@ class FakeWindow:
         self.payload = payload
         self.opened = True
         self.closes = 0
+        self.aborted = 0
+
+    def abort(self) -> None:
+        self.opened = False
+        self.aborted += 1
 
     def is_open(self) -> bool:
         return self.opened
@@ -67,6 +72,7 @@ class Fake:
         self.windows: list[FakeWindow] = []
         self.qr_error: Exception | None = None
         self.on_mdns: Any = None
+        self.pair_gate: asyncio.Event | None = None
 
     @property
     def name(self) -> str:
@@ -112,6 +118,8 @@ class Fake:
             return runner.Result(0, text, "")
         if sub[0] == "pair":
             self.stdin.append((sub[1], input_text))
+            if self.pair_gate is not None:
+                await self.pair_gate.wait()
             return self.pair
         if sub[0] == "connect":
             return self.connect
@@ -920,3 +928,119 @@ async def test_a_phone_with_a_valid_instance_name_is_remembered(
     assert controller.remembered is not None
     assert controller.remembered.service_name == DEVICE
     assert ctl.state_path().exists()
+
+
+# --- pairing lifecycle (review fixes) -------------------------------------------------
+
+
+async def _wait_for_window(fake: Fake) -> None:
+    for _ in range(200):
+        await asyncio.sleep(0)
+        if fake.windows:
+            return
+    raise AssertionError("the QR window never opened")
+
+
+async def test_cancelling_the_pair_task_cleans_the_qr_and_restores_the_state(
+    controller: PhoneController, fake: Fake, notes: MagicMock
+) -> None:
+    task = asyncio.ensure_future(controller.pair())
+    await _wait_for_window(fake)
+    assert controller.state is State.PAIRING
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert fake.windows[0].closes == 1  # the window is closed, the PNG deleted
+    assert controller.state is State.DISCONNECTED
+    assert controller._pairing is None
+    assert controller.pairing_countdown() == ""
+    assert not controller._lock.locked()
+    assert "Unexpected" not in _bodies(notes)
+    assert fake.adb("pair") == []
+
+
+async def test_cancelling_during_adb_pair_restores_the_state_and_the_lock(
+    controller: PhoneController, fake: Fake, notes: MagicMock
+) -> None:
+    del notes
+    fake.pair_gate = asyncio.Event()  # `adb pair` never answers
+    phone_appears(fake)
+    task = asyncio.ensure_future(controller.pair())
+    for _ in range(500):
+        await asyncio.sleep(0)
+        if fake.adb("pair"):
+            break
+    assert fake.adb("pair")
+    assert controller.state is State.CONNECTING
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert controller.state is State.DISCONNECTED
+    assert controller._pairing is None
+    assert not controller._lock.locked()
+    assert fake.windows[0].closes == 1
+
+
+async def test_a_pairing_can_start_again_after_a_cancelled_one(
+    controller: PhoneController, fake: Fake, notes: MagicMock
+) -> None:
+    del notes
+    task = asyncio.ensure_future(controller.pair())
+    await _wait_for_window(fake)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    cancelled = fake.windows.pop(0)  # the helpers read the first window's name
+    phone_appears(fake)
+
+    await controller.pair()
+
+    assert controller.state is State.READY
+    assert cancelled.closes == 1
+    assert len(fake.windows) == 1
+
+
+async def test_shutdown_cancels_a_pairing_and_removes_the_qr_at_once(
+    controller: PhoneController, fake: Fake, notes: MagicMock
+) -> None:
+    task = asyncio.ensure_future(controller.pair())
+    await _wait_for_window(fake)
+
+    controller.shutdown()
+
+    assert controller._pair_cancel.is_set()
+    assert fake.windows[0].aborted == 1  # synchronous: no await needed
+    await task
+    assert fake.adb("pair") == []
+    assert controller.state is State.DISCONNECTED
+    assert "cancel" in _bodies(notes).lower()
+
+
+async def test_shutdown_without_a_pairing_touches_nothing(
+    controller: PhoneController, fake: Fake
+) -> None:
+    controller.shutdown()
+
+    assert not controller._pair_cancel.is_set()
+    assert fake.windows == []
+
+
+@pytest.mark.parametrize("raw", ["nan", "NaN", "inf", "-inf", "Infinity"])
+async def test_a_non_finite_expiry_falls_back_to_the_default(
+    controller: PhoneController, monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_PAIR_TTL", raw)
+
+    assert controller._pair_ttl() == 180.0
+
+
+async def test_a_finite_expiry_still_applies(
+    controller: PhoneController, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_PAIR_TTL", "250")
+
+    assert controller._pair_ttl() == 250.0

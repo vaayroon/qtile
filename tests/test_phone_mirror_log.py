@@ -294,3 +294,19 @@ def test_sanitized_lines_gives_one_clean_line_per_line_of_output() -> None:
 
 def test_sanitized_lines_of_nothing_is_empty() -> None:
     assert plog.sanitized_lines("  \n \r\n") == []
+
+
+def test_the_controller_singleton_removes_a_stale_qr_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[int] = []
+    monkeypatch.setattr(plog, "setup", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        phone_mirror_controller.qr, "remove_stale_png", lambda: calls.append(1)
+    )
+    monkeypatch.setattr(phone_mirror_controller, "_controller", None)
+
+    phone_mirror_controller.get_controller()
+    phone_mirror_controller.get_controller()
+
+    assert calls == [1]
