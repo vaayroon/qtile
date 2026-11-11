@@ -706,3 +706,15 @@ def test_no_shell_true_anywhere_in_phone_code() -> None:
                 assert not (isinstance(value, ast.Constant) and value.value), (
                     f"{path.name}: shell=True"
                 )
+
+
+def test_no_string_in_the_phone_code_touches_wifi_link_features() -> None:
+    """The host's Wi-Fi stack is off limits: nothing here may even name TDLS."""
+    offenders = [
+        f"{path.name}: {text!r}"
+        for path in _phone_files()
+        if path.name != RUNNER_FILE
+        for text in _string_constants(path)
+        if "tdls" in text.lower() or "wpa_cli" in text.lower()
+    ]
+    assert not offenders, offenders

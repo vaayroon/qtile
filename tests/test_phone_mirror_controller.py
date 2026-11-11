@@ -1226,3 +1226,121 @@ async def test_a_usb_serial_is_logged_as_usb(
     )
     assert "serial=56201FDCR0077W" in line
     assert "transport=usb" in line
+
+
+# --- preset per transport -------------------------------------------------------------
+
+WIFI_SERIAL = "192.168.1.10:5555"
+MDNS_SERIAL = "adb-56201FDCR0077W-I7p3gg._adb-tls-connect._tcp"
+USB_SERIAL = "56201FDCR0077W"
+
+
+def _usb_only(fake: FakeRunner) -> None:
+    fake.devices = [f"List of devices attached\n{USB_SERIAL}\tdevice usb:1-1\n"]
+
+
+def _flag(argv: list[str], name: str) -> str | None:
+    return argv[argv.index(name) + 1] if name in argv else None
+
+
+@pytest.mark.usefixtures("notes")
+async def test_a_wifi_device_uses_the_low_preset_by_default(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    await controller.toggle()
+
+    argv = fake.spawned[0]
+    assert _flag(argv, "--max-size") == "1024"
+    assert _flag(argv, "--video-bit-rate") == "4M"
+    assert _flag(argv, "--max-fps") == "30"
+
+
+@pytest.mark.usefixtures("notes")
+async def test_an_mdns_connect_name_counts_as_wifi(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    fake.devices = [f"List of devices attached\n{MDNS_SERIAL}\tdevice\n"]
+
+    await controller.toggle()
+
+    assert _flag(fake.spawned[0], "--max-size") == "1024"
+
+
+@pytest.mark.usefixtures("notes")
+async def test_usb_keeps_the_regular_quality_setting(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    _usb_only(fake)
+
+    await controller.toggle()
+
+    assert _flag(fake.spawned[0], "--max-size") == "1600"  # balanced
+
+
+@pytest.mark.usefixtures("notes")
+async def test_usb_follows_QUALITY_and_ignores_WIFI_QUALITY(
+    controller: PhoneController, fake: FakeRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _usb_only(fake)
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_QUALITY", "high")
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_WIFI_QUALITY", "low")
+
+    await controller.toggle()
+
+    assert "--max-size" not in fake.spawned[0]  # high: native size
+    assert _flag(fake.spawned[0], "--video-bit-rate") == "16M"
+
+
+@pytest.mark.usefixtures("notes")
+async def test_wifi_follows_WIFI_QUALITY_and_ignores_QUALITY(
+    controller: PhoneController, fake: FakeRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_QUALITY", "high")
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_WIFI_QUALITY", "balanced")
+
+    await controller.toggle()
+
+    assert _flag(fake.spawned[0], "--max-size") == "1600"
+
+
+@pytest.mark.usefixtures("notes")
+async def test_a_bad_wifi_quality_falls_back_to_low_not_balanced(
+    controller: PhoneController, fake: FakeRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_WIFI_QUALITY", "ultra")
+
+    await controller.toggle()
+
+    assert _flag(fake.spawned[0], "--max-size") == "1024"
+
+
+def test_wifi_quality_has_an_env_key_and_a_low_default() -> None:
+    assert ctl.ENV_KEYS["wifi_quality"] == "QTILE_PHONE_MIRROR_WIFI_QUALITY"
+    assert ctl.DEFAULTS["wifi_quality"] == "low"
+
+
+@pytest.mark.usefixtures("notes")
+async def test_the_chosen_preset_and_the_reason_are_logged(
+    controller: PhoneController, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+
+    text = caplog.text
+    assert "preset=low" in text
+    assert "wifi transport" in text
+    assert "QTILE_PHONE_MIRROR_WIFI_QUALITY" in text
+
+
+@pytest.mark.usefixtures("notes")
+async def test_the_usb_reason_is_logged(
+    controller: PhoneController, fake: FakeRunner, caplog: pytest.LogCaptureFixture
+) -> None:
+    _usb_only(fake)
+
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+
+    assert "preset=balanced" in caplog.text
+    assert "usb transport" in caplog.text
+    assert "QTILE_PHONE_MIRROR_QUALITY" in caplog.text

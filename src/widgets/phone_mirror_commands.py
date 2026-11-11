@@ -32,10 +32,10 @@ class Device:
     transport: str = field(default="", compare=False)
 
 
-def normalize_quality(value: str) -> str:
-    """Return a known preset name; anything else becomes the default."""
+def normalize_quality(value: str, default: str = DEFAULT_QUALITY) -> str:
+    """Return a known preset name; anything else becomes `default`."""
     name = value.strip().lower()
-    return name if name in QUALITY_PRESETS else DEFAULT_QUALITY
+    return name if name in QUALITY_PRESETS else default
 
 
 def build_scrcpy_argv(scrcpy_path: str, options: MirrorOptions) -> list[str]:

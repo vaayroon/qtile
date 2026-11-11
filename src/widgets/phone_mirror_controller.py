@@ -53,7 +53,7 @@ from .phone_mirror_pairing import (
     redact,
 )
 from .phone_mirror_reasons import Reason, map_exception, map_failure, message_for
-from .phone_mirror_state import transport_of
+from .phone_mirror_state import is_wireless_serial, transport_of
 
 REFRESH_TTL = 2.0
 STOP_GRACE = 3.0  # seconds between SIGTERM and SIGKILL when stopping scrcpy
@@ -78,6 +78,7 @@ ENV_KEYS = {
     "show_device": "QTILE_PHONE_MIRROR_SHOW_DEVICE",
     "volume_step": "QTILE_PHONE_MIRROR_VOLUME_STEP",
     "quality": "QTILE_PHONE_MIRROR_QUALITY",
+    "wifi_quality": "QTILE_PHONE_MIRROR_WIFI_QUALITY",
     "audio": "QTILE_PHONE_MIRROR_AUDIO",
     "restart_on_switch": "QTILE_PHONE_MIRROR_RESTART_ON_SWITCH",
     "pair_ttl": "QTILE_PHONE_MIRROR_PAIR_TTL",
@@ -92,6 +93,7 @@ DEFAULTS = {
     "show_device": "false",
     "volume_step": "5",
     "quality": "balanced",
+    "wifi_quality": "low",
     "audio": "false",
     "restart_on_switch": "true",
     "pair_ttl": "180",
@@ -202,9 +204,17 @@ class PhoneController:
     def _settings(self) -> dict[str, str]:
         return {key: self.resolve(key) for key in DEFAULTS}
 
+    def _preset(self, serial: str) -> tuple[str, str]:
+        """The preset for this device and why; Wi-Fi has its own, lighter one."""
+        if is_wireless_serial(serial):
+            wanted = normalize_quality(self.resolve("wifi_quality"), default="low")
+            return wanted, "wifi transport, QTILE_PHONE_MIRROR_WIFI_QUALITY"
+        wanted = normalize_quality(self.resolve("quality"))
+        return wanted, "usb transport, QTILE_PHONE_MIRROR_QUALITY"
+
     def _options(self, serial: str) -> MirrorOptions:
         return MirrorOptions(
-            quality=normalize_quality(self.resolve("quality")),
+            quality=self._preset(serial)[0],
             screen_off=to_bool(self.resolve("turn_screen_off")),
             audio=to_bool(self.resolve("audio")),
             serial=serial,
@@ -814,11 +824,13 @@ class PhoneController:
         self._mirror_serial = serial
         self.state = State.MIRROR
         self._touch()
+        preset, why = self._preset(serial)
         logger.info(
-            "PhoneMirror: mirror start serial=%s transport=%s preset=%s",
+            "PhoneMirror: mirror start serial=%s transport=%s preset=%s (%s)",
             serial,
             transport_of(serial),
-            self._options(serial).quality,
+            preset,
+            why,
         )
         self._watcher = create_task(self._watch(proc, tail, serial))
         self.notify("status", NOTIFY_TITLE, "Mirroring started.")

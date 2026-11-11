@@ -49,7 +49,12 @@ class PhoneMirrorWidget(base.BackgroundPoll):
             ),
         ),
         ("turn_screen_off", True, "Start scrcpy with phone display off (-S)."),
-        ("quality", "balanced", "Video preset: low, balanced or high."),
+        ("quality", "balanced", "Video preset over USB: low, balanced or high."),
+        (
+            "wifi_quality",
+            "low",
+            "Video preset over Wi-Fi (host:port or mDNS name): low, balanced, high.",
+        ),
         ("audio", False, "Forward the phone audio to the computer."),
         (
             "restart_on_switch",
@@ -81,6 +86,7 @@ class PhoneMirrorWidget(base.BackgroundPoll):
         "device",
         "turn_screen_off",
         "quality",
+        "wifi_quality",
         "audio",
         "restart_on_switch",
         "pair_ttl",

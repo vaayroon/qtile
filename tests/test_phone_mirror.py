@@ -188,6 +188,7 @@ def test_constructor_hands_defaults_to_the_controller(
     assert fake.configured["adb_path"] == "/opt/genymobile/adb"
     assert fake.configured["turn_screen_off"] == "false"
     assert fake.configured["quality"] == "balanced"
+    assert fake.configured["wifi_quality"] == "low"
     assert fake.configured["pair_ttl"] == "180"
 
 

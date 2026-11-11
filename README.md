@@ -187,7 +187,8 @@ Runtime behavior is controlled through `.env` (loaded by `python-dotenv` at star
 | `QTILE_PHONE_MIRROR_ADB_PATH` | `/opt/genymobile/adb` | Path to the `adb` binary. |
 | `QTILE_PHONE_MIRROR_SCRCPY_PATH` | `/opt/genymobile/scrcpy` | Path to the `scrcpy` binary. |
 | `QTILE_PHONE_MIRROR_SCREEN_OFF` | `true` | Start scrcpy with the phone screen off (`-S`). |
-| `QTILE_PHONE_MIRROR_QUALITY` | `balanced` | Video preset: `low` (1024 px, 4M, 30 fps), `balanced` (1600 px, 8M, 60 fps) or `high` (native size, 16M, 60 fps). |
+| `QTILE_PHONE_MIRROR_QUALITY` | `balanced` | Video preset for a USB device: `low` (1024 px, 4M, 30 fps), `balanced` (1600 px, 8M, 60 fps) or `high` (native size, 16M, 60 fps). |
+| `QTILE_PHONE_MIRROR_WIFI_QUALITY` | `low` | Video preset for a Wi-Fi device (`host:port` or an `adb-…._adb-tls-connect._tcp` name), same values as above. It defaults to `low` because heavy scrcpy traffic over Wi-Fi coincided with Wi-Fi link problems and a phone network-stack crash in testing. The code never changes any network setting of this computer. The chosen preset and the reason are logged at each start. |
 | `QTILE_PHONE_MIRROR_AUDIO` | `false` | Forward the phone audio to the computer (`--no-audio` when off). |
 | `QTILE_PHONE_MIRROR_RESTART_ON_SWITCH` | `true` | Reopen mirroring on the new device after a right-click switch, only if it was running. |
 | `QTILE_PHONE_MIRROR_PAIR_TTL` | `180` | Seconds the Wi-Fi pairing QR stays valid (clamped to 120-300). |
