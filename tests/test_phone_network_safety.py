@@ -177,7 +177,6 @@ async def test_non_allowlisted_adb_calls_are_rejected(
         ["adb", "pair", "192.168.1.20:37000", "123456"],
         ["adb", "mdns", "services"],
         ["adb", "mdns", "check"],
-        ["adb", "tcpip", "5555"],
         ["adb", "-s", "SER", "shell", "input", "keyevent", "24"],
         ["adb", "shell", "input", "keyevent", "25"],
         ["scrcpy", "-S", "--no-audio", "--window-title=Phone"],
@@ -192,7 +191,64 @@ async def test_allowlisted_calls_are_spawned(
     exec_mock.assert_awaited_once()
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["adb", "tcpip", "5555"],
+        ["adb", "-s", "SER", "tcpip", "5555"],
+        ["adb", "TCPIP", "5555"],
+    ],
+)
+async def test_tcpip_is_rejected_by_the_runner(
+    argv: list[str], exec_mock: AsyncMock
+) -> None:
+    with pytest.raises(runner.ForbiddenCommand):
+        await runner.run(argv)
+    exec_mock.assert_not_called()
+
+
+def test_tcpip_is_not_in_the_adb_subcommand_allowlist() -> None:
+    assert "tcpip" not in runner.ALLOWED_ADB_SUBCOMMANDS
+
+
 # --- strict rofi / zenity templates ------------------------------------------
+
+
+RUNTIME = "/run/user/1000"
+QR_PNG = f"{RUNTIME}/qtile/pair-qr.png"
+QR_ARGV = [
+    "kitty",
+    "--class",
+    "phone-pair-qr",
+    "--title",
+    "Pair phone",
+    "kitty",
+    "+kitten",
+    "icat",
+    "--hold",
+    QR_PNG,
+]
+
+
+@pytest.fixture()
+def runtime_dir(monkeypatch: pytest.MonkeyPatch) -> str:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", RUNTIME)
+    return RUNTIME
+
+
+@pytest.mark.usefixtures("runtime_dir")
+async def test_kitty_runs_the_exact_qr_template(exec_mock: AsyncMock) -> None:
+    await runner.run(QR_ARGV)
+
+    exec_mock.assert_awaited_once()
+    assert exec_mock.await_args.args == tuple(QR_ARGV)
+
+
+@pytest.mark.usefixtures("runtime_dir")
+async def test_kitty_by_path_is_still_the_same_template(exec_mock: AsyncMock) -> None:
+    await runner.run(["/usr/bin/kitty", *QR_ARGV[1:]])
+
+    exec_mock.assert_awaited_once()
 
 
 @pytest.mark.parametrize(
@@ -201,11 +257,62 @@ async def test_allowlisted_calls_are_spawned(
         ["kitty"],
         ["kitty", "--hold"],
         ["/usr/bin/kitty", "--class", "phone-pair-qr"],
+        # anything but the exact template
+        [*QR_ARGV[:-1]],  # no png
+        [*QR_ARGV, "extra"],
+        ["kitty", "-e", "true"],
+        ["kitty", "--class", "other", *QR_ARGV[3:]],
+        ["kitty", "--class", "phone-pair-qr", "--title", "Other", *QR_ARGV[5:]],
+        ["kitty", "--title", "Pair phone", "--class", "phone-pair-qr", *QR_ARGV[5:]],
+        [*QR_ARGV[:5], "kitty", "+kitten", "ssh", "--hold", QR_PNG],
+        [*QR_ARGV[:5], "kitty", "+kitten", "icat", QR_PNG],
+        [*QR_ARGV[:5], "kitty", "+kitten", "icat", "--hold", "--engine=magick", QR_PNG],
+        [*QR_ARGV[:5], "kitty", "+kitten", "icat", "--hold", "-n", QR_PNG],
+        [*QR_ARGV[:5], "sh", "+kitten", "icat", "--hold", QR_PNG],
+        [*QR_ARGV[:5], "python3", "-c", "x", "--hold", QR_PNG],
+        ["kitty", "--class", "phone-pair-qr", "--title", "Pair phone", "-o", "x=y"],
+        ["kitty", "--detach", *QR_ARGV[1:]],
+        ["kitty", "+kitten", "icat", "--hold", QR_PNG],
+        ["kitty", "@", "launch", "true"],
+        # the image must be the one file the code writes
+        [*QR_ARGV[:-1], "/etc/passwd"],
+        [*QR_ARGV[:-1], "/tmp/pair-qr.png"],
+        [*QR_ARGV[:-1], f"{RUNTIME}/qtile/other.png"],
+        [*QR_ARGV[:-1], f"{RUNTIME}/other/pair-qr.png"],
+        [*QR_ARGV[:-1], f"{RUNTIME}/qtile/../pair-qr.png"],
+        [*QR_ARGV[:-1], f"{RUNTIME}/qtile/sub/pair-qr.png"],
+        [*QR_ARGV[:-1], "qtile/pair-qr.png"],
+        [*QR_ARGV[:-1], f"{RUNTIME}-evil/qtile/pair-qr.png"],
+        [*QR_ARGV[:-1], f"{RUNTIME}/qtile/pair-qr.png.sh"],
+        [*QR_ARGV[:-1], "http://example.com/x.png"],
     ],
 )
-async def test_kitty_is_not_allowed(argv: list[str], exec_mock: AsyncMock) -> None:
+@pytest.mark.usefixtures("runtime_dir")
+async def test_kitty_rejects_anything_but_the_qr_template(
+    argv: list[str], exec_mock: AsyncMock
+) -> None:
     with pytest.raises(runner.ForbiddenCommand):
         await runner.run(argv)
+    with pytest.raises(runner.ForbiddenCommand):
+        await runner.spawn(argv)
+    exec_mock.assert_not_called()
+
+
+async def test_kitty_needs_a_runtime_dir(
+    monkeypatch: pytest.MonkeyPatch, exec_mock: AsyncMock
+) -> None:
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+
+    with pytest.raises(runner.ForbiddenCommand):
+        await runner.run(QR_ARGV)
+    exec_mock.assert_not_called()
+
+
+@pytest.mark.usefixtures("runtime_dir")
+async def test_kitty_cannot_wrap_a_forbidden_tool(exec_mock: AsyncMock) -> None:
+    for name in FORBIDDEN_EXECUTABLES:
+        with pytest.raises(runner.ForbiddenCommand):
+            await runner.run([*QR_ARGV[:5], name, "+kitten", "icat", "--hold", QR_PNG])
     exec_mock.assert_not_called()
 
 
@@ -357,6 +464,7 @@ def test_allowlist_is_exactly_the_expected_set() -> None:
         "scrcpy",
         "zenity",
         "rofi",
+        "kitty",
     }
     _assert_allowlist_is_safe(runner.ALLOWED_EXECUTABLES)
 
@@ -494,8 +602,67 @@ _EXEC_PRIMITIVES = {"create_subprocess_exec", "subprocess"}
 _OS_BANNED_NAMES = {"system", "popen"}
 
 
+_OS_BANNED_PREFIXES = ("exec", "spawn", "posix_spawn", "fork")
+_BANNED_MODULES = {"subprocess", "pty", "ctypes", "multiprocessing"}
+_BANNED_DOTTED = ("concurrent.futures.process",)
+_PROCESS_POOLS = {"ProcessPoolExecutor"}
+_CODE_RUNNERS = {"eval", "exec"}
+_LOOP_PRIMITIVES = {"subprocess_exec", "subprocess_shell"}
+
+
 def _os_banned(name: str) -> bool:
-    return name in _OS_BANNED_NAMES or name.startswith(("exec", "spawn")) or name == "*"
+    return (
+        name in _OS_BANNED_NAMES or name.startswith(_OS_BANNED_PREFIXES) or name == "*"
+    )
+
+
+def _banned_module(name: str) -> bool:
+    return name.split(".")[0] in _BANNED_MODULES or name.startswith(_BANNED_DOTTED)
+
+
+def _dynamic_import_offender(node: ast.Call) -> bool:
+    """`importlib.import_module(x)` / `__import__(x)` of a banned or unknown module.
+
+    The name may be the first positional argument or the `name=` keyword. A
+    literal is checked against the banned modules; a computed name (or `**kwargs`)
+    cannot be checked, so it is flagged. `import_module("segno")` stays fine.
+    """
+    func = node.func
+    name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+    if name not in {"import_module", "__import__"}:
+        return False
+    if any(kw.arg is None for kw in node.keywords):
+        return True  # **options: the module name is hidden
+    if node.args:
+        target: ast.expr = node.args[0]
+    else:
+        named = [kw.value for kw in node.keywords if kw.arg == "name"]
+        if not named:
+            return False  # not a usable import call
+        target = named[0]
+    if isinstance(target, ast.Constant) and isinstance(target.value, str):
+        return _banned_module(target.value)
+    return True
+
+
+def _getattr_offender(node: ast.Call, os_aliases: set[str]) -> bool:
+    """`getattr(os, x)` / `getattr(subprocess, x)` unless x is a harmless literal."""
+    func = node.func
+    if not (isinstance(func, ast.Name) and func.id == "getattr"):
+        return False
+    if not node.args:
+        return False
+    obj = node.args[0]
+    process_like = (
+        isinstance(obj, ast.Name) and obj.id in os_aliases | {"subprocess"}
+    ) or (isinstance(obj, ast.Attribute) and obj.attr == "subprocess")
+    if not process_like:
+        return False
+    if len(node.args) > 1:
+        attr = node.args[1]
+        if isinstance(attr, ast.Constant) and isinstance(attr.value, str):
+            return _os_banned(attr.value) or attr.value in _EXEC_PRIMITIVES
+    return True
 
 
 def _process_offenders(source: str, *, is_runner: bool = False) -> list[str]:
@@ -508,25 +675,45 @@ def _process_offenders(source: str, *, is_runner: bool = False) -> list[str]:
     found: list[str] = []
     for node in ast.walk(tree):
         line = getattr(node, "lineno", 0)
-        if isinstance(node, ast.Import):
+        if isinstance(node, ast.Call) and _dynamic_import_offender(node):
+            found.append(f"{line}: dynamic import")
+        elif isinstance(node, ast.Call) and _getattr_offender(node, os_aliases):
+            found.append(f"{line}: getattr on os/subprocess")
+        elif isinstance(node, ast.Name) and node.id in _CODE_RUNNERS:
+            found.append(f"{line}: {node.id}")
+        elif isinstance(node, ast.Import):
             found += [
                 f"{line}: import {a.name}"
                 for a in node.names
-                if a.name.split(".")[0] == "subprocess" and not is_runner
+                if (a.name.split(".")[0] == "subprocess" and not is_runner)
+                or (_banned_module(a.name) and a.name.split(".")[0] != "subprocess")
             ]
         elif isinstance(node, ast.ImportFrom):
-            module = (node.module or "").split(".")[0]
-            if module == "subprocess" and not is_runner:
-                found.append(f"{line}: from subprocess import")
+            full = node.module or ""
+            module = full.split(".")[0]
+            if (module == "subprocess" and not is_runner) or (
+                _banned_module(full) and module != "subprocess"
+            ):
+                found.append(f"{line}: from {full} import")
             for alias in node.names:
-                if alias.name in _SHELL_SPAWNERS:
+                if alias.name in _PROCESS_POOLS:
+                    found.append(f"{line}: from-import {alias.name}")
+                elif alias.name in _SHELL_SPAWNERS:
                     found.append(f"{line}: from-import {alias.name}")
                 elif alias.name in _EXEC_PRIMITIVES and not is_runner:
                     found.append(f"{line}: from-import {alias.name}")
                 elif module == "os" and _os_banned(alias.name):
                     found.append(f"{line}: from os import {alias.name}")
         elif isinstance(node, ast.Attribute):
-            if node.attr in _SHELL_SPAWNERS:
+            if node.attr in _PROCESS_POOLS:
+                found.append(f"{line}: .{node.attr}")
+            elif (
+                node.attr in _CODE_RUNNERS
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "builtins"
+            ):
+                found.append(f"{line}: builtins.{node.attr}")
+            elif node.attr in _SHELL_SPAWNERS | _LOOP_PRIMITIVES:
                 found.append(f"{line}: .{node.attr}")
             elif node.attr in _EXEC_PRIMITIVES and not is_runner:
                 found.append(f"{line}: .{node.attr}")
@@ -565,6 +752,123 @@ def _process_offenders(source: str, *, is_runner: bool = False) -> list[str]:
     ],
 )
 def test_negative_control_scan_finds_process_primitives(source: str) -> None:
+    assert _process_offenders(source)
+
+
+_NEW_BANNED = [
+    "import os\nos.posix_spawn('x', ['x'], {})",
+    "import os\nos.posix_spawnp('x', ['x'], {})",
+    "import os\nos.fork()",
+    "import os\nos.forkpty()",
+    "import os as o\no.fork()",
+    "from os import fork",
+    "from os import forkpty",
+    "from os import posix_spawn",
+    "import pty",
+    "import pty as p",
+    "from pty import spawn",
+    "import ctypes",
+    "import ctypes.util",
+    "from ctypes import CDLL",
+    "import importlib\nimportlib.import_module('subprocess')",
+    "import importlib as il\nil.import_module('subprocess')",
+    "from importlib import import_module\nimport_module('subprocess')",
+    "import importlib\nimportlib.import_module('pty')",
+    "import importlib\nimportlib.import_module('ctypes')",
+    "import importlib\nimportlib.import_module('subprocess.x')",
+    "__import__('subprocess')",
+    "__import__('ctypes')",
+    "import asyncio\nloop = asyncio.get_running_loop()\nloop.subprocess_exec(1, 'x')",
+    "import asyncio\nasyncio.get_event_loop().subprocess_shell(1, 'x')",
+    "def f(loop):\n    return loop.subprocess_exec",
+]
+
+
+@pytest.mark.parametrize("source", _NEW_BANNED)
+def test_negative_control_scan_finds_fork_pty_ctypes_and_dynamic_imports(
+    source: str,
+) -> None:
+    assert _process_offenders(source)
+
+
+@pytest.mark.parametrize("source", _NEW_BANNED)
+def test_the_runner_gets_no_exemption_for_the_new_bans(source: str) -> None:
+    assert _process_offenders(source, is_runner=True)
+
+
+_SCAN_GAPS = [
+    # keyword arguments of the dynamic import
+    "import importlib\nimportlib.import_module(name='subprocess')",
+    "from importlib import import_module\nimport_module(name='pty')",
+    "__import__(name='ctypes')",
+    "import importlib\nimportlib.import_module(name=computed)",
+    "import importlib\nimportlib.import_module(**options)",
+    "import importlib\nimportlib.import_module(package='x', name='subprocess')",
+    # other ways to start processes
+    "import multiprocessing",
+    "import multiprocessing.pool",
+    "from multiprocessing import Process",
+    "import importlib\nimportlib.import_module('multiprocessing')",
+    "import importlib\nimportlib.import_module('multiprocessing.pool')",
+    "from concurrent.futures import ProcessPoolExecutor",
+    "from concurrent.futures import ProcessPoolExecutor as Pool",
+    "import concurrent.futures\nconcurrent.futures.ProcessPoolExecutor()",
+    "from concurrent import futures\nfutures.ProcessPoolExecutor()",
+    "import concurrent.futures.process",
+    "from concurrent.futures.process import ProcessPoolExecutor",
+    # running arbitrary code
+    "eval('1')",
+    "exec('x = 1')",
+    "f = eval",
+    "import builtins\nbuiltins.eval('1')",
+    "import builtins\nbuiltins.exec('x = 1')",
+    # reaching os / subprocess without naming the attribute
+    "import os\ngetattr(os, name)('x')",
+    "import os\ngetattr(os, 'sys' + 'tem')",
+    "import os\ngetattr(os, 'system')('x')",
+    "import os as o\ngetattr(o, name)",
+    "import os\ngetattr(os, name, None)",
+    "import os\ngetattr(os, attr=name)",
+    "import asyncio\ngetattr(asyncio.subprocess, name)",
+    "from asyncio import subprocess\ngetattr(subprocess, name)",
+]
+
+
+@pytest.mark.parametrize("source", _SCAN_GAPS)
+def test_negative_control_scan_finds_the_known_gaps(source: str) -> None:
+    assert _process_offenders(source)
+
+
+@pytest.mark.parametrize("source", _SCAN_GAPS)
+def test_the_runner_gets_no_exemption_for_the_known_gaps(source: str) -> None:
+    assert _process_offenders(source, is_runner=True)
+
+
+def test_harmless_getattr_eval_like_names_and_executors_are_not_flagged() -> None:
+    source = (
+        "import os\nimport importlib\n"
+        "from concurrent.futures import ThreadPoolExecutor\n"
+        "importlib.import_module(name='segno')\n"
+        "importlib.import_module('segno', package=None)\n"
+        "getattr(os, 'getpid')()\n"
+        "getattr(widget, name)\n"
+        "evaluate = 1\nexecutor = 2\nlogger.exec_time = 3\n"
+        "ThreadPoolExecutor()\n"
+    )
+    assert _process_offenders(source) == []
+
+
+def test_importing_segno_dynamically_is_still_allowed() -> None:
+    source = (
+        "import importlib\nimportlib.import_module('segno')\n"
+        "from importlib import import_module\nimport_module('segno')\n"
+        "import os\nos.getpid()\nos.environ.get('X')\n"
+    )
+    assert _process_offenders(source) == []
+
+
+def test_a_dynamic_import_with_a_computed_name_is_not_guessable_but_flagged() -> None:
+    source = "import importlib\nname = 'sub' + 'process'\nimportlib.import_module(name)"
     assert _process_offenders(source)
 
 
@@ -617,3 +921,15 @@ def test_no_shell_true_anywhere_in_phone_code() -> None:
                 assert not (isinstance(value, ast.Constant) and value.value), (
                     f"{path.name}: shell=True"
                 )
+
+
+def test_no_string_in_the_phone_code_touches_wifi_link_features() -> None:
+    """The host's Wi-Fi stack is off limits: nothing here may even name TDLS."""
+    offenders = [
+        f"{path.name}: {text!r}"
+        for path in _phone_files()
+        if path.name != RUNNER_FILE
+        for text in _string_constants(path)
+        if "tdls" in text.lower() or "wpa_cli" in text.lower()
+    ]
+    assert not offenders, offenders

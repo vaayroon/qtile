@@ -11,6 +11,7 @@ class Reason(Enum):
     NO_DEVICE = "no_device"
     MULTIPLE_DEVICES = "multiple_devices"
     PAIR_REJECTED = "pair_rejected"
+    PAIR_CONNECTION_LOST = "pair_connection_lost"
     MDNS_UNAVAILABLE = "mdns_unavailable"
     EXPIRED = "expired"
     UNKNOWN = "unknown"
@@ -29,14 +30,22 @@ _MESSAGES: dict[Reason, str] = {
     Reason.MULTIPLE_DEVICES: (
         "More than one device is connected. Set QTILE_PHONE_MIRROR_DEVICE."
     ),
-    Reason.PAIR_REJECTED: "Pairing was rejected. Check the pairing code.",
+    # Flow-aware: only a flow where the user typed a code may blame the code.
+    Reason.PAIR_REJECTED: "Pairing failed. Start pairing again.",
+    Reason.PAIR_CONNECTION_LOST: (
+        "Connection lost during pairing. Try again and keep the phone "
+        "on the same Wi-Fi network."
+    ),
     Reason.MDNS_UNAVAILABLE: "Automatic discovery (mDNS) is not available.",
     Reason.EXPIRED: "The pairing code expired. Start pairing again.",
     Reason.UNKNOWN: "Unexpected failure. See the qtile log for details.",
 }
 
+_REJECTED_TYPED_CODE = "Pairing was rejected. Check the pairing code."
+
 # Ordered: the first matching rule wins.
 _RULES: list[tuple[tuple[str, ...], Reason]] = [
+    (("protocol fault", "connection reset"), Reason.PAIR_CONNECTION_LOST),
     (("unauthorized",), Reason.UNAUTHORIZED),
     (("offline",), Reason.OFFLINE),
     (("command not found", "no such file or directory"), Reason.MISSING_BINARY),
@@ -78,5 +87,8 @@ def map_exception(exc: BaseException) -> Reason:
     return map_failure(str(exc) or type(exc).__name__)
 
 
-def message_for(reason: Reason) -> str:
+def message_for(reason: Reason, *, typed_code: bool = False) -> str:
+    """The user-facing text; `typed_code` is True when the user entered the code."""
+    if reason is Reason.PAIR_REJECTED and typed_code:
+        return _REJECTED_TYPED_CODE
     return _MESSAGES[reason]

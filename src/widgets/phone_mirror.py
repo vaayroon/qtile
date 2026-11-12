@@ -8,11 +8,11 @@ callbacks, so they are plain functions that schedule the async work.
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from libqtile.log_utils import logger
 from libqtile.utils import create_task
 from libqtile.widget import base
 
 from .phone_mirror_controller import PhoneController, State, get_controller, to_bool
+from .phone_mirror_log import logger
 
 
 class PhoneMirrorWidget(base.BackgroundPoll):
@@ -23,6 +23,9 @@ class PhoneMirrorWidget(base.BackgroundPoll):
     - Middle click: toggle mirror mode (screen on/off)
     - Right click: reconnect / switch device (reopens mirroring if it was on)
     - Scroll up/down: phone volume up/down
+
+    Pairing over Wi-Fi is started and cancelled with Mod+Shift+P; the widget shows
+    the time left while it waits.
     """
 
     defaults = [
@@ -46,18 +49,39 @@ class PhoneMirrorWidget(base.BackgroundPoll):
             ),
         ),
         ("turn_screen_off", True, "Start scrcpy with phone display off (-S)."),
-        ("quality", "balanced", "Video preset: low, balanced or high."),
+        ("quality", "balanced", "Video preset over USB: low, balanced or high."),
+        (
+            "wifi_quality",
+            "low",
+            "Video preset over Wi-Fi (host:port or mDNS name): low, balanced, high.",
+        ),
         ("audio", False, "Forward the phone audio to the computer."),
+        (
+            "hwdec",
+            "auto",
+            "Hardware video decoding on the computer: auto, disabled or vaapi.",
+        ),
         (
             "restart_on_switch",
             True,
             "Reopen mirroring after a right-click device switch if it was running.",
         ),
+        (
+            "pair_ttl",
+            180,
+            "Seconds the pairing QR stays valid (clamped to 120-300).",
+        ),
         ("show_device", False, "Show selected device in widget text."),
         ("format_ready", "PHONE:READY", "Text when a device is connected."),
         ("format_disconnected", "PHONE:DISC", "Text when no device is connected."),
         ("format_mirroring", "PHONE:MIRROR", "Text while scrcpy is running."),
+        ("format_connecting", "PHONE:CONN", "Text while pairing or connecting."),
         ("format_error", "PHONE:ERR", "Text when required binaries are missing."),
+        (
+            "format_pairing",
+            "PHONE:PAIR {countdown}",
+            "Text while pairing; {countdown} is the time left (mm:ss).",
+        ),
         ("volume_step", 5, "Phone media volume step used for scroll callbacks."),
     ]
 
@@ -68,8 +92,11 @@ class PhoneMirrorWidget(base.BackgroundPoll):
         "device",
         "turn_screen_off",
         "quality",
+        "wifi_quality",
         "audio",
+        "hwdec",
         "restart_on_switch",
+        "pair_ttl",
         "show_device",
         "volume_step",
     )
@@ -128,12 +155,24 @@ class PhoneMirrorWidget(base.BackgroundPoll):
             State.MIRROR: self.format_mirroring,
             State.DISCONNECTED: self.format_disconnected,
             State.ERROR: self.format_error,
+            State.PAIRING: self._pairing_text(),
+            State.CONNECTING: self.format_connecting,
         }[state]
         device = self.controller.resolve("device")
         if state in (State.READY, State.MIRROR) and device:
             if to_bool(self.controller.resolve("show_device")):
                 return f"{text}:{device}"
         return str(text)
+
+    def _pairing_text(self) -> str:
+        try:
+            return str(
+                self.format_pairing.format(
+                    countdown=self.controller.pairing_countdown()
+                )
+            )
+        except (KeyError, IndexError, ValueError):
+            return str(self.format_pairing)
 
     def finalize(self) -> None:
         if self._listener is not None:

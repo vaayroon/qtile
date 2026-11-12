@@ -1157,3 +1157,214 @@ async def test_a_failed_keyevent_with_adb_down_keeps_the_remembered_serial(
     await controller.volume(up=True)
 
     assert controller._serial == "56201FDCR0077W"
+
+
+# --- the dedicated log: mirror start and stop ---------------------------------
+
+
+@pytest.mark.usefixtures("notes")
+async def test_mirror_start_is_logged_with_serial_transport_and_preset(
+    controller: PhoneController, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+
+    line = next(
+        r.getMessage() for r in caplog.records if "mirror start" in r.getMessage()
+    )
+    assert "serial=192.168.1.10:5555" in line
+    assert "transport=wifi" in line
+    assert "preset=" in line
+
+
+@pytest.mark.usefixtures("notes")
+async def test_mirror_stop_is_logged_with_serial_and_how_it_ended(
+    controller: PhoneController, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+        watcher = controller._watcher
+        await controller.toggle()
+        assert watcher is not None
+        await watcher
+
+    line = next(
+        r.getMessage() for r in caplog.records if "mirror stop" in r.getMessage()
+    )
+    assert "serial=192.168.1.10:5555" in line
+    assert "transport=wifi" in line
+    assert "requested" in line
+
+
+@pytest.mark.usefixtures("notes")
+async def test_an_unexpected_exit_is_logged_with_its_exit_code(
+    controller: PhoneController, fake: FakeRunner, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake.process = FakeProcess(stderr=["ERROR: Device disconnected"], exit_rc=1)
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+        assert controller._watcher is not None
+        await controller._watcher
+
+    line = next(
+        r.getMessage() for r in caplog.records if "mirror stop" in r.getMessage()
+    )
+    assert "rc=1" in line
+    assert "unexpected" in line
+
+
+@pytest.mark.usefixtures("notes")
+async def test_a_usb_serial_is_logged_as_usb(
+    controller: PhoneController, fake: FakeRunner, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake.devices = ["List of devices attached\n56201FDCR0077W\tdevice usb:1-1\n"]
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+
+    line = next(
+        r.getMessage() for r in caplog.records if "mirror start" in r.getMessage()
+    )
+    assert "serial=56201FDCR0077W" in line
+    assert "transport=usb" in line
+
+
+# --- preset per transport -------------------------------------------------------------
+
+WIFI_SERIAL = "192.168.1.10:5555"
+MDNS_SERIAL = "adb-56201FDCR0077W-I7p3gg._adb-tls-connect._tcp"
+USB_SERIAL = "56201FDCR0077W"
+
+
+def _usb_only(fake: FakeRunner) -> None:
+    fake.devices = [f"List of devices attached\n{USB_SERIAL}\tdevice usb:1-1\n"]
+
+
+def _flag(argv: list[str], name: str) -> str | None:
+    return argv[argv.index(name) + 1] if name in argv else None
+
+
+@pytest.mark.usefixtures("notes")
+async def test_a_wifi_device_uses_the_low_preset_by_default(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    await controller.toggle()
+
+    argv = fake.spawned[0]
+    assert _flag(argv, "--max-size") == "1024"
+    assert _flag(argv, "--video-bit-rate") == "4M"
+    assert _flag(argv, "--max-fps") == "30"
+
+
+@pytest.mark.usefixtures("notes")
+async def test_an_mdns_connect_name_counts_as_wifi(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    fake.devices = [f"List of devices attached\n{MDNS_SERIAL}\tdevice\n"]
+
+    await controller.toggle()
+
+    assert _flag(fake.spawned[0], "--max-size") == "1024"
+
+
+@pytest.mark.usefixtures("notes")
+async def test_usb_keeps_the_regular_quality_setting(
+    controller: PhoneController, fake: FakeRunner
+) -> None:
+    _usb_only(fake)
+
+    await controller.toggle()
+
+    assert _flag(fake.spawned[0], "--max-size") == "1600"  # balanced
+
+
+@pytest.mark.usefixtures("notes")
+async def test_usb_follows_QUALITY_and_ignores_WIFI_QUALITY(
+    controller: PhoneController, fake: FakeRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _usb_only(fake)
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_QUALITY", "high")
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_WIFI_QUALITY", "low")
+
+    await controller.toggle()
+
+    assert "--max-size" not in fake.spawned[0]  # high: native size
+    assert _flag(fake.spawned[0], "--video-bit-rate") == "16M"
+
+
+@pytest.mark.usefixtures("notes")
+async def test_wifi_follows_WIFI_QUALITY_and_ignores_QUALITY(
+    controller: PhoneController, fake: FakeRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_QUALITY", "high")
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_WIFI_QUALITY", "balanced")
+
+    await controller.toggle()
+
+    assert _flag(fake.spawned[0], "--max-size") == "1600"
+
+
+@pytest.mark.usefixtures("notes")
+async def test_a_bad_wifi_quality_falls_back_to_low_not_balanced(
+    controller: PhoneController, fake: FakeRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QTILE_PHONE_MIRROR_WIFI_QUALITY", "ultra")
+
+    await controller.toggle()
+
+    assert _flag(fake.spawned[0], "--max-size") == "1024"
+
+
+def test_wifi_quality_has_an_env_key_and_a_low_default() -> None:
+    assert ctl.ENV_KEYS["wifi_quality"] == "QTILE_PHONE_MIRROR_WIFI_QUALITY"
+    assert ctl.DEFAULTS["wifi_quality"] == "low"
+
+
+@pytest.mark.usefixtures("notes")
+async def test_the_chosen_preset_and_the_reason_are_logged(
+    controller: PhoneController, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+
+    text = caplog.text
+    assert "preset=low" in text
+    assert "wifi transport" in text
+    assert "QTILE_PHONE_MIRROR_WIFI_QUALITY" in text
+
+
+@pytest.mark.usefixtures("notes")
+async def test_the_usb_reason_is_logged(
+    controller: PhoneController, fake: FakeRunner, caplog: pytest.LogCaptureFixture
+) -> None:
+    _usb_only(fake)
+
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+
+    assert "preset=balanced" in caplog.text
+    assert "usb transport" in caplog.text
+    assert "QTILE_PHONE_MIRROR_QUALITY" in caplog.text
+
+
+# --- log injection (review fix) -----------------------------------------------------
+
+
+@pytest.mark.usefixtures("notes")
+async def test_scrcpy_output_cannot_inject_escape_codes_or_fake_lines(
+    controller: PhoneController,
+    fake: FakeRunner,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    fake.process = FakeProcess(
+        stderr=["ERROR: \x1b[2J\x1b[Hcleared\rINFO forged"], exit_rc=0
+    )
+
+    with caplog.at_level("INFO"):
+        await controller.toggle()
+        watcher = controller._watcher
+        assert watcher is not None
+        await watcher
+
+    assert "\x1b" not in caplog.text
+    assert "\r" not in caplog.text
+    assert "scrcpy stderr: ERROR: \\x1b[2J\\x1b[Hcleared\\rINFO forged" in caplog.text

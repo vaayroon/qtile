@@ -11,10 +11,12 @@ import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-ALLOWED_EXECUTABLES: frozenset[str] = frozenset({"adb", "scrcpy", "zenity", "rofi"})
+ALLOWED_EXECUTABLES: frozenset[str] = frozenset(
+    {"adb", "scrcpy", "zenity", "rofi", "kitty"}
+)
 
 ALLOWED_ADB_SUBCOMMANDS: frozenset[str] = frozenset(
-    {"devices", "connect", "disconnect", "pair", "mdns", "shell", "tcpip", "version"}
+    {"devices", "connect", "disconnect", "pair", "mdns", "shell", "version"}
 )
 ALLOWED_MDNS_ACTIONS: frozenset[str] = frozenset({"services", "check"})
 
@@ -77,6 +79,14 @@ ZENITY_PREFIXES: tuple[str, ...] = (
     "--separator=",
     "--add-entry=",
 )
+
+# kitty is allowed for exactly one command: showing the pairing QR image.
+#   kitty --class phone-pair-qr --title <title> kitty +kitten icat --hold <png>
+KITTY_QR_CLASS = "phone-pair-qr"
+KITTY_QR_TITLE = "Pair phone"
+KITTY_QR_IMAGE = ("qtile", "pair-qr.png")  # relative to $XDG_RUNTIME_DIR
+_KITTY_QR_HEAD = ("--class", KITTY_QR_CLASS, "--title", KITTY_QR_TITLE)
+_KITTY_QR_BODY = ("kitty", "+kitten", "icat", "--hold")
 
 
 class ForbiddenCommand(Exception):
@@ -154,6 +164,26 @@ def _validate_zenity(args: Sequence[str]) -> None:
             raise ForbiddenCommand(f"zenity argument not allowed: {arg}")
 
 
+def qr_image_path() -> str | None:
+    """The only image kitty may show, or None without a runtime directory."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR", "")
+    if not runtime.startswith("/"):
+        return None
+    return os.path.join(runtime.rstrip("/"), *KITTY_QR_IMAGE)
+
+
+def _validate_kitty(args: Sequence[str]) -> None:
+    expected = qr_image_path()
+    if (
+        expected is None
+        or len(args) != len(_KITTY_QR_HEAD) + len(_KITTY_QR_BODY) + 1
+        or tuple(args[:4]) != _KITTY_QR_HEAD
+        or tuple(args[4:8]) != _KITTY_QR_BODY
+        or args[8] != expected
+    ):
+        raise ForbiddenCommand("kitty is limited to showing the pairing QR image")
+
+
 def validate(argv: Sequence[str]) -> None:
     """Raise ForbiddenCommand unless argv is safe to execute."""
     if not argv:
@@ -170,6 +200,8 @@ def validate(argv: Sequence[str]) -> None:
         _validate_rofi(argv[1:])
     elif exe == "zenity":
         _validate_zenity(argv[1:])
+    elif exe == "kitty":
+        _validate_kitty(argv[1:])
 
 
 async def _kill(proc: asyncio.subprocess.Process) -> None:

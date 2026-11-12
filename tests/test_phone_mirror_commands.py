@@ -84,6 +84,11 @@ def test_unknown_quality_falls_back_to_balanced() -> None:
     assert normalize_quality("ultra") == "balanced"
     assert normalize_quality(" LOW ") == "low"
     assert normalize_quality("") == "balanced"
+
+
+def test_unknown_quality_can_fall_back_to_another_preset() -> None:
+    assert normalize_quality("ultra", default="low") == "low"
+    assert normalize_quality(" HIGH ", default="low") == "high"
     argv = build_scrcpy_argv("scrcpy", MirrorOptions(quality="ultra"))
     assert _value(argv, "--max-size") == "1600"
 

@@ -340,3 +340,13 @@ def test_phone_toggle_binding(init_keys):
     assert keys[0].desc == "Toggle phone mirroring"
     assert [c.name for c in keys[0].commands] == ["function"]
     assert keys[0].commands[0].args[0].__name__ == "phone_toggle"
+
+
+def test_phone_pair_binding(init_keys):
+    """R2.x: exactly one mod+shift+p key, described, bound through lazy.function."""
+    keys = [k for k in init_keys() if _combo(k) == (frozenset({"mod4", "shift"}), "p")]
+
+    assert len(keys) == 1
+    assert keys[0].desc == "Pair phone over Wi-Fi"
+    assert [c.name for c in keys[0].commands] == ["function"]
+    assert keys[0].commands[0].args[0].__name__ == "phone_pair_toggle"

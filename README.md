@@ -187,9 +187,12 @@ Runtime behavior is controlled through `.env` (loaded by `python-dotenv` at star
 | `QTILE_PHONE_MIRROR_ADB_PATH` | `/opt/genymobile/adb` | Path to the `adb` binary. |
 | `QTILE_PHONE_MIRROR_SCRCPY_PATH` | `/opt/genymobile/scrcpy` | Path to the `scrcpy` binary. |
 | `QTILE_PHONE_MIRROR_SCREEN_OFF` | `true` | Start scrcpy with the phone screen off (`-S`). |
-| `QTILE_PHONE_MIRROR_QUALITY` | `balanced` | Video preset: `low` (1024 px, 4M, 30 fps), `balanced` (1600 px, 8M, 60 fps) or `high` (native size, 16M, 60 fps). |
+| `QTILE_PHONE_MIRROR_QUALITY` | `balanced` | Video preset for a USB device: `low` (1024 px, 4M, 30 fps), `balanced` (1600 px, 8M, 60 fps) or `high` (native size, 16M, 60 fps). |
+| `QTILE_PHONE_MIRROR_WIFI_QUALITY` | `low` | Video preset for a Wi-Fi device (`host:port` or an `adb-…._adb-tls-connect._tcp` name), same values as above. It defaults to `low` because heavy scrcpy traffic over Wi-Fi coincided with Wi-Fi link problems and a phone network-stack crash in testing. The code never changes any network setting of this computer. The chosen preset and the reason are logged at each start. |
 | `QTILE_PHONE_MIRROR_AUDIO` | `false` | Forward the phone audio to the computer (`--no-audio` when off). |
+| `QTILE_PHONE_MIRROR_HWDEC` | `auto` | Hardware video decoding on this computer, passed to scrcpy as `--hwdec=<mode>`: `auto` (the first hardware decoder, software otherwise), `disabled` (always software) or `vaapi`. An invalid value falls back to `auto` and is logged. If scrcpy prints `hardware accelerator failed to decode picture` while the mode is not `disabled` (a lone `Decoding (video) failed`, for example from a corrupt packet on a weak Wi-Fi link, does not count), the widget restarts mirroring once on the same device with `--hwdec=disabled`, keeps software decoding for the rest of the session, logs it and notifies once ("Hardware video decoding failed; using software decoding"). It never restarts a second time, and not when scrcpy already ended for another reason (you closed the window, the phone dropped). Set `disabled` yourself to skip the failed first attempt. |
 | `QTILE_PHONE_MIRROR_RESTART_ON_SWITCH` | `true` | Reopen mirroring on the new device after a right-click switch, only if it was running. |
+| `QTILE_PHONE_MIRROR_PAIR_TTL` | `180` | Seconds the Wi-Fi pairing QR stays valid (clamped to 120-300). |
 | `QTILE_PHONE_MIRROR_SHOW_DEVICE` | `false` | Append the device serial to the bar status text. |
 | `QTILE_PHONE_MIRROR_VOLUME_STEP` | `5` | ADB volume key-events sent per scroll tick. |
 
@@ -353,6 +356,7 @@ Colors, borders, and fonts are defined in [`src/settings.py`](src/settings.py):
 | Keys | Action |
 |---|---|
 | `mod + p` | Toggle phone mirroring |
+| `mod + Shift + p` | Pair phone over Wi-Fi |
 
 ### Session
 
@@ -566,13 +570,56 @@ A custom widget ([`src/widgets/phone_mirror.py`](src/widgets/phone_mirror.py)) t
 
 **Middle click while mirroring** still flips the screen-off preference, which scrcpy only reads at start, so it applies on the next start. A notification says so and reminds you that `Alt+O` and `Alt+Shift+O` inside the scrcpy window turn the phone screen off and on right now.
 
-Status text: `PHONE:READY` (connected, idle) · `PHONE:MIRROR` (running) · `PHONE:DISC` (no device) · `PHONE:ERR` (adb/scrcpy not found). If no device can be reached it opens a `zenity` dialog to fix paths and targets on the fly.
+Status text: `PHONE:READY` (connected, idle) · `PHONE:MIRROR` (running) · `PHONE:DISC` (no device) · `PHONE:ERR` (adb/scrcpy not found) · `PHONE:PAIR 02:41` (pairing, with the time left) · `PHONE:CONN` (pairing or connecting step: `adb pair` / `adb connect`) If no device can be reached it opens a `zenity` dialog to fix paths and targets on the fly.
 
-Start and failure messages are sent as desktop notifications that name the reason (unauthorized, offline, unreachable, missing binary), and scrcpy's output goes to the qtile log (`~/.local/share/qtile/qtile.log`).
+Start and failure messages are sent as desktop notifications that name the reason (unauthorized, offline, unreachable, missing binary), and scrcpy's output goes to the dedicated phone mirror log `$XDG_STATE_HOME/qtile/phone_mirror.log` (default `~/.local/state/qtile/phone_mirror.log`, INFO and above, rotated at about 1 MB with 3 backups), not to `qtile.log`. Each mirror start and stop is logged with the time, serial, transport (`usb` or `wifi`), preset and exit code. Warnings and errors are also sent to `qtile.log`. The pairing password is never logged.
 
 **Config reload.** A config reload (`mod + Shift + r`) stops a running mirror on purpose: the widgets are rebuilt, and the last one to go away shuts scrcpy down. Start it again with `mod + p`. Stopping sends SIGTERM and, if scrcpy has not exited after a few seconds, SIGKILL.
 
-**Host network safety.** Every process the phone mirror code starts goes through one allowlisted runner ([`src/widgets/phone_mirror_runner.py`](src/widgets/phone_mirror_runner.py)): only `adb`, `scrcpy`, `zenity` (the setup form) and `rofi` (the device selector) may run, the last two with only the exact flags the code builds, and `adb` is limited to `devices`, `connect`, `disconnect`, `pair`, `mdns`, `shell input keyevent`, `tcpip` and `version`. It never touches NetworkManager, firewall rules, routes, DNS or any system service. Tests enforce this.
+**Wireless pairing.** `mod + Shift + p` pairs the phone over Wi-Fi (Android 11 or newer), with no cable:
+
+1. A floating kitty window shows a QR code and the widget reads `PHONE:PAIR mm:ss`.
+2. On the phone open **Developer options, Wireless debugging, Pair device with QR code** and scan it.
+3. The code polls `adb mdns services` every 2 seconds until the phone advertises its pairing entry under the random name inside the QR. It then runs `adb pair host:port`, finds the phone's `_adb-tls-connect._tcp` entry **on the same host** (its instance name is the device's own, not ours) and runs `adb connect`. A notification reports the result.
+4. Press `mod + Shift + p` again, or close the QR window, to cancel.
+
+Each attempt has a fresh random name and password (Python's `secrets`) and expires after `QTILE_PHONE_MIRROR_PAIR_TTL` seconds (default 180); an expired password is never used. The password is never logged, never put in a notification or a file, and reaches `adb pair` through stdin, so it does not show up in `ps`. The QR PNG is a private (`0600`) file under `$XDG_RUNTIME_DIR/qtile/`, deleted when pairing ends, is cancelled or expires, when qtile shuts down or reloads the config during a pairing, and at startup if a crash left one behind (the phone does not enforce the expiry itself). A non-numeric or non-finite `QTILE_PHONE_MIRROR_PAIR_TTL` falls back to the default.
+
+The QR is rendered with [`segno`](https://pypi.org/project/segno/), a regular runtime dependency installed by `uv sync --locked`, and shown with `kitty`.
+
+**Manual fallback.** If segno or kitty is missing, `adb mdns` is unavailable, or the phone is not found before the code expires, a notification explains the likely causes and a `zenity` form asks for the pairing address (`host:port`) and the 6-digit code shown by **Pair device with pairing code** on the phone. It then runs `adb pair` and `adb connect` the same way. Cancelling the form runs nothing. The usual causes of a failed discovery are: the phone and the computer are on different networks, the router isolates Wi-Fi clients (AP isolation), a firewall blocks mDNS (multicast DNS), or a VPN is active. The code only reports this and never changes network settings. `adb tcpip` is never run by any pairing or reconnect flow.
+
+**Remembered phone.** After a successful pairing, or a wireless connect whose phone advertises an mDNS entry, the widget remembers the phone in `$XDG_STATE_HOME/qtile/phone_mirror.json` (default `~/.local/state/qtile/phone_mirror.json`). The file is written atomically (a `.part` file, then a rename) with mode `0600`. It is keyed by the mDNS instance name (for example `adb-56201FDCR0077W-I7p3gg`), not by the port, because the connect port changes over time. It also stores the serial embedded in that name, the last `host:port` and the pairing time. The pairing password is never stored. A corrupt file is ignored and the widget starts with no remembered phone. Delete the file to forget the phone.
+
+**Automatic reconnect.** The widget never starts a retry loop just because a remembered phone is absent (for example at login, when the phone is simply elsewhere). At startup it makes one silent attempt (no notification) to reach the remembered phone and then waits. The retry loop only starts for a remembered phone that was connected and ready in this session and then dropped (neither listed by `host:port`, by its serial over USB, nor by its mDNS name). It retries with a growing delay: 8, 16, 32, 64, 128 and 300 seconds, at most 6 attempts per drop, with nothing in between (no busy loop). Each attempt looks up the phone's current endpoint with `adb mdns services` (the `_adb-tls-connect._tcp` entry with the same instance name), falls back to the last known `host:port`, and runs `adb connect`. `adb connect` saying "connected" does not count as success: the attempt budget is only refilled, and "Reconnected to the phone." only shown, when the device is listed as ready, so a phone that stays offline or unauthorized runs out of attempts. After the sixth attempt the widget waits one more grace period (10 seconds) so the next probe can see the phone; if it shows up ready, you only get "Reconnected to the phone.". Otherwise a normal (not critical) notification says so and the widget waits for you: `mod + p` or a right click try the remembered phone right away and start counting again, as does any other user action. It never reconnects while mirroring, while a pairing is waiting, or when `QTILE_PHONE_MIRROR_WIRELESS_TARGET` is set (that target is connected as before). The timer lives on the qtile event loop, only one runs at a time, and it is cancelled on shutdown and on config reload.
+
+**States.** `PHONE:PAIR mm:ss` (waiting for the phone to scan the QR) goes to `PHONE:CONN` (the `adb pair` and `adb connect` steps, also used by right click, by `mod + p` with a wireless target and by every automatic reconnect attempt), then to `PHONE:READY` (a device is usable), then to `PHONE:MIRROR` (scrcpy is running). `PHONE:DISC` means no usable device and `PHONE:ERR` means `adb` or `scrcpy` is missing. A failure at any step goes back to `PHONE:DISC` with a notification that names the reason. Transitions are validated: for example `PHONE:DISC` can never jump straight to `PHONE:MIRROR`, and pairing is refused while mirroring (stop it first).
+
+**Preset over Wi-Fi.** A device that is a `host:port` or an `adb-...._adb-tls-connect._tcp` name uses `QTILE_PHONE_MIRROR_WIFI_QUALITY` (default `low`: 1024 px, 4M, 30 fps); a USB device keeps `QTILE_PHONE_MIRROR_QUALITY`. An unknown Wi-Fi value falls back to `low`. The log says which preset was chosen and why. This is a precaution: during testing, heavy scrcpy traffic over Wi-Fi coincided with a failed Wi-Fi link negotiation between the computer and the phone and a crash of the phone's network stack. The code does not touch any network setting of this computer; if you want to investigate the link itself, that is your call to make outside this config.
+
+**Log.** `$XDG_STATE_HOME/qtile/phone_mirror.log` (default `~/.local/state/qtile/phone_mirror.log`) is a rotating file (about 1 MB, 3 backups) that only this feature writes, at INFO and above, whatever level qtile runs at (qtile normally starts without `-l`, so INFO lines never reach `qtile.log`). It records each mirror start and stop with the time, serial, transport (`usb` or `wifi`), preset and exit code, every scrcpy output line, the reconnect attempts and the state changes. Warnings and errors are also forwarded to `qtile.log`. Pairing passwords are never written to either file.
+
+**Host network safety.** Every process the phone mirror code starts goes through one allowlisted runner ([`src/widgets/phone_mirror_runner.py`](src/widgets/phone_mirror_runner.py)): only `adb`, `scrcpy`, `zenity` (the setup and pairing forms), `rofi` (the device selector) and `kitty` (the pairing QR window) may run, the last three with only the exact flags the code builds (`kitty` runs one argv template that shows `$XDG_RUNTIME_DIR/qtile/pair-qr.png`, nothing else), and `adb` is limited to `devices`, `connect`, `disconnect`, `pair`, `mdns`, `shell input keyevent`, `tcpip` and `version`. It never touches NetworkManager, firewall rules, routes, DNS or any system service. Tests enforce this.
+
+#### Known issues
+
+**The phone freezes for a few seconds, repeatedly, while mirroring over Wi-Fi.** After a while the computer can also lose its internet connection until its Wi-Fi is reconnected.
+
+- **Symptom:** you mirror over Wi-Fi and use the phone actively from the computer (clicks, typing, scrolling). The phone freezes for a few seconds, again and again. Rebooting the phone does not help; reconnecting the computer's Wi-Fi does.
+- **Cause, as diagnosed on one machine:** heavy two-way traffic makes the phone (seen with a Pixel 10) start TDLS, a direct Wi-Fi link between the phone and the computer. The computer's Wi-Fi driver (MediaTek MT7921, `mt7921e`) fails to install the link key (`TDLS: Failed to set TPK to the driver`), and the negotiation keeps retrying. Other phones and Wi-Fi chips may behave differently.
+- **Diagnose:** while using the mirror, run `journalctl -f -u wpa_supplicant | rg TDLS` (or `grep TDLS`). Repeated `TDLS` failures while the freezes happen point to this issue.
+- **Workarounds, applied by you and never by this config:**
+  - Use USB for long sessions. This avoids the problem entirely.
+  - Disable TDLS until the next reboot with `sudo wpa_cli -i wlo1 set tdls_disabled 1`, and revert it with `sudo wpa_cli -i wlo1 set tdls_disabled 0`. Replace `wlo1` with the name of your Wi-Fi interface.
+
+  The second workaround changes the network behaviour of your computer. Whether to do it is your choice: this config never runs it, never changes a network setting and only documents it.
+
+**Mirroring stops with `hardware accelerator failed to decode picture` followed by `Decoding (video) failed`.** This happens when a VA-API driver is installed but cannot decode the stream (seen with the NVIDIA VA-API/NVDEC driver and scrcpy 5.0.1, whose default `--hwdec=auto` picks VA-API). The failing scrcpy can ignore SIGTERM; the widget kills it after a 3-second grace period.
+
+- **Automatic:** the widget restarts mirroring once with `--hwdec=disabled`, remembers that for the session, logs it and shows one notification. It never loops.
+- **Permanent:** set `QTILE_PHONE_MIRROR_HWDEC=disabled` in `.env` so scrcpy never tries the hardware decoder.
+
+**`Failed to initialise VAAPI connection` in the scrcpy output.** Harmless. It appears on machines without a VA-API video driver, and scrcpy falls back to software decoding.
 
 ---
 
