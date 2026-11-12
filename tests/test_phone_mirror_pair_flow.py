@@ -966,12 +966,13 @@ async def test_cancelling_during_adb_pair_restores_the_state_and_the_lock(
 ) -> None:
     del notes
     fake.pair_gate = asyncio.Event()  # `adb pair` never answers
-    phone_appears(fake)
+    # Found on the first poll: no real-time pause runs before `adb pair`.
+    phone_appears(fake, after=1)
     task = asyncio.ensure_future(controller.pair())
-    for _ in range(500):
+    # Bound the wait by wall time, not loop turns: sleep(0) lets no time pass.
+    deadline = asyncio.get_running_loop().time() + 1.0
+    while not fake.adb("pair") and asyncio.get_running_loop().time() < deadline:
         await asyncio.sleep(0)
-        if fake.adb("pair"):
-            break
     assert fake.adb("pair")
     assert controller.state is State.CONNECTING
 
