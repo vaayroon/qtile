@@ -37,7 +37,7 @@ A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11
   Other installation methods are listed in the [uv docs](https://docs.astral.sh/uv/getting-started/installation/).
 - A **Nerd Font** installed — the bar uses `CaskaydiaCove Nerd Font`. `./install.sh --nerd-font` installs it for your user, or grab it from [nerdfonts.com](https://www.nerdfonts.com/).
 - A display manager that reads `/usr/share/xsessions/` (LightDM, GDM, SDDM, etc.).
-- The **system packages** in [`packages/apt.txt`](packages/apt.txt): the native libraries the venv loads (cairo, pango, xcb), the X utilities and the programs the keybindings, bar and autostart use. On Ubuntu 24.04, `./install.sh --system-packages` installs them.
+- The **system packages** in [`packages/apt.txt`](packages/apt.txt): the native libraries the venv loads (cairo, pango, xcb), the X utilities and the programs the keybindings, bar and autostart use. On Ubuntu 26.04, `./install.sh --system-packages` installs them.
 
 ---
 
@@ -60,7 +60,7 @@ Useful flags:
 
 | Flag | Effect |
 |---|---|
-| `--system-packages` | First run `sudo apt-get update` and `sudo apt-get install` with every package in [`packages/apt.txt`](packages/apt.txt). The names target Ubuntu 24.04, and apt asks before it installs. It fails without `apt-get`. Without the flag, apt is never touched. |
+| `--system-packages` | First run `sudo apt-get update` and `sudo apt-get install` with every package in [`packages/apt.txt`](packages/apt.txt). The names target Ubuntu 26.04, and apt asks before it installs. It fails without `apt-get`. Without the flag, apt is never touched. |
 | `--nerd-font` | Install `CaskaydiaCove Nerd Font` into `~/.local/share/fonts` (no `sudo`). It downloads a pinned Nerd Fonts release, refuses it unless the SHA-256 matches, and is skipped when `fc-list` already finds the font. |
 | `--dev` | Also install the dev tools (`ruff`, `mypy`, `pytest`, `pytest-asyncio`, `pre-commit`). Without it they are removed. |
 | `--force` | Recreate the virtual environment. The old one is moved to `.venv.bak` while the new one is synced, restored if the sync fails, and deleted once it succeeds. |
@@ -645,7 +645,7 @@ The sections above cover Qtile itself. To reproduce the rest of the desktop (aud
 
 | Distro | Guide | Status |
 |--------|-------|--------|
-| Ubuntu 24.04 | [docs/setup/ubuntu.md](docs/setup/ubuntu.md) | Current |
+| Ubuntu 26.04 | [docs/setup/ubuntu.md](docs/setup/ubuntu.md) | Current |
 | Kali Linux | [docs/setup/kali.md](docs/setup/kali.md) | Legacy (2022), may be outdated |
 
 ---
@@ -867,7 +867,7 @@ uv.lock              # Generated uv lock file (exact versions of every package)
 .env.example         # Template for runtime configuration
 install.sh           # Bootstrap script (apt packages, uv sync, .env, X session, rofi launchers)
 autostart.sh         # Keyring and tray applets, run once per login (POSIX sh)
-packages/apt.txt     # System packages for Ubuntu 24.04 (install.sh --system-packages)
+packages/apt.txt     # System packages for Ubuntu 26.04 (install.sh --system-packages)
 test-xephyr.sh       # Validate the config and run it in a nested Xephyr window
 docs/setup/          # Per-distro desktop guides, plus shell.md (zsh, Powerlevel10k, kitty)
 .screenshots/        # README assets

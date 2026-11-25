@@ -1,4 +1,4 @@
-# System packages for this Qtile config. The names target Ubuntu 24.04; other
+# System packages for this Qtile config. The names target Ubuntu 26.04; other
 # Debian-based releases may name or version some of them differently (Debian 13
 # has no python3.14, for example).
 #
