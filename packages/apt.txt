@@ -39,7 +39,7 @@ glances
 dbus
 gnome-keyring
 cbatticon
-volumeicon-alsa
+pasystray
 udiskie
 network-manager-gnome
 blueman
