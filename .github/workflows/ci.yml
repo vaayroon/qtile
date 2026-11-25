@@ -16,12 +16,12 @@ concurrency:
 jobs:
   checks:
     name: checks  # required status check on main; tests/test_ci_contract.py pins it
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     env:
-      UV_PYTHON: /usr/bin/python3.12  # distro interpreter, as install.sh
+      UV_PYTHON: /usr/bin/python3.14  # distro interpreter, as install.sh
       UV_PYTHON_DOWNLOADS: never
-      EXPECTED_TESTS: "1624"  # exact passed count; update it in the commit that adds or removes tests
+      EXPECTED_TESTS: "1626"  # exact passed count; update it in the commit that adds or removes tests
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

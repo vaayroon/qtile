@@ -4,7 +4,7 @@ name = "qtile-config"
 version = "0.37.1"
 description = "Custom Qtile tiling window manager configuration"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "qtile==0.37.1",  # the WM; exact pin, config and tests rely on libqtile internals
     "cairocffi",      # qtile core dependency (bar drawing)
@@ -21,7 +21,7 @@ dev = ["ruff", "mypy", "pytest", "pytest-asyncio", "pre-commit>=4.4.0"]
 
 [tool.uv]
 package = false                             # deps only: no build, no editable install
-python-preference = "only-system"           # venv must use distro /usr/bin/python3.12
+python-preference = "only-system"           # venv must use distro /usr/bin/python3.14
 environments = ["sys_platform == 'linux'"]  # X11-only config
 required-version = ">=0.13"
 
@@ -32,7 +32,7 @@ pythonpath = ["."]
 xfail_strict = true
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 88
 src = ["src"]
 
@@ -58,7 +58,7 @@ known-first-party = ["config", "modules", "settings", "utils"]
 exclude = ["*.md"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = false
 explicit_package_bases = true
 namespace_packages = true
@@ -81,7 +81,7 @@ ignore_missing_imports = true
 
 [tool.pyright]
 typeCheckingMode = "basic"
-pythonVersion = "3.12"
+pythonVersion = "3.14"
 searchPaths = ["src"]
 reportUnknownMemberType = "none"
 reportUnknownFunctionType = "none"

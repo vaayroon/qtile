@@ -5,7 +5,7 @@
             "name": "Python: Qtile",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/.venv/lib/python3.12/site-packages/libqtile/scripts/main.py",
+            "program": "${workspaceFolder}/.venv/lib/python3.14/site-packages/libqtile/scripts/main.py",
             "cwd": "${workspaceFolder}",
             "args": [
                 "start",

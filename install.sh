@@ -42,7 +42,7 @@ XSESSION_FILE="${QTILE_XSESSION_FILE:-$DEFAULT_XSESSION_FILE}"
 # interpreter. uv's python-preference = "only-system" still accepts ANY non-uv
 # Python found on PATH (Homebrew, pyenv shims...), so name the interpreter
 # explicitly instead of relying on PATH.
-DEFAULT_PYTHON="/usr/bin/python3.12"
+DEFAULT_PYTHON="/usr/bin/python3.14"
 PYTHON="${PYTHON:-$DEFAULT_PYTHON}"
 
 # --- Options ------------------------------------------------------------------
@@ -167,7 +167,7 @@ command -v uv >/dev/null 2>&1 \
 Other methods: https://docs.astral.sh/uv/getting-started/installation/"
 
 command -v "$PYTHON" >/dev/null 2>&1 \
-    || die "$PYTHON not found. Install Python 3.12+ or set PYTHON=<interpreter>."
+    || die "$PYTHON not found. Install Python 3.14+ or set PYTHON=<interpreter>."
 
 [[ -f "${REPO_DIR}/uv.lock" ]] \
     || die "uv.lock not found in ${REPO_DIR}. Restore it with: git checkout -- uv.lock"
