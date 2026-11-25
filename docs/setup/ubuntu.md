@@ -1,6 +1,6 @@
-# Ubuntu 24.04 desktop setup
+# Ubuntu 26.04 desktop setup
 
-This guide covers the desktop around Qtile on Ubuntu 24.04: audio, screens,
+This guide covers the desktop around Qtile on Ubuntu 26.04: audio, screens,
 notifications, GTK and Qt themes, and the display manager. Step 1 of the quick
 path installs Qtile itself; the rest of the guide is what comes after it. For
 the shell and the terminal, see
@@ -41,14 +41,14 @@ The sections below only cover what is left.
 
 ## Audio
 
-Ubuntu 24.04 ships PipeWire as the sound server. `pipewire-pulse` provides the
+Ubuntu 26.04 ships PipeWire as the sound server. `pipewire-pulse` provides the
 PulseAudio API, so the PulseAudio tools work unchanged:
 
 | Tool | Role | Package |
 |---|---|---|
 | `pamixer` | Volume keys (`XF86AudioRaise/Lower/Mute`) | `packages/apt.txt` |
 | `playerctl` | Media keys | `packages/apt.txt` |
-| `volumeicon` | Tray volume icon | `packages/apt.txt` |
+| `pasystray` | Tray volume icon: scroll for volume, its menu opens `pavucontrol`. Middle-click mute does not work with Ubuntu's appindicator build; use the mute key | `packages/apt.txt` |
 | `pavucontrol` | Graphical mixer: outputs, inputs and per-app volume | Quick path step 2 |
 
 Do not install the `pulseaudio` package. Ubuntu's `pipewire-audio` package
@@ -79,7 +79,7 @@ arandr
 ## Notifications
 
 `notification-daemon` shows the pop-ups that `notify-send` and other apps
-send. On Ubuntu 24.04 the package ships the binary but no D-Bus service file,
+send. On Ubuntu 26.04 the package ships the binary but no D-Bus service file,
 so nothing starts it on demand. Register it for your user (no `sudo` needed):
 
 ```bash
@@ -163,7 +163,7 @@ forces Kvantum but leaves the fonts, icons and colors to each app.
 
 ## Display manager
 
-Ubuntu 24.04 uses **GDM**. It lists every session in `/usr/share/xsessions/`,
+Ubuntu 26.04 uses **GDM**. It lists every session in `/usr/share/xsessions/`,
 where `install.sh` registers `qtile-venv.desktop`. No GDM configuration is
 needed.
 

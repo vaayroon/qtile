@@ -1,13 +1,13 @@
-# System packages for this Qtile config. The names target Ubuntu 24.04; other
+# System packages for this Qtile config. The names target Ubuntu 26.04; other
 # Debian-based releases may name or version some of them differently (Debian 13
-# has no python3.12, for example).
+# has no python3.14, for example).
 #
 # Install them with `./install.sh --system-packages`, or by hand with
 # `sudo apt-get install` and the names below. One package per line; `#` starts
 # a comment. uv is not here: install it from https://docs.astral.sh/uv/.
 
-# Interpreter the venv is built on (install.sh uses /usr/bin/python3.12)
-python3.12
+# Interpreter the venv is built on (install.sh uses /usr/bin/python3.14)
+python3.14
 
 # Native libraries the venv loads at runtime (cairocffi, xcffib, pango)
 libcairo2
@@ -39,7 +39,7 @@ glances
 dbus
 gnome-keyring
 cbatticon
-volumeicon-alsa
+pasystray
 udiskie
 network-manager-gnome
 blueman

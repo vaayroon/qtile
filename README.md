@@ -4,7 +4,7 @@
 
 A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11: multi-monitor aware, Nerd Font powerline bar, media/brightness keys, and a custom widget to mirror and control an Android phone over wireless ADB + scrcpy.
 
-> Built and tested on Ubuntu 24.04.4 LTS with Python 3.12 and Qtile 0.37.1.
+> Built and tested on Ubuntu 26.04.1 LTS with Python 3.14 and Qtile 0.37.1.
 
 ![Session selector](.screenshots/select_manager.png)
 
@@ -27,7 +27,7 @@ A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11
 ## Requirements
 
 - An **X11** session (this config targets the X backend, not Wayland).
-- **Python 3.12+** from your distro (`/usr/bin/python3.12`). The venv backs your login session, so `install.sh` builds it on that exact interpreter (override with `PYTHON=/path/to/python3.12 ./install.sh`) and fails if `.venv/pyvenv.cfg` says otherwise; uv never downloads a Python. Merely having a Homebrew or pyenv Python earlier on your `PATH` does not change this.
+- **Python 3.14+** from your distro (`/usr/bin/python3.14`). The venv backs your login session, so `install.sh` builds it on that exact interpreter (override with `PYTHON=/path/to/python3.14 ./install.sh`) and fails if `.venv/pyvenv.cfg` says otherwise; uv never downloads a Python. Merely having a Homebrew or pyenv Python earlier on your `PATH` does not change this.
 - **[uv](https://docs.astral.sh/uv/)** — manages the virtual environment and dependencies. `install.sh` requires it but never installs it for you:
 
   ```bash
@@ -37,7 +37,7 @@ A complete, batteries-included [Qtile](https://qtile.org/) configuration for X11
   Other installation methods are listed in the [uv docs](https://docs.astral.sh/uv/getting-started/installation/).
 - A **Nerd Font** installed — the bar uses `CaskaydiaCove Nerd Font`. `./install.sh --nerd-font` installs it for your user, or grab it from [nerdfonts.com](https://www.nerdfonts.com/).
 - A display manager that reads `/usr/share/xsessions/` (LightDM, GDM, SDDM, etc.).
-- The **system packages** in [`packages/apt.txt`](packages/apt.txt): the native libraries the venv loads (cairo, pango, xcb), the X utilities and the programs the keybindings, bar and autostart use. On Ubuntu 24.04, `./install.sh --system-packages` installs them.
+- The **system packages** in [`packages/apt.txt`](packages/apt.txt): the native libraries the venv loads (cairo, pango, xcb), the X utilities and the programs the keybindings, bar and autostart use. On Ubuntu 26.04, `./install.sh --system-packages` installs them.
 
 ---
 
@@ -60,7 +60,7 @@ Useful flags:
 
 | Flag | Effect |
 |---|---|
-| `--system-packages` | First run `sudo apt-get update` and `sudo apt-get install` with every package in [`packages/apt.txt`](packages/apt.txt). The names target Ubuntu 24.04, and apt asks before it installs. It fails without `apt-get`. Without the flag, apt is never touched. |
+| `--system-packages` | First run `sudo apt-get update` and `sudo apt-get install` with every package in [`packages/apt.txt`](packages/apt.txt). The names target Ubuntu 26.04, and apt asks before it installs. It fails without `apt-get`. Without the flag, apt is never touched. |
 | `--nerd-font` | Install `CaskaydiaCove Nerd Font` into `~/.local/share/fonts` (no `sudo`). It downloads a pinned Nerd Fonts release, refuses it unless the SHA-256 matches, and is skipped when `fc-list` already finds the font. |
 | `--dev` | Also install the dev tools (`ruff`, `mypy`, `pytest`, `pytest-asyncio`, `pre-commit`). Without it they are removed. |
 | `--force` | Recreate the virtual environment. The old one is moved to `.venv.bak` while the new one is synced, restored if the sync fails, and deleted once it succeeds. |
@@ -70,7 +70,7 @@ Environment overrides (set them on the command line; `install.sh` does not read 
 
 | Variable | Default | Effect |
 |---|---|---|
-| `PYTHON` | `/usr/bin/python3.12` | Interpreter uv builds the venv on. See [Requirements](#requirements). |
+| `PYTHON` | `/usr/bin/python3.14` | Interpreter uv builds the venv on. See [Requirements](#requirements). |
 | `QTILE_XSESSION_FILE` | `/usr/share/xsessions/qtile-venv.desktop` | Where the X session entry is written. An empty value uses the default. The directory must already exist: the script does not create it, and a missing one fails the run after the venv is synced. When the existing entry (or, for a new one, the directory) is not writable, the entry is written with `sudo tee`. A relative path is resolved against the directory you run the script from. |
 
 > The script is re-runnable. `.env` is never overwritten, and `.venv` is
@@ -204,7 +204,7 @@ Runtime behavior is controlled through `.env` (loaded by `python-dotenv` at star
 
 The script is started in the background; a missing or non-executable script only logs a warning. Its output is written to `$XDG_DATA_HOME/qtile/autostart.log` (default `~/.local/share/qtile/autostart.log`) and truncated each session.
 
-The shipped `autostart.sh` is plain POSIX `sh`. It starts the keyring and the tray applets (`cbatticon`, `volumeicon`, `udiskie`, `nm-applet`, `blueman-applet`). A program that is not installed is logged and skipped. `cbatticon` gets the first power supply of type `Battery` under `/sys/class/power_supply`, and is skipped on machines without one.
+The shipped `autostart.sh` is plain POSIX `sh`. It starts the keyring and the tray applets (`cbatticon`, `pasystray`, `udiskie`, `nm-applet`, `blueman-applet`). A program that is not installed is logged and skipped. `cbatticon` gets the first power supply of type `Battery` under `/sys/class/power_supply`, and is skipped on machines without one.
 
 ### Terminal
 
@@ -645,7 +645,7 @@ The sections above cover Qtile itself. To reproduce the rest of the desktop (aud
 
 | Distro | Guide | Status |
 |--------|-------|--------|
-| Ubuntu 24.04 | [docs/setup/ubuntu.md](docs/setup/ubuntu.md) | Current |
+| Ubuntu 26.04 | [docs/setup/ubuntu.md](docs/setup/ubuntu.md) | Current |
 | Kali Linux | [docs/setup/kali.md](docs/setup/kali.md) | Legacy (2022), may be outdated |
 
 ---
@@ -742,8 +742,8 @@ contract tests fail if the pin, `project.version`, the README banner and
 ### Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request to `main` and on every
-push to `main`. It is a single job named `checks` on `ubuntu-24.04` with the
-distro Python 3.12 (no download) and uv 0.13.5, and it runs the commands above
+push to `main`. It is a single job named `checks` on `ubuntu-26.04` with the
+distro Python 3.14 (no download) and uv 0.13.5, and it runs the commands above
 in this order: `uv lock --check`, `uv sync --locked`, `ruff check .`,
 `ruff format --check .`, `mypy src tools` and `pytest -rs`. Then
 `tools/check_junit.py` reads pytest's JUnit report and fails when any test is
@@ -863,11 +863,11 @@ tools/               # check_junit.py (CI gate on test count and skips) · gener
 .pre-commit-config.yaml  # Local hooks (ruff, uv lock --check, mypy)
 pyproject.toml       # Project metadata + dependency declarations (source of truth)
 uv.lock              # Generated uv lock file (exact versions of every package)
-.python-version      # Python minor version uv uses (3.12)
+.python-version      # Python minor version uv uses (3.14)
 .env.example         # Template for runtime configuration
 install.sh           # Bootstrap script (apt packages, uv sync, .env, X session, rofi launchers)
 autostart.sh         # Keyring and tray applets, run once per login (POSIX sh)
-packages/apt.txt     # System packages for Ubuntu 24.04 (install.sh --system-packages)
+packages/apt.txt     # System packages for Ubuntu 26.04 (install.sh --system-packages)
 test-xephyr.sh       # Validate the config and run it in a nested Xephyr window
 docs/setup/          # Per-distro desktop guides, plus shell.md (zsh, Powerlevel10k, kitty)
 .screenshots/        # README assets

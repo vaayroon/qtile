@@ -3,7 +3,7 @@
 This guide sets up the shell that goes with this desktop: zsh with
 Powerlevel10k (no oh-my-zsh), a few plugins, `lsd`, `bat` and `fzf`, and the
 kitty terminal. It does not depend on Qtile, so it works on any desktop. The
-package names below are the Ubuntu 24.04 ones.
+package names below are the Ubuntu 26.04 ones.
 
 The configs live in the public [vaayroon/config](https://github.com/vaayroon/config)
 repo, under `linux/`.
@@ -36,7 +36,7 @@ repo, under `linux/`.
 | `scrub` | The `rmk` function, which scrubs and then shreds files |
 | `xclip` | The VClip module (clipboard commands) |
 
-All of them are in the Ubuntu 24.04 archive; `lsd` no longer needs a `.deb`
+All of them are in the Ubuntu 26.04 archive; `lsd` no longer needs a `.deb`
 from GitHub.
 
 The icons in `lsd` and in the prompt need a Nerd Font in the terminal. The

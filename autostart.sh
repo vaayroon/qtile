@@ -56,7 +56,9 @@ else
 fi
 
 ### Volume icon
-start volumeicon
+# Only new-device pop-ups: the default one on scroll covers the icon and
+# blocks further scrolling.
+start pasystray --notify=none --notify=new
 
 ### Disk manager
 start udiskie -t

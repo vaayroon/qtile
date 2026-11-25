@@ -144,6 +144,12 @@ def test_ci_uses_the_distro_interpreter_of_python_version() -> None:
     assert f"UV_PYTHON: /usr/bin/python{major_minor}" in _text(CI_WORKFLOW)
 
 
+def test_ci_runs_on_the_supported_ubuntu_release() -> None:
+    # The distro interpreter only exists on the release apt.txt targets, so
+    # ubuntu-latest would break the job the day it moves.
+    assert "    runs-on: ubuntu-26.04" in _text(CI_WORKFLOW).splitlines()
+
+
 def test_the_token_is_read_only() -> None:
     # Repository default for workflow permissions is `write`: this block is
     # what keeps the token read-only.

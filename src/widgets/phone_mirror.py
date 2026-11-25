@@ -171,7 +171,7 @@ class PhoneMirrorWidget(base.BackgroundPoll):
                     countdown=self.controller.pairing_countdown()
                 )
             )
-        except (KeyError, IndexError, ValueError):
+        except KeyError, IndexError, ValueError:
             return str(self.format_pairing)
 
     def finalize(self) -> None:

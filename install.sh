@@ -42,7 +42,7 @@ XSESSION_FILE="${QTILE_XSESSION_FILE:-$DEFAULT_XSESSION_FILE}"
 # interpreter. uv's python-preference = "only-system" still accepts ANY non-uv
 # Python found on PATH (Homebrew, pyenv shims...), so name the interpreter
 # explicitly instead of relying on PATH.
-DEFAULT_PYTHON="/usr/bin/python3.12"
+DEFAULT_PYTHON="/usr/bin/python3.14"
 PYTHON="${PYTHON:-$DEFAULT_PYTHON}"
 
 # --- Options ------------------------------------------------------------------
@@ -58,7 +58,7 @@ Usage: ./install.sh [options]
 
 Options:
   --system-packages  First install the apt packages in packages/apt.txt (needs sudo,
-                     apt only; the names target Ubuntu 24.04)
+                     apt only; the names target Ubuntu 26.04)
   --nerd-font        Also install ${NERD_FONT_NAME} into ~/.local/share/fonts
                      (pinned release, checksum verified; skipped if already installed)
   --dev              Also install dev tools (ruff, mypy, pytest, pre-commit); without it they are removed
@@ -146,7 +146,7 @@ read_package_list() {
 # Without --system-packages, apt is never touched.
 if [[ "$SYSTEM_PACKAGES" == true ]]; then
     command -v apt-get >/dev/null 2>&1 \
-        || die "--system-packages needs apt-get (the list targets Ubuntu 24.04). Install the packages in ${APT_PACKAGES_FILE} with your package manager, then re-run without it."
+        || die "--system-packages needs apt-get (the list targets Ubuntu 26.04). Install the packages in ${APT_PACKAGES_FILE} with your package manager, then re-run without it."
     [[ -f "$APT_PACKAGES_FILE" ]] \
         || die "${APT_PACKAGES_FILE} not found. Restore it with: git checkout -- packages/apt.txt"
     mapfile -t packages < <(read_package_list)
@@ -167,7 +167,7 @@ command -v uv >/dev/null 2>&1 \
 Other methods: https://docs.astral.sh/uv/getting-started/installation/"
 
 command -v "$PYTHON" >/dev/null 2>&1 \
-    || die "$PYTHON not found. Install Python 3.12+ or set PYTHON=<interpreter>."
+    || die "$PYTHON not found. Install Python 3.14+ or set PYTHON=<interpreter>."
 
 [[ -f "${REPO_DIR}/uv.lock" ]] \
     || die "uv.lock not found in ${REPO_DIR}. Restore it with: git checkout -- uv.lock"

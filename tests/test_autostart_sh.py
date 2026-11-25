@@ -23,7 +23,7 @@ PROGRAMS = (
     "dbus-update-activation-environment",
     "gnome-keyring-daemon",
     "cbatticon",
-    "volumeicon",
+    "pasystray",
     "udiskie",
     "nm-applet",
     "blueman-applet",
@@ -137,7 +137,7 @@ def test_every_program_starts_with_its_arguments(sandbox: Sandbox) -> None:
     assert sandbox.args("dbus-update-activation-environment") == "--all"
     assert sandbox.args("gnome-keyring-daemon") == "--start --components=secrets"
     assert sandbox.args("cbatticon") == _cbatticon_args("BAT0")
-    assert sandbox.args("volumeicon") == ""
+    assert sandbox.args("pasystray") == "--notify=none --notify=new"
     assert sandbox.args("udiskie") == "-t"
     assert sandbox.args("nm-applet") == ""
     assert sandbox.args("blueman-applet") == ""

@@ -1013,7 +1013,7 @@ class PhoneController:
         """Ask for the phone's pairing address and code, then pair."""
         try:
             result = await self._run(build_zenity_pair_argv(), timeout=120)
-        except (OSError, runner.ForbiddenCommand):
+        except OSError, runner.ForbiddenCommand:
             logger.warning("PhoneMirror: zenity unavailable for manual pairing")
             self.notify(
                 "error",
@@ -1140,7 +1140,7 @@ class PhoneController:
         initial = self._settings()
         try:
             result = await self._run(build_zenity_argv(initial), timeout=120)
-        except (OSError, runner.ForbiddenCommand):
+        except OSError, runner.ForbiddenCommand:
             logger.warning("PhoneMirror: zenity unavailable; skipping setup prompt")
             return False
         if result.rc != 0:
