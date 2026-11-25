@@ -48,7 +48,7 @@ PulseAudio API, so the PulseAudio tools work unchanged:
 |---|---|---|
 | `pamixer` | Volume keys (`XF86AudioRaise/Lower/Mute`) | `packages/apt.txt` |
 | `playerctl` | Media keys | `packages/apt.txt` |
-| `pasystray` | Tray volume icon: scroll for volume, middle-click to mute, its menu opens `pavucontrol` | `packages/apt.txt` |
+| `pasystray` | Tray volume icon: scroll for volume, its menu opens `pavucontrol`. Middle-click mute does not work with Ubuntu's appindicator build; use the mute key | `packages/apt.txt` |
 | `pavucontrol` | Graphical mixer: outputs, inputs and per-app volume | Quick path step 2 |
 
 Do not install the `pulseaudio` package. Ubuntu's `pipewire-audio` package
