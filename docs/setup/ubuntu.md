@@ -175,6 +175,11 @@ needed.
 GDM remembers the choice for the next login. If **Qtile (venv)** is missing,
 rerun `./install.sh` without `--skip-xsession`.
 
+## Laptop special keys
+
+If a laptop key (such as the Copilot key or an `Fn` key) does nothing in
+Qtile, see [laptop-keys.md](laptop-keys.md).
+
 ## Checklist
 
 - [ ] `pactl info` reports `PulseAudio (on PipeWire ...)`, and the volume keys work.

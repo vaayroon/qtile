@@ -189,6 +189,7 @@ def test_core_launchers_stay_hard_coded(keys_module):
         (frozenset(), "Menu"): "rofi -show drun",
         (frozenset(), "XF86Favorites"): "rofi -show drun",
         (frozenset(), "XF86HomePage"): "rofi -show drun",
+        (frozenset({"mod4", "shift"}), "201"): "rofi -show drun",
     }
 
 
