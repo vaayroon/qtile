@@ -306,6 +306,7 @@ Colors, borders, and fonts are defined in [`src/settings.py`](src/settings.py):
 | `Menu` | Rofi App Launcher |
 | `XF86Favorites` | Rofi App Launcher |
 | `XF86HomePage` | Rofi App Launcher |
+| `mod + Shift + 0xc9` | Rofi App Launcher (Copilot key) |
 | `mod + Alt + Return` | Launches Virtual Kitty |
 | `XF86Explorer` | Private Brave window |
 | `Ctrl + Alt + p` | Passmenu |
@@ -641,7 +642,7 @@ Other optional integrations referenced in keybindings: `nautilus`, `pavucontrol`
 
 ## Full desktop setup
 
-The sections above cover Qtile itself. To reproduce the rest of the desktop (audio, screens, notifications, themes and display manager), follow the guide for your distro. For the shell and the terminal (zsh, Powerlevel10k, kitty) on any distro, see [docs/setup/shell.md](docs/setup/shell.md).
+The sections above cover Qtile itself. To reproduce the rest of the desktop (audio, screens, notifications, themes and display manager), follow the guide for your distro. For the shell and the terminal (zsh, Powerlevel10k, kitty) on any distro, see [docs/setup/shell.md](docs/setup/shell.md). To bind laptop keys that Qtile does not see under their printed name (such as the Copilot key or an `Fn` key), see [docs/setup/laptop-keys.md](docs/setup/laptop-keys.md).
 
 | Distro | Guide | Status |
 |--------|-------|--------|

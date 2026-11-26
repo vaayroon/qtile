@@ -158,6 +158,14 @@ key_sections: dict[str, list[Key]] = {
         Key(
             [], "XF86HomePage", lazy.spawn("rofi -show drun"), desc="Rofi App Launcher"
         ),
+        # Copilot key: the firmware sends Super+Shift+F23 (X keycode 201).
+        # Qtile has no `XF86Assistant` keysym, so bind the raw keycode.
+        Key(
+            [mod, "shift"],
+            201,
+            lazy.spawn("rofi -show drun"),
+            desc="Rofi App Launcher (Copilot key)",
+        ),
     ],
     SCRATCHPADS_SECTION: [
         *_dropdown_key(
